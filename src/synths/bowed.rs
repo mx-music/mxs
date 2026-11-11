@@ -1,7 +1,7 @@
 //! The bowed string of mx's violin, viola, cello and double bass: a waveguide after the bowed-string model of McIntyre, Schumacher and Woodhouse, "On the oscillations of musical instruments", JASA 74, 1983, and Julius O. Smith III's digital waveguides, https://ccrma.stanford.edu/~jos/pasp/Bowed_Strings.html.
 //! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss and the swell in.
 
-use crate::nodes::{db, hz, pink_noise, shape};
+use crate::nodes::{db, hz, pink_noise, shape, shape_node};
 use crate::synth::SynthDecl;
 use crate::{Context, Options, Spec};
 use fundsp::prelude::*;
@@ -114,13 +114,18 @@ struct Bow {
     seed: u64,
 }
 
+/// The bowed string as a defsynth plays it: `speed`, `force`, `position` and `takes` as `Bow` has them, and its rosin's noise drawn from `seed`.
+pub(crate) fn bowed_string(note: Net, speed: f64, force: f64, position: f64, takes: f64, rosin: f64, seed: u64) -> Net {
+    string(note, Bow { speed, force, position: position as f32, takes, rosin: rosin as f32, seed })
+}
+
 /// The bowed string: a waveguide whose two halves meet at the bow, where friction holds the string or lets it slip, following its note's pitch.
 fn string(note: Net, bow: Bow) -> Net {
     let Bow { speed, force, position, takes, rosin, seed } = bow;
     let (neck_loss, bridge_loss) = (0.995f32, 0.97f32);
 
     // The bow reaches its speed and force together and quickly, so the string takes up Helmholtz motion at once, after Guettler's attacks; the rosin's noise sways its speed, which the string shapes around each harmonic.
-    let bow = envelope(move |t: f64| speed * (0.05 + 0.95 * (t / takes).min(1.0))) * (1.0 + pink::<f32>().seed(seed) * rosin) | envelope(move |t: f64| force * (0.05 + 0.95 * (t / takes).min(1.0)));
+    let bow = shape_node(move |t| speed * (0.05 + 0.95 * (t / takes).min(1.0))) * (1.0 + pink::<f32>().seed(seed) * rosin) | shape_node(move |t| force * (0.05 + 0.95 * (t / takes).min(1.0)));
     // The string sticks to the bow while their speeds are close, and slips once they part; the pitch rides along to each half.
     let junction = map(move |i: &Frame<f32, U5>| -> Frame<f32, U4> {
         let (bow, width, freq, from_neck, from_bridge) = (i[0], i[1], i[2], i[3], i[4]);

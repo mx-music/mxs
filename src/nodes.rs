@@ -44,6 +44,14 @@ where
     Net::wrap(Box::new(An(Shape { f, t: 0.0, dt: 1.0 / DEFAULT_SR })))
 }
 
+/// `shape` as a node rather than a `Net`, for inside a `feedback` loop; unlike FunDSP's `envelope`, it does not depend on where it sits in a graph.
+pub fn shape_node<F>(f: F) -> An<impl AudioNode<Inputs = U0, Outputs = U1>>
+where
+    F: Fn(f64) -> f64 + Clone + Send + Sync + 'static,
+{
+    An(Shape { f, t: 0.0, dt: 1.0 / DEFAULT_SR })
+}
+
 /// A percussive level at `t` seconds: a straight rise over `attack`, then a fall to silence over `release`.
 pub fn perc(t: f64, attack: f64, release: f64) -> f64 {
     if t < attack { t / attack } else { (1.0 - (t - attack) / release).max(0.0).powi(4) }
