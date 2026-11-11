@@ -1,6 +1,6 @@
 //! mx's instruments measured from recordings, after their designs in mx's priv/synthdefs/mx-instruments.scd: plucked strings, winds and the organ.
 
-use crate::nodes::{between, db, decay2, hit, hz, modes, pink_noise, segment_at, segments, shape, white_noise};
+use crate::nodes::{between, db, decay2, hit, hz, modes, pink_noise, segment_at, segments, shape, struck_gliding, white_noise};
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -646,7 +646,12 @@ fn sitar() -> Synth {
             let hz_: Vec<f64> = (1..=90).map(|n| freq * n as f64).collect();
             let levels: Vec<f64> = hz_.iter().enumerate().map(|(i, f)| if *f < 16_000.0 { db(along(&centres, &level_table, *f) + (vel - 0.6) * 4.0 * ((i + 1) as f64).log2()) } else { 0.0 }).collect();
             let fades: Vec<f64> = hz_.iter().map(|f| along(&centres, &fade_table, *f)).collect();
-            let string = modes(net(impulse::<U1>()), &hz_, &levels, &fades);
+            // The string glides with its note option, as meend bends it.
+            let pitch = o.follow("note") >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32));
+            let bank = (1..=90).zip(levels.iter().zip(&fades)).filter(|(_, (level, _))| **level != 0.0).map(|(n, (&level, &fade))| {
+                net(map(move |x: &Frame<f32, U2>| -> Frame<f32, U2> { [x[0], x[1] * n as f32].into() })) >> struck_gliding(level, fade)
+            });
+            let string = (net(impulse::<U1>()) | pitch) >> bank.reduce(|a, b| a & b).expect("a string has harmonics");
             let sa = hz(o.number("sa"));
             let sympathetic_hz = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 2.0, 4.0, 6.0, 8.0].map(|r| sa * r);
             let sympathetic = modes(lpf(4000.0) * 0.0001, &sympathetic_hz, &[1.0, 0.5, 0.35, 0.25, 0.2, 0.15, 0.7, 0.35, 0.25, 0.15], &[6.0; 10]);
