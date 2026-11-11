@@ -33,7 +33,7 @@ const ARITHMETIC: &[&str] = &[
     "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
 ];
 const NODES: &[&str] = &[
-    "impulse", "sine", "partials", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "envelope", "perc",
+    "impulse", "follow", "time", "sine", "partials", "bowed_string", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "delay", "dc_block", "envelope", "perc",
     "mix", "gain", "note_envelope", "rings",
 ];
 
@@ -162,6 +162,10 @@ impl Build<'_> {
                 None => self.eval(fallback),
             };
         }
+        // An option as a signal that glides to each new value the song gives while the note sounds.
+        if let ("follow", [Graph::Option(option)]) = (name, args) {
+            return Ok(V::Sig(self.options.follow(option)));
+        }
         let mut args: Vec<V> = args.iter().map(|g| self.eval(g)).collect::<Result<_, _>>()?;
         let count = args.len();
         let mut named: Vec<(String, V)> = named.iter().map(|(k, g)| Ok((k.clone(), self.eval(g)?))).collect::<Result<_, String>>()?;
@@ -211,6 +215,13 @@ impl Build<'_> {
                 let freq = signal(take("hz").ok_or("sine needs hz:")?)?;
                 let phase = take("phase").map(|p| number(p, "a sine's phase")).transpose()?.unwrap_or(0.0);
                 Ok(V::Sig(freq >> net(An(Sine::<f32>::with_phase((phase / std::f64::consts::TAU).rem_euclid(1.0) as f32)))))
+            }
+            "time" => Ok(V::Sig(nodes::shape(|t| t))),
+            "bowed_string" => {
+                let note = signal(take("note").ok_or("bowed_string needs note:")?)?;
+                let mut figure = |key: &str| number(take(key).ok_or(format!("bowed_string needs {key}:"))?, "a bow's figure");
+                let (speed, force, position, takes, rosin) = (figure("speed")?, figure("force")?, figure("position")?, figure("takes")?, figure("rosin")?);
+                Ok(V::Sig(crate::synths::bowed_string(note, speed, force, position, takes, rosin, self.ctx.seed())))
             }
             "partials" => {
                 let pitch = signal(arg(0)?)?;
@@ -286,6 +297,13 @@ impl Build<'_> {
                 }
                 Ok(V::Sig(signal(sound)? >> nodes::struck(freq, level, fade)))
             }
+            "delay" => {
+                let sound = signal(arg(0)?)?;
+                let seconds = signal(take("seconds").ok_or("delay needs seconds:")?)?;
+                let longest = number(take("max").ok_or("delay needs max:")?, "a delay's max")?;
+                Ok(V::Sig((sound | seconds) >> net(tap(0.0, longest as f32))))
+            }
+            "dc_block" => Ok(V::Sig(signal(arg(0)?)? >> net(dcblock::<f32>()))),
             "envelope" => {
                 let (sound, points) = if count == 2 { (Some(arg(0)?), arg(1)?) } else { (None, arg(0)?) };
                 let shape = envelope(points)?;

@@ -9,6 +9,7 @@ mod piano;
 
 pub use berimbau::berimbau;
 pub use piano::piano;
+pub(crate) use bowed::bowed_string;
 pub(crate) use instruments::partials;
 
 /// Every synth mx ships.
