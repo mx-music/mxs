@@ -1,12 +1,9 @@
 //! mx's piano, after its design in mx's priv/synthdefs/mx-instruments.scd: each harmonic a resonator struck once, with a thump of noise.
 
-use crate::nodes::{db, hz, mode, perc, shape, white_noise};
+use crate::nodes::{db, hz, perc, shape, struck, white_noise};
 use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
-
-/// Scales the piano to the loudness of scsynth's render of the same notes.
-const GAIN: f64 = 1.4;
 
 pub fn piano() -> Synth {
     Synth::new("piano")
@@ -18,19 +15,19 @@ pub fn piano() -> Synth {
             let vel = options.number("vel");
             let bank = modes(options)
                 .into_iter()
-                .map(|(hz, phase, level, fade)| mode(hz, phase, level, fade))
+                .map(|(hz, level, fade)| struck(hz, level, fade))
                 .reduce(|a, b| a & b)
                 .expect("a piano note has harmonics");
             let strings = Net::wrap(Box::new(impulse::<U1>())) >> bank;
             let thump = (white_noise(ctx.seed()) >> lowpass_hz(400.0 + vel as f32 * 2000.0, 0.707))
                 * shape(|t| perc(t, 0.001, 0.02));
-            let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3)) * ((vel / 0.6).powf(2.5) * GAIN) as f32;
+            let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3)) * ((vel / 0.6).powf(2.5)) as f32;
             Note::envelope(sound, options)
         })
 }
 
-/// Each mode of a note as `(hz, phase, level, fade)`: the strings' harmonics, then their beating twins.
-fn modes(options: &Options) -> Vec<(f64, f64, f64, f64)> {
+/// Each mode of a note as `(hz, level, fade)`: the strings' harmonics, then their beating twins.
+fn modes(options: &Options) -> Vec<(f64, f64, f64)> {
     let note = options.number("note");
     let freq = hz(note);
     let vel = options.number("vel");
@@ -69,14 +66,12 @@ fn modes(options: &Options) -> Vec<(f64, f64, f64, f64)> {
             if n <= 24.0 { db(shape - 8.6 * (hz / freq.max(1000.0)).log2().max(0.0)) * pedal * 0.65 } else { 0.0 };
         let rung = level * (1.0 - pedal * 0.5) + sympathy;
         let lasting = fade + sympathy / (rung + 1e-9) * fade * ((1000.0 / hz).log2() / 2.0).clamp(0.0, 1.0);
-        strings.push((hz, n, rung, lasting));
+        strings.push((hz, rung, lasting));
         // A note's strings are tuned a hair apart and beat against each other.
         if n <= 10.0 {
-            beating.push((hz * 1.0001, n, level * 0.5, fade * 1.5));
+            beating.push((hz * 1.0001, level * 0.5, fade * 1.5));
         }
     }
 
-    // Harmonics that all start rising together add up to a click at the strike, louder than scsynth's, so their phases are spread by the golden angle.
-    // Beating strings start together, or they would cancel for seconds.
-    (strings.into_iter().chain(beating)).map(|(hz, n, level, fade)| (hz, n * 2.399_963, level, fade)).collect()
+    strings.into_iter().chain(beating).collect()
 }

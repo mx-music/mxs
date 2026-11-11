@@ -18,6 +18,14 @@ pub fn mode(hz: f64, phase: f64, level: f64, fade: f64) -> Net {
     Net::wrap(Box::new(An(Mode::new(hz, phase, level, fade))))
 }
 
+/// A resonator as mx's designs' resonators on scsynth answer, measured from their renders: an impulse rings it at 2 cos(w / 2) times `level`, half a sample late, w being its frequency in radians per sample, and it fades 60 dB over `fade` seconds.
+pub fn struck(hz: f64, level: f64, fade: f64) -> Net {
+    let mut resonator = Mode::new(hz, 0.0, level, fade);
+    resonator.like_scsynth = true;
+    resonator.set_sample_rate(DEFAULT_SR);
+    Net::wrap(Box::new(An(resonator)))
+}
+
 /// A level worked out from the seconds since the note started, at every sample.
 pub fn shape<F>(f: F) -> Net
 where
@@ -75,17 +83,14 @@ pub fn hit(attack: f64, decay: f64, curve: f64) -> Net {
 }
 
 /// Resonators set ringing by `exciter`, one at each of `hz`, with its level and the seconds it takes to fade 60 dB; those above 20 kHz are left out.
-/// They answer as mx's designs' resonators on scsynth do, measured from their renders: an impulse rings each at 2 cos(w / 2) times its level, half a sample late, w being its frequency in radians per sample.
+/// Each is `struck`.
 pub fn modes(exciter: Net, hz: &[f64], levels: &[f64], rings: &[f64]) -> Net {
     let mut bank: Option<Net> = None;
     for ((&f, &level), &ring) in hz.iter().zip(levels).zip(rings) {
         if f >= 20_000.0 || f <= 0.0 || ring <= 0.0 {
             continue;
         }
-        let mut resonator = Mode::new(f, 0.0, level, ring);
-        resonator.like_scsynth = true;
-        resonator.set_sample_rate(DEFAULT_SR);
-        let one = Net::wrap(Box::new(An(resonator)));
+        let one = struck(f, level, ring);
         bank = Some(match bank {
             Some(bank) => bank & one,
             None => one,

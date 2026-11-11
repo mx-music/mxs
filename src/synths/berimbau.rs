@@ -1,13 +1,10 @@
 //! mx's berimbau, after its design in mx's priv/synthdefs/mx-drums.scd: the string's partials struck by the stick, swung by the gourd, over the wire's close modes and the stick's thud.
 
-use crate::nodes::{db, hz, mode, perc, shape, white_noise};
+use crate::nodes::{db, hz, perc, shape, struck, white_noise};
 use crate::{Note, Spec, Synth};
 use fundsp::math::rnd1;
 use fundsp::prelude::*;
 use std::f64::consts::PI;
-
-/// Scales the berimbau to the loudness of scsynth's render of the same strokes.
-const GAIN: f64 = 1.4;
 
 /// The seconds a stroke lasts.
 const LENGTH: f64 = 2.9;
@@ -25,7 +22,7 @@ const WIRE_RINGS: [f64; 7] = [0.6, 0.6, 0.5, 0.25, 0.08, 0.07, 0.06];
 const TAILS: [f64; 7] = [-60.0, -60.0, -60.0, -40.0, -22.0, -28.0, -24.0];
 /// Seeds the wire's modes; of the seeds tried, 7000 keeps them under the string's 3rd and 5th harmonics, as scsynth's draws from 1956 are.
 const SEED: u64 = 7000;
-/// What the wire's levels take off at each band to sound as loud as scsynth's render: its modes are drawn from another generator, and FunDSP's resonators answer the strike's noise louder.
+/// What the wire's levels take off at each band to sound as loud as scsynth's render: its modes are drawn from another generator than scsynth's.
 const WIRE_FIT: [f64; 7] = [-10.0, -15.8, -12.9, -14.3, -7.0, -6.6, -12.8];
 
 pub fn berimbau() -> Synth {
@@ -46,7 +43,7 @@ pub fn berimbau() -> Synth {
 
             // The gourd starts open and swings some harmonics up and others down as it closes against the belly.
             let partials = (0..RATIOS.len()).map(|i| {
-                let partial = mode(freq * RATIOS[i], 0.0, db(mix(OPEN[i], PRESSED[i])), RINGS[i] * damp);
+                let partial = struck(freq * RATIOS[i], db(mix(OPEN[i], PRESSED[i])), RINGS[i] * damp);
                 let swing = match RATIOS[i] as u32 {
                     2 => -4.5,
                     3 => -7.0,
@@ -76,7 +73,7 @@ pub fn berimbau() -> Synth {
                 let long = i % 4 == 0;
                 let loud = db(at(f, &wire_levels)) * if long { db(at(f, &TAILS) + 10.0) } else { 1.0 };
                 let ring = if long { 1.5 } else { (at(f, &WIRE_RINGS) * spread).min(2.5) };
-                mode(f, 0.0, loud, ring * damp.sqrt())
+                struck(f, loud, ring * damp.sqrt())
             });
             let strike = white_noise(1) * shape(|t| perc(t, 0.0002, 0.002)) * 0.6;
             let wire = strike >> wire_modes.reduce(|a, b| a & b).unwrap();
@@ -115,7 +112,7 @@ pub fn berimbau() -> Synth {
             }
 
             let brighter = db((vel - 0.6) * 5.0) as f32;
-            let level = (0.2 * (vel / 0.6).powf(1.5) * GAIN) as f32;
+            let level = (0.2 * (vel / 0.6).powf(1.5)) as f32;
             Note::rings((sound >> highshelf_hz(1500.0, 0.707, brighter)) * level, LENGTH)
         })
 }
