@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
-use mxe::nodes::{hz, mode, white_noise};
-use mxe::{Effect, Engine, Error, Event, Note, RATE, Spec, Synth, Target, Value, synths};
+use mxs::nodes::{hz, mode, white_noise};
+use mxs::{Effect, Engine, Error, Event, Note, RATE, Spec, Synth, Target, Value, synths};
 
 fn engine() -> Engine {
     let mut engine = Engine::offline(RATE);
@@ -172,7 +172,7 @@ fn notes_play_through_their_effect_chain_until_it_stops() {
 
 #[test]
 fn a_loaded_sample_plays_at_its_rate_within_its_span() {
-    let dir = std::env::temp_dir().join(format!("mxe-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("mxs-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("ramp.wav");
     let spec = hound::WavSpec { channels: 1, sample_rate: 48_000, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };

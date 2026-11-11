@@ -1,6 +1,6 @@
 //! Times building one note of each instrument, which happens off the audio thread, and rendering a second of it, which happens on it.
 
-use mxe::{Engine, Event, RATE, synths};
+use mxs::{Engine, Event, RATE, synths};
 use std::time::Instant;
 
 fn main() {

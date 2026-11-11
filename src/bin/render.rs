@@ -1,6 +1,6 @@
 //! Renders one note of one of mx's synths to a stereo 48 kHz float WAV: render <synth> <seconds> <out.wav> [name=value ...]
 
-use mxe::{Engine, Event, RATE, Value, synths};
+use mxs::{Engine, Event, RATE, Value, synths};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
