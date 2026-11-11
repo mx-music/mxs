@@ -1,6 +1,6 @@
 //! The engine: synths and effects registered by name, samples loaded from files, and events stamped with seconds, played live or rendered offline.
 
-use crate::mixer::{CAPACITY, Chain, Change, Command, Garbage, Mixer, Voice};
+use crate::mixer::{CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice};
 use crate::options::{Context, Control, Options};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Spec, Value};
@@ -11,7 +11,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
-use std::time::Duration;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 /// Seconds of silence a note's end fades over, so a note cut at its end does not click.
 const END_FADE: f64 = 0.01;
@@ -34,8 +35,21 @@ pub enum Event {
     Note { id: Option<u64>, synth: String, options: Vec<(String, Value)>, chain: Option<u64> },
     /// A sample `load_sample` returned, with the sample player's options.
     Sample { id: Option<u64>, sample: u64, options: Vec<(String, Value)>, chain: Option<u64> },
+    /// Channels of the sound card's input, from `input`, numbered from 0, with amp and pan, playing until stopped.
+    Input { id: Option<u64>, input: usize, channels: usize, options: Vec<(String, Value)>, chain: Option<u64> },
     /// New values for options of sounds already playing, each gliding over its `_slide` option when given.
     Set { target: Target, options: Vec<(String, f64)> },
+    /// Ends the sounds started with these ids, fading them over 10 ms.
+    Stop { ids: Vec<u64> },
+}
+
+/// What `record` writes to its file.
+#[derive(Clone, Copy, Debug)]
+pub enum Source {
+    /// One channel of the sound card's input, numbered from 0.
+    Input(usize),
+    /// A sample `load_sample` returned, played once in place of the input.
+    Sample(u64),
 }
 
 impl Event {
@@ -57,6 +71,8 @@ pub enum Error {
     BadSound { owner: String, outputs: usize },
     Sample(String),
     Device(String),
+    UnknownInput(usize),
+    Record(String),
     Busy,
     Offline,
     Live,
@@ -76,6 +92,11 @@ impl std::fmt::Display for Error {
             Error::BadSound { owner, outputs } => write!(f, "{owner} made a sound of {outputs} channels, not 1 or 2"),
             Error::Sample(reason) => write!(f, "{reason}"),
             Error::Device(reason) => write!(f, "{reason}"),
+            Error::UnknownInput(input) => {
+                let number = input + 1;
+                write!(f, "the sound card has no input {number}")
+            }
+            Error::Record(reason) => write!(f, "{reason}"),
             Error::Busy => write!(f, "the engine has more events waiting than it can take"),
             Error::Offline => write!(f, "this engine renders offline and has no output"),
             Error::Live => write!(f, "this engine plays live and cannot render"),
@@ -93,6 +114,7 @@ struct Registered<T> {
 }
 
 struct Sound {
+    key: u64,
     chain: Option<u64>,
     start: f64,
     end: f64,
@@ -104,12 +126,23 @@ enum Output {
     Live { stop: mpsc::Sender<()> },
 }
 
+struct Recording {
+    source: u64,
+    giving_up: Arc<AtomicBool>,
+    writer: JoinHandle<Result<(), String>>,
+}
+
+type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
+
 /// The engine, live on the default output or offline.
 pub struct Engine {
     rate: f64,
     synths: HashMap<String, Registered<Synth>>,
     effects: HashMap<String, Registered<Effect>>,
     sampler: (Arc<str>, Arc<[Spec]>),
+    input: (Arc<str>, Arc<[Spec]>),
+    inputs: usize,
+    recording: Option<Recording>,
     samples: HashMap<u64, Arc<SampleData>>,
     commands: rtrb::Producer<Command>,
     garbage: rtrb::Consumer<Garbage>,
@@ -130,33 +163,58 @@ impl Engine {
         let (commands, receiving) = rtrb::RingBuffer::new(CAPACITY);
         let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
         let clock = Arc::new(AtomicU64::new(0));
-        let mixer = Mixer::new(receiving, returning, clock.clone());
+        let mixer = Mixer::new(receiving, returning, clock.clone(), None);
         Engine::with(rate, commands, garbage, clock, Arc::new(AtomicBool::new(false)), Output::Offline(Box::new(mixer)))
+    }
+
+    /// An offline engine whose input is `channels` fed through the producer returned, for tests of live input.
+    #[cfg(test)]
+    pub(crate) fn offline_with_input(rate: f64, channels: usize) -> (Engine, rtrb::Producer<f32>) {
+        let (commands, receiving) = rtrb::RingBuffer::new(CAPACITY);
+        let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
+        let (feed, frames) = rtrb::RingBuffer::new(CAPACITY * channels);
+        let clock = Arc::new(AtomicU64::new(0));
+        let mixer = Mixer::new(receiving, returning, clock.clone(), Some(Input { frames, channels }));
+        let output = Output::Offline(Box::new(mixer));
+        let mut engine = Engine::with(rate, commands, garbage, clock, Arc::new(AtomicBool::new(false)), output);
+        engine.inputs = channels;
+        (engine, feed)
     }
 
     /// An engine that plays through the default output device at its own rate.
     pub fn live() -> Result<Engine, Error> {
+        Engine::open_live(false)
+    }
+
+    /// An engine that plays through the default output device, and reads the default input device at the same rate.
+    pub fn live_with_input() -> Result<Engine, Error> {
+        Engine::open_live(true)
+    }
+
+    fn open_live(with_input: bool) -> Result<Engine, Error> {
         let (commands, receiving) = rtrb::RingBuffer::new(CAPACITY);
         let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
         let clock = Arc::new(AtomicU64::new(0));
         let failed = Arc::new(AtomicBool::new(false));
-        let mixer = Mixer::new(receiving, returning, clock.clone());
         let (stop, stopped) = mpsc::channel::<()>();
-        let (ready, started) = mpsc::channel::<Result<f64, String>>();
+        let (ready, started) = mpsc::channel::<Result<(f64, usize), String>>();
         let failing = failed.clone();
-        // cpal's stream cannot move between threads on every platform, so one thread owns it until the engine is dropped.
-        std::thread::spawn(move || match open(mixer, failing) {
-            Ok((stream, rate)) => {
-                let _ = ready.send(Ok(rate));
+        let mixing = clock.clone();
+        // cpal's streams cannot move between threads on every platform, so one thread owns them until the engine is dropped.
+        std::thread::spawn(move || match open(receiving, returning, mixing, failing, with_input) {
+            Ok((streams, rate, inputs)) => {
+                let _ = ready.send(Ok((rate, inputs)));
                 let _ = stopped.recv();
-                drop(stream);
+                drop(streams);
             }
             Err(reason) => {
                 let _ = ready.send(Err(reason));
             }
         });
-        let rate = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
-        Ok(Engine::with(rate, commands, garbage, clock, failed, Output::Live { stop }))
+        let (rate, inputs) = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
+        let mut engine = Engine::with(rate, commands, garbage, clock, failed, Output::Live { stop });
+        engine.inputs = inputs;
+        Ok(engine)
     }
 
     fn with(
@@ -174,6 +232,9 @@ impl Engine {
             synths: HashMap::new(),
             effects: HashMap::new(),
             sampler: (sampler, sampler_specs.into()),
+            input: (Arc::from("input"), placing_specs().into()),
+            inputs: 0,
+            recording: None,
             samples: HashMap::new(),
             commands,
             garbage,
@@ -191,6 +252,11 @@ impl Engine {
 
     pub fn rate(&self) -> f64 {
         self.rate
+    }
+
+    /// How many channels of the sound card's input the engine reads; 0 unless it was started with input.
+    pub fn inputs(&self) -> usize {
+        self.inputs
     }
 
     /// The seconds the engine has played or rendered so far.
@@ -295,6 +361,66 @@ impl Engine {
         self.send(Command::StopChain { key: chain, at: self.frames(at) })
     }
 
+    /// Records `source` to a stereo 24-bit WAV file at `path` from `at` seconds, apart from the main output, until `stop_recording`.
+    /// It replaces a recording already running.
+    pub fn record(&mut self, path: impl AsRef<Path>, source: Source, at: f64) -> Result<(), Error> {
+        self.check_running()?;
+        self.stop_recording()?;
+        self.sweep();
+        let (voice, sound) = match source {
+            Source::Input(input) => self.input_voice(input, 1, &[], at, Out::Tap)?,
+            Source::Sample(sample) => self.sample_voice(sample, &[], at, Out::Tap)?,
+        };
+        let path = path.as_ref();
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: self.rate as u32,
+            bits_per_sample: 24,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let shown = path.display();
+        let wav = hound::WavWriter::create(path, spec).map_err(|e| Error::Record(format!("cannot write {shown}: {e}")))?;
+        // Two seconds of stereo frames, which the writer empties every 10 ms.
+        let (out, frames) = rtrb::RingBuffer::new(4 * self.rate as usize);
+        let giving_up = Arc::new(AtomicBool::new(false));
+        let giving = giving_up.clone();
+        let writer = std::thread::spawn(move || write_wav(wav, frames, giving));
+        let recorder = Recorder { start: voice.start, out };
+        let source = voice.key;
+        self.sounds.insert(sound.key, sound);
+        self.send(Command::Start(voice))?;
+        self.send(Command::Record(Box::new(recorder)))?;
+        self.recording = Some(Recording { source, giving_up, writer });
+        Ok(())
+    }
+
+    /// Stops the recording and closes its file, with what was recorded up to now.
+    pub fn stop_recording(&mut self) -> Result<(), Error> {
+        let Some(recording) = self.recording.take() else { return Ok(()) };
+        let now = self.clock.load(Ordering::Acquire);
+        self.sounds.remove(&recording.source);
+        let sent = self.send(Command::Stop { key: recording.source, at: now });
+        let sent = sent.and_then(|()| self.send(Command::StopRecording));
+        if let Output::Offline(mixer) = &mut self.output {
+            mixer.receive();
+        }
+        // The recorder's ring closes once the mixer hands it back and it is dropped here.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !recording.writer.is_finished() {
+            self.drain();
+            if Instant::now() > deadline {
+                recording.giving_up.store(true, Ordering::Release);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        sent?;
+        match recording.writer.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(reason)) => Err(Error::Record(reason)),
+            Err(_) => Err(Error::Record("the recording's writer panicked".to_string())),
+        }
+    }
+
     /// Plays events, each at its seconds on the engine's clock; an event whose time has passed plays at once.
     /// Every event is checked before any is sent, so a batch with a mistake plays nothing.
     pub fn play(&mut self, events: &[(f64, Event)]) -> Result<(), Error> {
@@ -311,36 +437,50 @@ impl Engine {
                     let values = self.check(&owner, &specs, options)?;
                     let options = Options::new(owner.clone(), specs, values);
                     let note = build(&options, &mut Context::new(owner.clone()));
-                    let (voice, sound) = self.voice(&owner, note, &options, *at, *chain)?;
+                    let out = chain.map_or(Out::Main, Out::Chain);
+                    let (voice, sound) = self.voice(&owner, note, &options, *at, out, None)?;
                     commands.push(Command::Start(voice));
                     sounds.push((*id, sound));
                 }
                 Event::Sample { id, sample, options, chain } => {
-                    let data = self.samples.get(sample).ok_or(Error::UnknownSample(*sample))?.clone();
-                    let (owner, specs) = self.sampler.clone();
-                    let values = self.check(&owner, &specs, options)?;
-                    let options = Options::new(owner.clone(), specs, values);
-                    let note = sample_note(data, &options);
-                    let (voice, sound) = self.voice(&owner, note, &options, *at, *chain)?;
+                    let out = chain.map_or(Out::Main, Out::Chain);
+                    let (voice, sound) = self.sample_voice(*sample, options, *at, out)?;
                     commands.push(Command::Start(voice));
                     sounds.push((*id, sound));
                 }
-                Event::Set { .. } => {}
+                Event::Input { id, input, channels, options, chain } => {
+                    let out = chain.map_or(Out::Main, Out::Chain);
+                    let (voice, sound) = self.input_voice(*input, *channels, options, *at, out)?;
+                    commands.push(Command::Start(voice));
+                    sounds.push((*id, sound));
+                }
+                Event::Set { .. } | Event::Stop { .. } => {}
             }
         }
         // The batch's sounds are known before its changes are resolved, so a change can reach a note of the same batch.
         for (id, sound) in sounds {
-            self.next += 1;
             if let Some(id) = id {
-                self.ids.insert(id, self.next);
+                self.ids.insert(id, sound.key);
             }
-            self.sounds.insert(self.next, sound);
+            self.sounds.insert(sound.key, sound);
         }
         for (at, event) in events {
-            if let Event::Set { target, options } = event {
-                for change in self.changes(*at, target, options) {
-                    commands.push(Command::Change(Box::new(change)));
+            match event {
+                Event::Set { target, options } => {
+                    for change in self.changes(*at, target, options) {
+                        commands.push(Command::Change(Box::new(change)));
+                    }
                 }
+                Event::Stop { ids } => {
+                    let at = *at;
+                    for key in ids.iter().filter_map(|id| self.ids.get(id)) {
+                        if let Some(sound) = self.sounds.get_mut(key) {
+                            sound.end = sound.end.min(at.max(sound.start) + END_FADE);
+                        }
+                        commands.push(Command::Stop { key: *key, at: self.frames(at) });
+                    }
+                }
+                _ => {}
             }
         }
         for command in commands {
@@ -435,14 +575,53 @@ impl Engine {
         Ok(values)
     }
 
+    fn sample_voice(
+        &mut self,
+        sample: u64,
+        given: &[(String, Value)],
+        at: f64,
+        out: Out,
+    ) -> Result<(Box<Voice>, Sound), Error> {
+        let data = self.samples.get(&sample).ok_or(Error::UnknownSample(sample))?.clone();
+        let (owner, specs) = self.sampler.clone();
+        let values = self.check(&owner, &specs, given)?;
+        let options = Options::new(owner.clone(), specs, values);
+        let note = sample_note(data, &options);
+        self.voice(&owner, note, &options, at, out, None)
+    }
+
+    fn input_voice(
+        &mut self,
+        input: usize,
+        channels: usize,
+        given: &[(String, Value)],
+        at: f64,
+        out: Out,
+    ) -> Result<(Box<Voice>, Sound), Error> {
+        let channels = channels.clamp(1, 2);
+        if input + channels > Ord::min(self.inputs, INPUTS) {
+            return Err(Error::UnknownInput(input + channels - 1));
+        }
+        let (owner, specs) = self.input.clone();
+        let values = self.check(&owner, &specs, given)?;
+        let options = Options::new(owner.clone(), specs, values);
+        let sound = match channels {
+            1 => Net::wrap(Box::new(pass())),
+            _ => Net::wrap(Box::new(multipass::<U2>())),
+        };
+        let note = Note::rings(sound, f64::INFINITY);
+        self.voice(&owner, note, &options, at, out, Some((input, channels)))
+    }
+
     /// The note placed in the stereo field by its pan and scaled by its amp, ready for the mixer.
     fn voice(
-        &self,
+        &mut self,
         owner: &str,
         note: Note,
         options: &Options,
         at: f64,
-        chain: Option<u64>,
+        out: Out,
+        input: Option<(usize, usize)>,
     ) -> Result<(Box<Voice>, Sound), Error> {
         let placing = options.follow("pan") | options.follow("amp");
         let mut unit = match note.sound.outputs() {
@@ -452,10 +631,17 @@ impl Engine {
         };
         unit.set_sample_rate(self.rate);
         unit.allocate();
+        self.next += 1;
+        let key = self.next;
         let start = Ord::max(self.frames(at), self.clock.load(Ordering::Acquire));
-        let end = start + Ord::max(self.frames(note.end), 1);
-        let voice = Voice { chain, unit: Box::new(unit), start, end, fade: Ord::max(self.frames(END_FADE), 1) };
-        let sound = Sound { chain, start: at, end: at + note.end, controls: options.take_controls() };
+        let end = start.saturating_add(Ord::max(self.frames(note.end), 1));
+        let fade = Ord::max(self.frames(END_FADE), 1);
+        let voice = Voice { key, out, input, unit: Box::new(unit), start, end, fade };
+        let chain = match out {
+            Out::Chain(key) => Some(key),
+            _ => None,
+        };
+        let sound = Sound { key, chain, start: at, end: at + note.end, controls: options.take_controls() };
         Ok((Box::new(voice), sound))
     }
 
@@ -496,20 +682,48 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        let _ = self.stop_recording();
         if let Output::Live { stop, .. } = &self.output {
             let _ = stop.send(());
         }
     }
 }
 
-fn open(mut mixer: Mixer, failed: Arc<AtomicBool>) -> Result<(cpal::Stream, f64), String> {
-    let device = cpal::default_host().default_output_device().ok_or("no output device")?;
+/// Writes interleaved stereo frames to `wav` until the mixer lets go of the ring, or the engine gives up waiting for it.
+fn write_wav(mut wav: Wav, mut frames: rtrb::Consumer<f32>, giving_up: Arc<AtomicBool>) -> Result<(), String> {
+    loop {
+        let done = frames.is_abandoned() || giving_up.load(Ordering::Acquire);
+        while let Ok(x) = frames.pop() {
+            let sample = (x.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
+            wav.write_sample(sample).map_err(|e| e.to_string())?;
+        }
+        if done {
+            return wav.finalize().map_err(|e| e.to_string());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+type Streams = (Option<cpal::Stream>, cpal::Stream);
+
+fn open(
+    commands: rtrb::Consumer<Command>,
+    garbage: rtrb::Producer<Garbage>,
+    clock: Arc<AtomicU64>,
+    failed: Arc<AtomicBool>,
+    with_input: bool,
+) -> Result<(Streams, f64, usize), String> {
+    let host = cpal::default_host();
+    let device = host.default_output_device().ok_or("no output device")?;
     let config = device.default_output_config().map_err(|e| e.to_string())?;
     if config.sample_format() != cpal::SampleFormat::F32 {
         return Err(format!("the output takes {} samples, and the engine writes f32", config.sample_format()));
     }
     let rate = config.sample_rate() as f64;
     let channels = config.channels() as usize;
+    let (input_stream, input) = if with_input { open_input(&host, config.sample_rate())? } else { (None, None) };
+    let inputs = input.as_ref().map_or(0, |i| i.channels);
+    let mut mixer = Mixer::new(commands, garbage, clock, input);
     let mut left = vec![0.0f32; 16384];
     let mut right = vec![0.0f32; 16384];
     let stream = device
@@ -521,7 +735,36 @@ fn open(mut mixer: Mixer, failed: Arc<AtomicBool>) -> Result<(cpal::Stream, f64)
         )
         .map_err(|e| e.to_string())?;
     stream.play().map_err(|e| e.to_string())?;
-    Ok((stream, rate))
+    Ok(((input_stream, stream), rate, inputs))
+}
+
+/// The default input device at the output's rate, sending its frames to the mixer over a ring buffer.
+fn open_input(host: &cpal::Host, rate: cpal::SampleRate) -> Result<(Option<cpal::Stream>, Option<Input>), String> {
+    let device = host.default_input_device().ok_or("no input device")?;
+    let ranges = device.supported_input_configs().map_err(|e| e.to_string())?;
+    let config = ranges
+        .filter(|range| range.sample_format() == cpal::SampleFormat::F32)
+        .find_map(|range| range.try_with_sample_rate(rate));
+    let Some(config) = config else {
+        let found = device.default_input_config().map_err(|e| e.to_string())?.sample_rate();
+        return Err(format!("the input runs at {found} Hz and the output at {rate} Hz"));
+    };
+    let channels = config.channels() as usize;
+    let (mut feed, frames) = rtrb::RingBuffer::new(CAPACITY * channels);
+    let stream = device
+        .build_input_stream(
+            config.into(),
+            move |data: &[f32], _| {
+                for &x in data {
+                    let _ = feed.push(x);
+                }
+            },
+            |e| eprintln!("mxs input: {e}"),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    stream.play().map_err(|e| e.to_string())?;
+    Ok((Some(stream), Some(Input { frames, channels })))
 }
 
 /// Fills an interleaved buffer of `channels` from the mixer, or silence once it has panicked, which marks the engine failed instead of aborting the process.
@@ -676,5 +919,62 @@ mod tests {
         fill(mixer, &failed, &mut data, 2, &mut left, &mut right);
         assert!(failed.load(Ordering::Acquire));
         assert!(data.iter().all(|&x| x == 0.0));
+    }
+
+    /// Renders `seconds` 1024 frames at a time, feeding each frame's input before it, as a sound card would.
+    fn render_fed(engine: &mut Engine, feed: &mut rtrb::Producer<f32>, seconds: f64, frame: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        let (mut left, mut right) = (Vec::new(), Vec::new());
+        let frames = engine.frames(seconds) as usize;
+        while left.len() < frames {
+            let n = Ord::min(1024, frames - left.len());
+            for _ in 0..n {
+                frame.iter().for_each(|&x| feed.push(x).unwrap());
+            }
+            let (l, r) = engine.render(n as f64 / engine.rate).unwrap();
+            left.extend(l);
+            right.extend(r);
+        }
+        (left, right)
+    }
+
+    #[test]
+    fn live_input_plays_its_channels_placed_by_pan_until_it_stops() {
+        let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 2);
+        let mono = Event::Input { id: Some(1), input: 0, channels: 1, options: vec![], chain: None };
+        engine.play(&[(0.0, mono)]).unwrap();
+        let (left, right) = render_fed(&mut engine, &mut feed, 0.1, &[0.5, 0.25]);
+        let centre = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((left[1000] - 0.5 * centre).abs() < 1e-6);
+        assert!((right[1000] - 0.5 * centre).abs() < 1e-6);
+        engine.play(&[(0.1, Event::Stop { ids: vec![1] })]).unwrap();
+        let (left, _) = render_fed(&mut engine, &mut feed, 0.1, &[0.5, 0.25]);
+        assert_eq!(left[1000], 0.0);
+
+        let options = vec![("pan".to_string(), Value::Number(-1.0))];
+        let stereo = Event::Input { id: None, input: 0, channels: 2, options, chain: None };
+        engine.play(&[(0.2, stereo)]).unwrap();
+        let (left, right) = render_fed(&mut engine, &mut feed, 0.1, &[0.5, 0.25]);
+        assert_eq!(left[1000], 0.5);
+        assert_eq!(right[1000], 0.0);
+        let beyond = Event::Input { id: None, input: 1, channels: 2, options: vec![], chain: None };
+        assert_eq!(engine.play(&[(0.3, beyond)]), Err(Error::UnknownInput(2)));
+    }
+
+    #[test]
+    fn a_recording_of_an_input_writes_it_centred() {
+        let dir = std::env::temp_dir().join(format!("mxs-input-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("input.wav");
+        let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 1);
+        engine.record(&path, Source::Input(0), 0.0).unwrap();
+        let (left, _) = render_fed(&mut engine, &mut feed, 0.1, &[0.5]);
+        assert_eq!(left[100], 0.0);
+        engine.stop_recording().unwrap();
+        let mut reader = hound::WavReader::open(&path).unwrap();
+        let samples: Vec<i32> = reader.samples::<i32>().map(|x| x.unwrap()).collect();
+        assert_eq!(samples.len(), 2 * 4800);
+        let centre = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((samples[200] as f32 / 8_388_607.0 - 0.5 * centre).abs() < 1e-4);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

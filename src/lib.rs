@@ -10,7 +10,7 @@ mod spec;
 mod synth;
 pub mod synths;
 
-pub use engine::{Engine, Error, Event, Target};
+pub use engine::{Engine, Error, Event, Source, Target};
 pub use options::{Context, Options};
 pub use spec::{Kind, Spec, Value};
 pub use synth::{Effect, EffectDecl, Note, Synth, SynthDecl};

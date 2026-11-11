@@ -7,10 +7,26 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) const CAPACITY: usize = 16384;
+/// The most input channels the mixer reads.
+pub(crate) const INPUTS: usize = 8;
 const BLOCK: usize = MAX_BUFFER_SIZE;
+/// Input frames waiting beyond this are skipped, so live input stays within about 40 ms at 48 kHz.
+const INPUT_LAG: usize = 2048;
+
+/// Where a voice's sound goes.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Out {
+    Main,
+    Chain(u64),
+    /// Only to the recorder, apart from the main output.
+    Tap,
+}
 
 pub(crate) struct Voice {
-    pub chain: Option<u64>,
+    pub key: u64,
+    pub out: Out,
+    /// The first input channel and how many the voice reads, for live input.
+    pub input: Option<(usize, usize)>,
     pub unit: Box<dyn AudioUnit>,
     pub start: u64,
     pub end: u64,
@@ -32,11 +48,26 @@ pub(crate) struct Change {
     pub slide: Option<f32>,
 }
 
+/// Writes what the tap hears from `start`, as interleaved stereo, until it is stopped.
+pub(crate) struct Recorder {
+    pub start: u64,
+    pub out: rtrb::Producer<f32>,
+}
+
+/// The sound card's input, as interleaved frames of `channels`.
+pub(crate) struct Input {
+    pub frames: rtrb::Consumer<f32>,
+    pub channels: usize,
+}
+
 pub(crate) enum Command {
     Start(Box<Voice>),
     Change(Box<Change>),
     StartChain(Box<Chain>),
     StopChain { key: u64, at: u64 },
+    Stop { key: u64, at: u64 },
+    Record(Box<Recorder>),
+    StopRecording,
 }
 
 // Held only so the engine drops them, off the audio thread.
@@ -45,6 +76,7 @@ pub(crate) enum Garbage {
     Voice(Box<Voice>),
     Change(Box<Change>),
     Chain(Box<Chain>),
+    Recorder(Box<Recorder>),
 }
 
 pub(crate) struct Mixer {
@@ -58,12 +90,21 @@ pub(crate) struct Mixer {
     #[allow(clippy::vec_box)]
     changes: Vec<Box<Change>>,
     buffer: BufferVec,
+    input: Option<Input>,
+    inputs: BufferVec,
+    tap: BufferVec,
+    recorder: Option<Box<Recorder>>,
     now: u64,
     clock: Arc<AtomicU64>,
 }
 
 impl Mixer {
-    pub fn new(commands: rtrb::Consumer<Command>, garbage: rtrb::Producer<Garbage>, clock: Arc<AtomicU64>) -> Self {
+    pub fn new(
+        commands: rtrb::Consumer<Command>,
+        garbage: rtrb::Producer<Garbage>,
+        clock: Arc<AtomicU64>,
+        input: Option<Input>,
+    ) -> Self {
         Mixer {
             commands,
             garbage,
@@ -71,6 +112,10 @@ impl Mixer {
             chains: Vec::with_capacity(256),
             changes: Vec::with_capacity(CAPACITY),
             buffer: BufferVec::new(2),
+            input,
+            inputs: BufferVec::new(INPUTS),
+            tap: BufferVec::new(2),
+            recorder: None,
             now: clock.load(Ordering::Acquire),
             clock,
         }
@@ -86,7 +131,7 @@ impl Mixer {
         }
     }
 
-    fn receive(&mut self) {
+    pub fn receive(&mut self) {
         while let Ok(command) = self.commands.pop() {
             match command {
                 Command::Start(voice) => self.voices.push(voice),
@@ -95,6 +140,22 @@ impl Mixer {
                 Command::StopChain { key, at } => {
                     if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
                         chain.stop = Some(at);
+                    }
+                }
+                Command::Stop { key, at } => {
+                    if let Some(voice) = self.voices.iter_mut().find(|v| v.key == key) {
+                        let at = Ord::max(Ord::max(at, voice.start), self.now);
+                        voice.end = Ord::min(voice.end, at + voice.fade);
+                    }
+                }
+                Command::Record(recorder) => {
+                    if let Some(old) = self.recorder.replace(recorder) {
+                        let _ = self.garbage.push(Garbage::Recorder(old));
+                    }
+                }
+                Command::StopRecording => {
+                    if let Some(old) = self.recorder.take() {
+                        let _ = self.garbage.push(Garbage::Recorder(old));
                     }
                 }
             }
@@ -128,6 +189,8 @@ impl Mixer {
         for chain in &mut self.chains {
             chain.input.clear();
         }
+        self.tap.clear();
+        self.read_input(n);
 
         let mut i = 0;
         while i < self.voices.len() {
@@ -136,13 +199,23 @@ impl Mixer {
                 i += 1;
                 continue;
             }
-            let from = voice.start.saturating_sub(self.now) as usize;
+            // Live input starts at the block it falls in, so it reads the input from the block's first frame.
+            let from = if voice.input.is_some() { 0 } else { voice.start.saturating_sub(self.now) as usize };
             let to = (Ord::min(voice.end, end) - Ord::min(self.now, voice.end)) as usize;
             let to = Ord::max(to, from);
             if to > from {
                 let length = to - from;
-                voice.unit.process(length, &BufferRef::empty(), &mut self.buffer.buffer_mut());
-                let target = voice.chain.and_then(|key| self.chains.iter_mut().position(|c| c.key == key));
+                let inputs = self.inputs.buffer_ref();
+                let input = match voice.input {
+                    Some((first, count)) => inputs.subset(first, count),
+                    None => BufferRef::empty(),
+                };
+                voice.unit.process(length, &input, &mut self.buffer.buffer_mut());
+                let target = match voice.out {
+                    Out::Chain(key) => self.chains.iter_mut().position(|c| c.key == key).map(Some),
+                    Out::Tap => Some(None),
+                    Out::Main => None,
+                };
                 for k in 0..length {
                     let at = self.now + (from + k) as u64;
                     let left_to_end = voice.end - at;
@@ -151,7 +224,10 @@ impl Mixer {
                     let r = self.buffer.at_f32(1, k) * gain;
                     match target {
                         Some(c) => {
-                            let input = &mut self.chains[c].input;
+                            let input = match c {
+                                Some(c) => &mut self.chains[c].input,
+                                None => &mut self.tap,
+                            };
                             input.set_f32(0, from + k, input.at_f32(0, from + k) + l);
                             input.set_f32(1, from + k, input.at_f32(1, from + k) + r);
                         }
@@ -180,7 +256,7 @@ impl Mixer {
             }
             let key = chain.key;
             let finished = chain.stop.is_some_and(|stop| end >= stop + chain.tail)
-                && !self.voices.iter().any(|v| v.chain == Some(key));
+                && !self.voices.iter().any(|v| v.out == Out::Chain(key));
             if finished {
                 let chain = self.chains.swap_remove(i);
                 let _ = self.garbage.push(Garbage::Chain(chain));
@@ -189,7 +265,37 @@ impl Mixer {
             }
         }
 
+        if let Some(recorder) = &mut self.recorder {
+            let from = recorder.start.saturating_sub(self.now) as usize;
+            for k in from..n {
+                let _ = recorder.out.push(self.tap.at_f32(0, k));
+                let _ = recorder.out.push(self.tap.at_f32(1, k));
+            }
+        }
+
         self.now = end;
         self.clock.store(end, Ordering::Release);
+    }
+
+    /// Reads the next `n` frames of input, or silence for what has not arrived.
+    fn read_input(&mut self, n: usize) {
+        self.inputs.clear();
+        let Some(input) = &mut self.input else { return };
+        let channels = input.channels;
+        let waiting = input.frames.slots() / channels;
+        if waiting > INPUT_LAG {
+            for _ in 0..(waiting - BLOCK) * channels {
+                let _ = input.frames.pop();
+            }
+        }
+        let frames = Ord::min(input.frames.slots() / channels, n);
+        for k in 0..frames {
+            for c in 0..channels {
+                let x = input.frames.pop().unwrap_or(0.0);
+                if c < INPUTS {
+                    self.inputs.set_f32(c, k, x);
+                }
+            }
+        }
     }
 }

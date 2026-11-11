@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
 use mxs::nodes::{hz, mode, white_noise};
-use mxs::{Effect, Engine, Error, Event, Note, RATE, Spec, Synth, Target, Value, synths};
+use mxs::{Effect, Engine, Error, Event, Note, RATE, Source, Spec, Synth, Target, Value, synths};
 
 fn engine() -> Engine {
     let mut engine = Engine::offline(RATE);
@@ -225,4 +225,64 @@ fn every_synth_declares_what_its_build_reads() {
         engine.play(&[(0.0, Event::note(None, &name, &[]))]).unwrap();
     }
     engine.render(0.1).unwrap();
+}
+
+#[test]
+fn a_stopped_sound_fades_out_over_10_ms_from_its_stop() {
+    let mut engine = engine();
+    engine.register(level());
+    engine.play(&[(0.0, Event::note(Some(1), "level", &[])), (0.5, Event::Stop { ids: vec![1] })]).unwrap();
+    let (left, _) = engine.render(1.0).unwrap();
+    assert!(left[frame(0.49)] > 0.7);
+    assert!(left[frame(0.505)] > 0.0 && left[frame(0.505)] < left[frame(0.49)]);
+    assert_eq!(left[frame(0.511)], 0.0);
+}
+
+#[test]
+fn an_engine_started_without_input_has_none_to_play() {
+    let mut engine = engine();
+    assert_eq!(engine.inputs(), 0);
+    let input = Event::Input { id: None, input: 0, channels: 1, options: vec![], chain: None };
+    let error = engine.play(&[(0.0, input)]).unwrap_err();
+    assert_eq!(error, Error::UnknownInput(0));
+    assert_eq!(error.to_string(), "the sound card has no input 1");
+}
+
+#[test]
+fn a_recording_writes_its_source_apart_from_the_main_output_until_it_stops() {
+    let dir = std::env::temp_dir().join(format!("mxs-record-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ramp = dir.join("ramp.wav");
+    let spec = hound::WavSpec { channels: 1, sample_rate: 48_000, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+    let mut wav = hound::WavWriter::create(&ramp, spec).unwrap();
+    for i in 0..48_000 {
+        wav.write_sample(i as f32 / 48_000.0).unwrap();
+    }
+    wav.finalize().unwrap();
+
+    let mut engine = engine();
+    let sample = engine.load_sample(&ramp).unwrap();
+    let recorded = dir.join("recorded.wav");
+    engine.record(&recorded, Source::Sample(sample), 0.25).unwrap();
+    let (left, right) = engine.render(0.75).unwrap();
+    assert!(left.iter().chain(&right).all(|&x| x == 0.0));
+    engine.stop_recording().unwrap();
+
+    let mut reader = hound::WavReader::open(&recorded).unwrap();
+    assert_eq!(reader.spec().channels, 2);
+    assert_eq!(reader.spec().bits_per_sample, 24);
+    assert_eq!(reader.spec().sample_rate, 48_000);
+    let samples: Vec<f32> = reader.samples::<i32>().map(|x| x.unwrap() as f32 / 8_388_607.0).collect();
+    assert_eq!(samples.len(), 2 * frame(0.5));
+    let centre = std::f32::consts::FRAC_1_SQRT_2;
+    let at = |seconds: f64| samples[2 * frame(seconds)];
+    assert!((at(0.25) - 0.25 * centre).abs() < 1e-3);
+    assert!((samples[2 * frame(0.25) + 1] - 0.25 * centre).abs() < 1e-3);
+
+    let nowhere = dir.join("no-such-folder").join("take.wav");
+    let error = engine.record(&nowhere, Source::Sample(sample), 0.0).unwrap_err();
+    assert!(matches!(error, Error::Record(_)));
+    assert!(error.to_string().starts_with("cannot write "));
+    assert_eq!(engine.record(&recorded, Source::Sample(99), 0.0), Err(Error::UnknownSample(99)));
+    std::fs::remove_dir_all(&dir).unwrap();
 }
