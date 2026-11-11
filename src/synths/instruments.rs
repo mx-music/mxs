@@ -387,7 +387,7 @@ fn brass_wind(name: &'static str, rate: f64, count: usize, lowest: f64, body: &'
         let tone = partials(vibrato(o, o.number("vibrato"), rate), &ratios, &levels, &spread_phases(count));
         let (gain, centre, air, speaks, power) = match kind {
             Brass::Trumpet => (0.004, 1500.0, -48.0, 0.3 - 0.156 * vel, 0.6),
-            Brass::Trombone => (0.0017, 1000.0, -57.0, 0.36 - 0.092 * vel, 0.6),
+            Brass::Trombone => (0.0017, 1000.0, -57.0, 0.37 - 0.13 * vel, 0.6),
             Brass::Horn => (0.3, 800.0, -50.0, 0.09 + 0.06 * vel, 1.25),
             Brass::Tuba => (0.21, 300.0, -53.0, 0.02 + 0.2 * vel, 2.1),
         };
