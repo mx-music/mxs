@@ -507,7 +507,7 @@ fn open(mut mixer: Mixer, failed: Arc<AtomicBool>) -> Result<(cpal::Stream, f64)
         .build_output_stream(
             config.into(),
             move |data: &mut [f32], _| fill(&mut mixer, &failed, data, channels, &mut left, &mut right),
-            |e| eprintln!("mx-engine output: {e}"),
+            |e| eprintln!("mxe output: {e}"),
             None,
         )
         .map_err(|e| e.to_string())?;
