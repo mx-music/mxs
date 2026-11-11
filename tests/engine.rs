@@ -488,3 +488,17 @@ fn an_offline_engine_has_no_system_clock_to_play_at() {
     let at = std::time::SystemTime::now();
     assert_eq!(engine.play_at(&[(at, Event::note(None, "saw", &[]))]), Err(Error::Offline));
 }
+
+#[test]
+fn a_released_note_falls_silent_over_its_release_from_where_it_is() {
+    let mut engine = engine();
+    engine.register(Synth::new("held").options(Spec::envelope(60.0, 0.1)).build(|o, _| Note::envelope(dc(1.0f32), o)));
+    let at = frame(0.20025);
+    engine.play(&[(0.0, Event::note(Some(2), "held", &[])), (at as f64 / RATE, Event::Release { ids: vec![2] })]).unwrap();
+    let (left, _) = engine.render(0.5).unwrap();
+    let centre = 0.5f32.sqrt();
+    assert!((left[at - 1] - centre).abs() < 1e-6, "{}", left[at - 1]);
+    assert!(left[at + 1] < centre && left[at + frame(0.05)] > 0.0, "{} {}", left[at + 1], left[at + frame(0.05)]);
+    assert!(left[at + frame(0.1) + 1..].iter().all(|&x| x.abs() < 1e-6), "{}", left[at + frame(0.1) + 1]);
+    assert!(engine.warnings().is_empty());
+}

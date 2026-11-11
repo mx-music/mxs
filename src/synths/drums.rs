@@ -79,7 +79,7 @@ fn trimmed(synth: Synth) -> Synth {
     Synth {
         build: std::sync::Arc::new(move |o, ctx| {
             let note = build(o, ctx);
-            Note { sound: note.sound * gain, end: note.end }
+            Note { sound: note.sound * gain, ..note }
         }),
         ..synth
     }

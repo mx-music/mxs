@@ -6,6 +6,7 @@ mod device;
 mod engine;
 mod mixer;
 pub mod effects;
+pub mod keys;
 pub mod nodes;
 mod options;
 mod sample;

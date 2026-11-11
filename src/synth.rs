@@ -1,6 +1,6 @@
 //! Synths and effects, each a name, the options it declares, and a function that builds its sound.
 
-use crate::nodes::{segment_at, shape};
+use crate::nodes::gated;
 use crate::options::{Context, Options};
 use crate::spec::Spec;
 use fundsp::prelude::*;
@@ -62,15 +62,17 @@ impl SynthDecl {
 pub struct Note {
     pub(crate) sound: Net,
     pub(crate) end: f64,
+    /// The gate that lets the note go before its envelope ends, and the seconds it then takes to fall silent.
+    pub(crate) release: Option<(Shared, f64)>,
 }
 
 impl Note {
     /// A sound that rings until it fades by itself, after `seconds`.
     pub fn rings(sound: impl AudioUnit + 'static, seconds: f64) -> Note {
-        Note { sound: net(sound), end: seconds }
+        Note { sound: net(sound), end: seconds, release: None }
     }
 
-    /// A sound shaped by the note's envelope, from its options attack, decay, sustain, release, attack_level, decay_level and sustain_level, which ends when the envelope does.
+    /// A sound shaped by the note's envelope, from its options attack, decay, sustain, release, attack_level, decay_level and sustain_level, which ends when the envelope does, or falls silent over its release once let go.
     pub fn envelope(sound: impl AudioUnit + 'static, options: &Options) -> Note {
         let attack = options.number("attack");
         let decay = options.number("decay");
@@ -82,10 +84,11 @@ impl Note {
         // The same curves as mx's envelope on scsynth: a slow attack, a quick decay, a straight sustain and a quick release.
         let levels = [0.0, peak, decayed, held, 0.0];
         let times = [attack, decay, sustain, release];
-        let level = shape(move |t| segment_at(&levels, &times, &[1.0, -2.0, 0.0, -3.0], t));
+        let gate = shared(1.0);
+        let level = net(var(&gate)) >> gated(&levels, &times, &[1.0, -2.0, 0.0, -3.0]);
         let sound = net(sound);
         let sound = if sound.outputs() == 2 { sound * (level >> split::<U2>()) } else { sound * level };
-        Note { sound, end: attack + decay + sustain + release }
+        Note { sound, end: attack + decay + sustain + release, release: Some((gate, release)) }
     }
 
     /// Ends the note after `seconds`, if it would end later.

@@ -45,6 +45,8 @@ pub enum Event {
     Set { target: Target, options: Vec<(String, f64)> },
     /// Ends the sounds started with these ids, fading them over 10 ms.
     Stop { ids: Vec<u64> },
+    /// Lets the sounds started with these ids go, as keys let up: a note shaped by its envelope falls silent over its release, and any other sound fades over 10 ms.
+    Release { ids: Vec<u64> },
 }
 
 /// What `record` writes to its file.
@@ -125,6 +127,7 @@ struct Sound {
     start: f64,
     end: f64,
     controls: HashMap<String, Control>,
+    release: Option<(Shared, f64)>,
 }
 
 enum Output {
@@ -565,7 +568,7 @@ impl Engine {
                     commands.push(Command::Start(voice));
                     sounds.push((*id, sound));
                 }
-                Event::Set { .. } | Event::Stop { .. } => {}
+                Event::Set { .. } | Event::Stop { .. } | Event::Release { .. } => {}
             }
         }
         // The batch's sounds are known before its changes are resolved, so a change can reach a note of the same batch.
@@ -589,6 +592,22 @@ impl Engine {
                             sound.end = sound.end.min(at.max(sound.start) + END_FADE);
                         }
                         commands.push(Command::Stop { key: *key, at: self.frames(at) });
+                    }
+                }
+                Event::Release { ids } => {
+                    for key in ids.iter().filter_map(|id| self.ids.get(id)).copied().collect::<Vec<_>>() {
+                        let Some(sound) = self.sounds.get_mut(&key) else { continue };
+                        let at = at.max(sound.start);
+                        let (stop, gate) = match &sound.release {
+                            Some((gate, seconds)) => (at + seconds, Some(gate.clone())),
+                            None => (at, None),
+                        };
+                        sound.end = sound.end.min(stop + END_FADE);
+                        if let Some(gate) = gate {
+                            let control = Control { target: gate, slide: shared(0.0) };
+                            commands.push(Command::Change(Box::new(Change { at: self.frames(at), control, value: Some(0.0), slide: None })));
+                        }
+                        commands.push(Command::Stop { key, at: self.frames(stop) });
                     }
                 }
                 _ => {}
@@ -751,6 +770,7 @@ impl Engine {
         input: Option<(usize, usize)>,
     ) -> Result<(Box<Voice>, Sound), Error> {
         let placing = options.follow("pan") | options.follow("amp");
+        let release = note.release;
         let mut unit = match note.sound.outputs() {
             1 => (note.sound | placing) >> Net::wrap(Box::new(An(PanMono))),
             2 => (note.sound | placing) >> Net::wrap(Box::new(An(Balance))),
@@ -770,7 +790,7 @@ impl Engine {
             Out::Chain(key) => Some(key),
             _ => None,
         };
-        let sound = Sound { key, chain, start: at, end: at + note.end, controls: options.take_controls() };
+        let sound = Sound { key, chain, start: at, end: at + note.end, controls: options.take_controls(), release };
         Ok((Box::new(voice), sound))
     }
 

@@ -56,6 +56,12 @@ pub fn segments(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
     shape(move |t| segment_at(&levels, &times, &curves, t))
 }
 
+/// A level moving through `levels` over `times` as `segments` does, until its input falls to 0: from then it falls from where it is to silence over the last of `times`, along the last of `curves`.
+pub fn gated(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
+    let (levels, times, curves) = (levels.to_vec(), times.to_vec(), curves.to_vec());
+    Net::wrap(Box::new(An(Gated { levels, times, curves, t: 0.0, dt: 1.0 / DEFAULT_SR, let_go: None })))
+}
+
 /// The level of `segments` at `t` seconds.
 pub fn segment_at(levels: &[f64], times: &[f64], curves: &[f64], t: f64) -> f64 {
     let mut start = 0.0;
@@ -308,6 +314,47 @@ where
 
     fn tick(&mut self, _input: &Frame<f32, U0>) -> Frame<f32, U1> {
         let level = (self.f)(self.t);
+        self.t += self.dt;
+        [level as f32].into()
+    }
+}
+
+#[derive(Clone)]
+struct Gated {
+    levels: Vec<f64>,
+    times: Vec<f64>,
+    curves: Vec<f64>,
+    t: f64,
+    dt: f64,
+    /// The seconds at which the gate fell, and the level then.
+    let_go: Option<(f64, f64)>,
+}
+
+impl AudioNode for Gated {
+    const ID: u64 = 0x6d78_0030;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        (self.t, self.let_go) = (0.0, None);
+    }
+
+    fn set_sample_rate(&mut self, rate: f64) {
+        self.dt = 1.0 / rate;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        if self.let_go.is_none() && input[0] <= 0.0 {
+            self.let_go = Some((self.t, segment_at(&self.levels, &self.times, &self.curves, self.t)));
+        }
+        let level = match self.let_go {
+            None => segment_at(&self.levels, &self.times, &self.curves, self.t),
+            Some((at, from)) => {
+                let release = self.times.last().copied().unwrap_or(0.0);
+                let curve = self.curves.last().copied().unwrap_or(0.0);
+                segment_at(&[from, 0.0], &[release], &[curve], self.t - at)
+            }
+        };
         self.t += self.dt;
         [level as f32].into()
     }
