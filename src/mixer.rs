@@ -48,7 +48,7 @@ pub(crate) struct Change {
     pub slide: Option<f32>,
 }
 
-/// Writes what the tap hears from `start`, as interleaved stereo, until it is stopped.
+/// Writes what it records from `start`, the tap or the main output, as interleaved stereo, until it is stopped.
 pub(crate) struct Recorder {
     pub start: u64,
     pub out: rtrb::Producer<f32>,
@@ -68,6 +68,8 @@ pub(crate) enum Command {
     Stop { key: u64, at: u64 },
     Record(Box<Recorder>),
     StopRecording,
+    RecordOutput(Box<Recorder>),
+    StopRecordingOutput,
 }
 
 // Held only so the engine drops them, off the audio thread.
@@ -94,6 +96,7 @@ pub(crate) struct Mixer {
     inputs: BufferVec,
     tap: BufferVec,
     recorder: Option<Box<Recorder>>,
+    output_recorder: Option<Box<Recorder>>,
     now: u64,
     clock: Arc<AtomicU64>,
 }
@@ -116,6 +119,7 @@ impl Mixer {
             inputs: BufferVec::new(INPUTS),
             tap: BufferVec::new(2),
             recorder: None,
+            output_recorder: None,
             now: clock.load(Ordering::Acquire),
             clock,
         }
@@ -155,6 +159,16 @@ impl Mixer {
                 }
                 Command::StopRecording => {
                     if let Some(old) = self.recorder.take() {
+                        let _ = self.garbage.push(Garbage::Recorder(old));
+                    }
+                }
+                Command::RecordOutput(recorder) => {
+                    if let Some(old) = self.output_recorder.replace(recorder) {
+                        let _ = self.garbage.push(Garbage::Recorder(old));
+                    }
+                }
+                Command::StopRecordingOutput => {
+                    if let Some(old) = self.output_recorder.take() {
                         let _ = self.garbage.push(Garbage::Recorder(old));
                     }
                 }
@@ -272,9 +286,22 @@ impl Mixer {
                 let _ = recorder.out.push(self.tap.at_f32(1, k));
             }
         }
+        if let Some(recorder) = &mut self.output_recorder {
+            let from = recorder.start.saturating_sub(self.now) as usize;
+            for k in from..n {
+                let _ = recorder.out.push(left[k]);
+                let _ = recorder.out.push(right[k]);
+            }
+        }
 
         self.now = end;
         self.clock.store(end, Ordering::Release);
+    }
+
+    /// The frames every running recording has room for before its ring is full.
+    pub fn recording_room(&self) -> usize {
+        let room = |r: &Option<Box<Recorder>>| r.as_ref().map_or(usize::MAX, |r| r.out.slots() / 2);
+        Ord::min(room(&self.recorder), room(&self.output_recorder))
     }
 
     /// Reads the next `n` frames of input, or silence for what has not arrived.

@@ -286,3 +286,78 @@ fn a_recording_writes_its_source_apart_from_the_main_output_until_it_stops() {
     assert_eq!(engine.record(&recorded, Source::Sample(99), 0.0), Err(Error::UnknownSample(99)));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A synth of white noise, so a gap or a repeated block in a recording of it shows.
+fn noise() -> Synth {
+    Synth::new("noise").build(|_, ctx| Note::rings(white_noise(ctx.seed()) * 0.5, 3600.0))
+}
+
+#[test]
+fn a_recording_of_the_output_matches_the_render_sample_for_sample_beside_a_recording_of_an_input() {
+    let dir = std::env::temp_dir().join(format!("mxs-output-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ramp = dir.join("ramp.wav");
+    let spec = hound::WavSpec { channels: 1, sample_rate: 48_000, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+    let mut wav = hound::WavWriter::create(&ramp, spec).unwrap();
+    (0..4800).for_each(|i| wav.write_sample(i as f32 / 4800.0).unwrap());
+    wav.finalize().unwrap();
+
+    let mut engine = engine();
+    engine.register(noise());
+    let sample = engine.load_sample(&ramp).unwrap();
+    let (output, input) = (dir.join("output.wav"), dir.join("input.wav"));
+    engine.play(&[(0.0, Event::note(None, "noise", &[("pan", -0.5)]))]).unwrap();
+    engine.record_output(&output, 0.5).unwrap();
+    engine.record(&input, Source::Sample(sample), 0.0).unwrap();
+    let mut rendered = (Vec::new(), Vec::new());
+    for _ in 0..3 {
+        let (left, right) = engine.render(10.0).unwrap();
+        rendered.0.extend(left);
+        rendered.1.extend(right);
+    }
+    engine.stop_recording_output().unwrap();
+    engine.stop_recording().unwrap();
+
+    let mut reader = hound::WavReader::open(&output).unwrap();
+    assert_eq!(reader.spec().sample_format, hound::SampleFormat::Float);
+    assert_eq!((reader.spec().channels, reader.spec().bits_per_sample), (2, 32));
+    let samples: Vec<f32> = reader.samples::<f32>().map(Result::unwrap).collect();
+    let expected: Vec<f32> = rendered.0[frame(0.5)..].iter().zip(&rendered.1[frame(0.5)..]).flat_map(|(l, r)| [*l, *r]).collect();
+    assert_eq!(samples.len(), expected.len());
+    assert!(samples == expected);
+
+    let input = hound::WavReader::open(&input).unwrap();
+    assert_eq!(input.len() as usize, 2 * frame(30.0));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_recording_left_open_plays_up_to_its_last_flush() {
+    let dir = std::env::temp_dir().join(format!("mxs-open-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("open.wav");
+    let mut engine = engine();
+    engine.register(noise());
+    engine.play(&[(0.0, Event::note(None, "noise", &[]))]).unwrap();
+    engine.record_output(&output, 0.0).unwrap();
+    engine.render(3.0).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let reader = hound::WavReader::open(&output).unwrap();
+    let seconds = reader.duration() as f64 / RATE;
+    assert!(seconds >= 2.0, "the open file plays {seconds} seconds of 3");
+    engine.stop_recording_output().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn sounding_counts_notes_until_they_end_and_not_live_input() {
+    let mut engine = engine();
+    engine.register(level());
+    assert!(!engine.sounding());
+    engine.play(&[(0.0, Event::note(None, "level", &[]))]).unwrap();
+    engine.render(0.5).unwrap();
+    assert!(engine.sounding());
+    engine.render(0.6).unwrap();
+    assert!(!engine.sounding());
+}

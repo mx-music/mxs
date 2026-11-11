@@ -127,7 +127,7 @@ enum Output {
 }
 
 struct Recording {
-    source: u64,
+    source: Option<u64>,
     giving_up: Arc<AtomicBool>,
     writer: JoinHandle<Result<(), String>>,
 }
@@ -143,6 +143,7 @@ pub struct Engine {
     input: (Arc<str>, Arc<[Spec]>),
     inputs: usize,
     recording: Option<Recording>,
+    output_recording: Option<Recording>,
     samples: HashMap<u64, Arc<SampleData>>,
     commands: rtrb::Producer<Command>,
     garbage: rtrb::Consumer<Garbage>,
@@ -235,6 +236,7 @@ impl Engine {
             input: (Arc::from("input"), placing_specs().into()),
             inputs: 0,
             recording: None,
+            output_recording: None,
             samples: HashMap::new(),
             commands,
             garbage,
@@ -371,36 +373,70 @@ impl Engine {
             Source::Input(input) => self.input_voice(input, 1, &[], at, Out::Tap)?,
             Source::Sample(sample) => self.sample_voice(sample, &[], at, Out::Tap)?,
         };
-        let path = path.as_ref();
-        let spec = hound::WavSpec {
-            channels: 2,
-            sample_rate: self.rate as u32,
-            bits_per_sample: 24,
-            sample_format: hound::SampleFormat::Int,
-        };
+        let (recorder, mut recording) = self.recorder(path.as_ref(), voice.start, false)?;
+        recording.source = Some(voice.key);
+        self.sounds.insert(sound.key, sound);
+        self.send(Command::Start(voice))?;
+        self.send(Command::Record(Box::new(recorder)))?;
+        self.recording = Some(recording);
+        Ok(())
+    }
+
+    /// Records the main output to a stereo 32-bit float WAV file at `path` from `at` seconds, until `stop_recording_output`.
+    /// It runs beside a recording of an input, and replaces a recording of the output already running.
+    pub fn record_output(&mut self, path: impl AsRef<Path>, at: f64) -> Result<(), Error> {
+        self.check_running()?;
+        self.stop_recording_output()?;
+        let start = Ord::max(self.frames(at), self.clock.load(Ordering::Acquire));
+        let (recorder, recording) = self.recorder(path.as_ref(), start, true)?;
+        self.send(Command::RecordOutput(Box::new(recorder)))?;
+        self.output_recording = Some(recording);
+        Ok(())
+    }
+
+    /// Stops recording the output and closes its file, with what was recorded up to now.
+    pub fn stop_recording_output(&mut self) -> Result<(), Error> {
+        let Some(recording) = self.output_recording.take() else { return Ok(()) };
+        let sent = self.send(Command::StopRecordingOutput);
+        self.finish(recording, sent)
+    }
+
+    /// Whether any note or sample started is still sounding; live input does not count.
+    pub fn sounding(&self) -> bool {
+        let now = self.now();
+        self.sounds.values().any(|sound| sound.start <= now && now < sound.end && sound.end.is_finite())
+    }
+
+    /// A WAV file at `path` and the thread that writes it, fed by the recorder returned.
+    fn recorder(&self, path: &Path, start: u64, float: bool) -> Result<(Recorder, Recording), Error> {
+        let (bits, format) = if float { (32, hound::SampleFormat::Float) } else { (24, hound::SampleFormat::Int) };
+        let spec = hound::WavSpec { channels: 2, sample_rate: self.rate as u32, bits_per_sample: bits, sample_format: format };
         let shown = path.display();
         let wav = hound::WavWriter::create(path, spec).map_err(|e| Error::Record(format!("cannot write {shown}: {e}")))?;
         // Two seconds of stereo frames, which the writer empties every 10 ms.
         let (out, frames) = rtrb::RingBuffer::new(4 * self.rate as usize);
         let giving_up = Arc::new(AtomicBool::new(false));
         let giving = giving_up.clone();
-        let writer = std::thread::spawn(move || write_wav(wav, frames, giving));
-        let recorder = Recorder { start: voice.start, out };
-        let source = voice.key;
-        self.sounds.insert(sound.key, sound);
-        self.send(Command::Start(voice))?;
-        self.send(Command::Record(Box::new(recorder)))?;
-        self.recording = Some(Recording { source, giving_up, writer });
-        Ok(())
+        let rate = self.rate;
+        let writer = std::thread::spawn(move || write_wav(wav, frames, giving, float, rate));
+        Ok((Recorder { start, out }, Recording { source: None, giving_up, writer }))
     }
 
-    /// Stops the recording and closes its file, with what was recorded up to now.
+    /// Stops the recording of an input and closes its file, with what was recorded up to now.
     pub fn stop_recording(&mut self) -> Result<(), Error> {
         let Some(recording) = self.recording.take() else { return Ok(()) };
         let now = self.clock.load(Ordering::Acquire);
-        self.sounds.remove(&recording.source);
-        let sent = self.send(Command::Stop { key: recording.source, at: now });
+        let mut sent = Ok(());
+        if let Some(source) = recording.source {
+            self.sounds.remove(&source);
+            sent = self.send(Command::Stop { key: source, at: now });
+        }
         let sent = sent.and_then(|()| self.send(Command::StopRecording));
+        self.finish(recording, sent)
+    }
+
+    /// Waits for the writer to close the file once the mixer hands its recorder back.
+    fn finish(&mut self, recording: Recording, sent: Result<(), Error>) -> Result<(), Error> {
         if let Output::Offline(mixer) = &mut self.output {
             mixer.receive();
         }
@@ -498,7 +534,17 @@ impl Engine {
         };
         let mut left = vec![0.0; frames];
         let mut right = vec![0.0; frames];
-        let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| mixer.render(&mut left, &mut right)));
+        // Rendering outruns a recording's writer, so it goes a quarter second at a time, once the recordings have room for it.
+        let chunk = Ord::max((self.rate / 4.0) as usize, 1);
+        let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for (left, right) in left.chunks_mut(chunk).zip(right.chunks_mut(chunk)) {
+                mixer.receive();
+                while mixer.recording_room() < left.len() {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                mixer.render(left, right);
+            }
+        }));
         self.drain();
         match rendered {
             Ok(()) => Ok((left, right)),
@@ -683,6 +729,7 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         let _ = self.stop_recording();
+        let _ = self.stop_recording_output();
         if let Output::Live { stop, .. } = &self.output {
             let _ = stop.send(());
         }
@@ -690,15 +737,35 @@ impl Drop for Engine {
 }
 
 /// Writes interleaved stereo frames to `wav` until the mixer lets go of the ring, or the engine gives up waiting for it.
-fn write_wav(mut wav: Wav, mut frames: rtrb::Consumer<f32>, giving_up: Arc<AtomicBool>) -> Result<(), String> {
+/// It rewrites the file's header every half second, so a process killed while recording leaves a file that plays up to then.
+fn write_wav(
+    mut wav: Wav,
+    mut frames: rtrb::Consumer<f32>,
+    giving_up: Arc<AtomicBool>,
+    float: bool,
+    rate: f64,
+) -> Result<(), String> {
+    let mut since_flush = 0;
     loop {
         let done = frames.is_abandoned() || giving_up.load(Ordering::Acquire);
-        while let Ok(x) = frames.pop() {
-            let sample = (x.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
-            wav.write_sample(sample).map_err(|e| e.to_string())?;
+        // Whole frames only, so a flushed header never ends between a left and a right sample.
+        let ready = frames.slots() / 2 * 2;
+        for _ in 0..ready {
+            let x = frames.pop().unwrap_or(0.0);
+            let written = if float {
+                wav.write_sample(x)
+            } else {
+                wav.write_sample((x.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32)
+            };
+            written.map_err(|e| e.to_string())?;
         }
+        since_flush += ready / 2;
         if done {
             return wav.finalize().map_err(|e| e.to_string());
+        }
+        if since_flush as f64 >= rate / 2.0 {
+            wav.flush().map_err(|e| e.to_string())?;
+            since_flush = 0;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
