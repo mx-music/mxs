@@ -689,9 +689,7 @@ fn guiro() -> Synth {
                 clicks.push((at, 0.6 + 0.4 * draws.draw()));
                 at += 1.0 / (rate * (0.85 + 0.3 * draws.draw()));
             }
-            let ridges = crate::nodes::shape(move |t| {
-                clicks.iter().find(|(c, _)| (t - c).abs() < 0.5 / 48_000.0).map_or(0.0, |(_, level)| *level)
-            });
+            let ridges = crate::nodes::clicks(clicks);
             let stroke = segments(&[0.0, 1.0, 1.0, 0.0], &[0.005, length, 0.01], &[0.0, 0.0, 0.0]);
             let ticks = ((ridges.clone() * 4.0) + (ridges >> decay2(0.0, 0.0015)) * noise(ctx)) * stroke;
             let ratios = [0.29, 0.37, 0.52, 0.67, 1.0, 1.53, 1.94, 3.0, 3.7, 4.4];

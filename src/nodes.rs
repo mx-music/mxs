@@ -31,6 +31,11 @@ pub fn struck_gliding(level: f64, fade: f64) -> Net {
     Net::wrap(Box::new(An(Gliding { level, fade, rate: DEFAULT_SR, hz: -1.0, coefficients: (0.0, 0.0, 0.0, 0.0), x1: 0.0, y1: 0.0, y2: 0.0 })))
 }
 
+/// An impulse at each of `clicks`, given as seconds and level in the order they come.
+pub fn clicks(clicks: Vec<(f64, f64)>) -> Net {
+    Net::wrap(Box::new(An(Clicks { clicks, next: 0, t: 0.0, dt: 1.0 / DEFAULT_SR })))
+}
+
 /// A level worked out from the seconds since the note started, at every sample.
 pub fn shape<F>(f: F) -> Net
 where
@@ -239,6 +244,42 @@ impl AudioNode for Gliding {
         let y = b0 * x + b1 * self.x1 - a1 * self.y1 - a2 * self.y2;
         (self.x1, self.y2, self.y1) = (x, self.y1, y);
         [y as f32].into()
+    }
+}
+
+#[derive(Clone)]
+struct Clicks {
+    clicks: Vec<(f64, f64)>,
+    next: usize,
+    t: f64,
+    dt: f64,
+}
+
+impl AudioNode for Clicks {
+    const ID: u64 = 0x6d78_0005;
+    type Inputs = U0;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        (self.next, self.t) = (0, 0.0);
+    }
+
+    fn set_sample_rate(&mut self, rate: f64) {
+        self.dt = 1.0 / rate;
+    }
+
+    fn tick(&mut self, _input: &Frame<f32, U0>) -> Frame<f32, U1> {
+        let mut level = 0.0;
+        // A click sounds at the sample nearest its time.
+        while let Some(&(at, click)) = self.clicks.get(self.next) {
+            if at >= self.t + self.dt / 2.0 {
+                break;
+            }
+            level += click;
+            self.next += 1;
+        }
+        self.t += self.dt;
+        [level as f32].into()
     }
 }
 
