@@ -23,8 +23,8 @@ pub(crate) struct Fit {
     pub gains: [[f64; 8]; 3],
     /// The whole sound's level in dB at pp, mf and ff.
     pub levels: [f64; 3],
-    /// The seconds the sound takes to swell in, less this much per vel.
-    pub swell: (f64, f64),
+    /// The seconds the sound takes to swell in at pp, mf and ff.
+    pub swell: [f64; 3],
 }
 
 /// The bow's options, and for fitting, each band's gain in place of the one fitted for the note's vel.
@@ -48,10 +48,11 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let sustain = options.number("sustain");
     let by_vel = |pp: f64, mf: f64, ff: f64| pp + (mf - pp) * ((vel - 0.3) / 0.3).clamp(0.0, 1.0) + (ff - mf) * ((vel - 0.6) / 0.4).clamp(0.0, 1.0);
 
-    // The bow presses harder as it moves faster, as it must to hold the string in Helmholtz motion, by Schelleng's minimum bow force.
+    // The bow presses harder as it moves faster, as it must to hold the string in Helmholtz motion, by Schelleng's minimum bow force, and up to twice as hard below 110 Hz, where the string would otherwise slip twice a period.
     let speed = (0.2 + vel * 0.6) * options.number("bow_speed");
+    let low = (110.0 / hz(options.number("note"))).clamp(1.0, 2.0);
     let legato = options.number("legato").clamp(0.0, 1.0);
-    let bow = Bow { speed, force: 0.6 * speed * options.number("bow_force"), position: options.number("bow_position") as f32, takes: 0.15 - 0.12 * legato };
+    let bow = Bow { speed, force: 1.8 * low * speed * options.number("bow_force"), position: options.number("bow_position") as f32, takes: 0.03 - 0.01 * legato };
     let body = options.given("body_hz").unwrap_or(fit.body);
     let mut sound = string(options.follow("note"), bow) >> highpass_hz(body as f32, 0.541) >> highpass_hz(body as f32, 1.307);
     for (i, hz) in BANDS.into_iter().enumerate() {
@@ -70,8 +71,8 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let hiss = (pink_noise(ctx.seed()) >> highpass_hz((1800.0 - vel * 400.0) as f32, 0.707)) * db(by_vel(-35.5, -35.5, -30.5)) as f32;
     sound = (sound + hiss) >> dcblock::<f32>();
 
-    // The string swells in, slower the softer it is bowed, though never over more than part of its sustain; on a bow change it speaks within 60 ms.
-    let from_silence = (fit.swell.0 - fit.swell.1 * vel).min(sustain * 0.4);
+    // The string swells in as the recordings do at each dynamic, though never over more than part of its sustain; on a bow change it speaks within 60 ms.
+    let from_silence = by_vel(fit.swell[0], fit.swell[1], fit.swell[2]).min(sustain * 0.4);
     let swell = (from_silence + (0.06f64.min(from_silence) - from_silence) * legato).max(1e-3);
     let rising = shape(move |t| 1.0 - (1.0 - (t / swell).min(1.0)).powi(2));
     let level = (vel.powf(0.6) * db(by_vel(fit.levels[0], fit.levels[1], fit.levels[2]))) as f32;
@@ -82,8 +83,12 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
 fn delays(freq: f32, position: f32) -> (f32, f32) {
     let period = OVERSAMPLED as f32 / freq;
     let (neck_cut, bridge_cut) = cuts(freq);
-    // A one-pole low-pass delays a sine by its phase over the sine's angular step.
-    let lag = |cut: f32| (freq / cut).atan() / (std::f32::consts::TAU * freq / OVERSAMPLED as f32);
+    // FunDSP's one-pole low-pass, y = (1 - a) x + a y, delays a sine at angular step w by atan2(a sin w, 1 - a cos w) / w samples.
+    let w = std::f32::consts::TAU * freq / OVERSAMPLED as f32;
+    let lag = |cut: f32| {
+        let a = (-std::f32::consts::TAU * cut / OVERSAMPLED as f32).exp();
+        (a * w.sin()).atan2(1.0 - a * w.cos()) / w
+    };
     let neck = ((1.0 - position) * period - 1.0 - lag(neck_cut)) / OVERSAMPLED as f32;
     let bridge = (position * period - 1.0 - lag(bridge_cut)) / OVERSAMPLED as f32;
     (neck, bridge)
@@ -106,13 +111,13 @@ struct Bow {
 /// The bowed string: a waveguide whose two halves meet at the bow, where friction holds the string or lets it slip, following its note's pitch.
 fn string(note: Net, bow: Bow) -> Net {
     let Bow { speed, force, position, takes } = bow;
-    let width = force as f32;
     let (neck_loss, bridge_loss) = (0.995f32, 0.97f32);
 
-    let bow = envelope(move |t: f64| speed * (0.05 + 0.95 * (t / takes).min(1.0)));
+    // The bow reaches its speed and force together and quickly, so the string takes up Helmholtz motion at once, after Guettler's attacks.
+    let bow = envelope(move |t: f64| speed * (0.05 + 0.95 * (t / takes).min(1.0))) | envelope(move |t: f64| force * (0.05 + 0.95 * (t / takes).min(1.0)));
     // The string sticks to the bow while their speeds are close, and slips once they part; the pitch rides along to each half.
-    let junction = map(move |i: &Frame<f32, U4>| -> Frame<f32, U4> {
-        let (bow, freq, from_neck, from_bridge) = (i[0], i[1], i[2], i[3]);
+    let junction = map(move |i: &Frame<f32, U5>| -> Frame<f32, U4> {
+        let (bow, width, freq, from_neck, from_bridge) = (i[0], i[1], i[2], i[3], i[4]);
         let slip = bow - (from_neck + from_bridge);
         let held = slip / (1.0 + (slip / width).powi(4));
         [from_bridge + held, freq, from_neck + held, freq].into()

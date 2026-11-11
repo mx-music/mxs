@@ -63,27 +63,49 @@ defmodule FitBowed do
     {attack, Enum.map(@bands, &bands[&1])}
   end
 
-  # Moves each band's gain most of the way to its target each round.
+  # Fits the body corner, shared by every vel, to the misses' mean, and each vel's band gains to what is left, a little each round.
   # A band the recordings do not measure keeps 0, and so does the band holding the lowest note's fundamental, which every band is measured against.
-  def fit(synth, vel, rounds, dir) do
-    {_, target} = targets(synth, vel)
+  # No gain goes beyond 30 dB either way, past which a peak or notch colours the sound more than a miss of a few dB does.
+  def fit(synth, rounds, dir) do
     {notes, _} = @recorded[synth]
     lowest = 440 * :math.pow(2, (Enum.min(notes) - 69) / 12)
     reference = Enum.find_index(@bands, fn {low, high} -> lowest >= low and lowest < high end)
+    vels = [0.3, 0.6, 1.0]
 
-    gains =
-      Enum.reduce(1..rounds//1, List.duplicate(0.0, 8), fn _, gains ->
-        levels = levels(measure(synth, vel, gains, dir))
+    {body, gains} =
+      Enum.reduce(1..rounds//1, {lowest * 0.75, Map.new(vels, &{&1, List.duplicate(0.0, 8)})}, fn round, {body, gains} ->
+        misses =
+          Map.new(vels, fn vel ->
+            {_, target} = targets(synth, vel)
+            levels = levels(measure(synth, vel, gains[vel], dir, body_hz: body))
+            {vel, Enum.zip_with(levels, target, fn l, t -> if is_number(l) and is_number(t), do: t - l end)}
+          end)
 
-        Enum.zip_with([gains, levels, target, Enum.to_list(0..7)], fn
-          [g, _, _, ^reference] -> g
-          [g, l, t, _] when is_number(l) and is_number(t) -> g + 0.6 * (t - l)
-          [g, _, _, _] -> g
-        end)
+        measured = misses |> Map.values() |> List.flatten() |> Enum.reject(&is_nil/1)
+        mean = Enum.sum(measured) / length(measured)
+        spread = :math.sqrt(Enum.sum(Enum.map(measured, &((&1 - mean) ** 2))) / length(measured))
+        IO.puts("round #{round}: body #{Float.round(body, 1)} Hz, mean miss #{Float.round(mean, 1)} dB, spread #{Float.round(spread, 1)} dB")
+        body = (body * :math.pow(2, mean / 20)) |> max(lowest * 0.5) |> min(lowest * 3)
+
+        gains =
+          Map.new(vels, fn vel ->
+            {vel,
+             Enum.zip_with([gains[vel], misses[vel], Enum.to_list(0..7)], fn
+               [g, _, ^reference] -> g
+               [g, m, _] when is_number(m) -> (g + 0.6 * (m - mean)) |> max(-30.0) |> min(30.0)
+               [g, _, _] -> g
+             end)}
+          end)
+
+        {body, gains}
       end)
 
-    report(synth, vel, measure(synth, vel, gains, dir))
-    IO.puts("  gains #{Enum.map_join(gains, ", ", &Float.round(&1, 1))}")
+    for vel <- vels do
+      report(synth, vel, measure(synth, vel, gains[vel], dir, body_hz: body))
+      IO.puts("  gains #{Enum.map_join(gains[vel], ", ", &Float.round(&1, 1))}")
+    end
+
+    IO.puts("body #{Float.round(body, 1)} Hz")
   end
 
   # Each body corner's misses against the recordings with no gains, and their spread, which gains then have to make up.
@@ -129,6 +151,6 @@ if args != [] do
   case rest do
     ["body"] -> FitBowed.body(synth, dir)
     ["score"] -> for vel <- [0.3, 0.6, 1.0], do: FitBowed.report(synth, vel, FitBowed.measure(synth, vel, List.duplicate(nil, 8), dir))
-    _ -> for vel <- [0.3, 0.6, 1.0], do: FitBowed.fit(synth, vel, String.to_integer(List.first(rest) || "5"), dir)
+    _ -> FitBowed.fit(synth, String.to_integer(List.first(rest) || "8"), dir)
   end
 end

@@ -30,15 +30,30 @@ pub fn all() -> Vec<Synth> {
         sitar(),
         harmonium(),
         tanpura(),
-        bowed("violin", Bowed { peak: 333.0, rise: 18.0, soft_rise: 6.0, fall: 12.0, soft_fall: 3.0, fade: 2.1, fade_slope: -0.55, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit { body: 147.0, gains: [[0.0; 8]; 3], levels: [-16.75, -16.70, -18.15], swell: (1.1, 0.75) }),
-        bowed("viola", Bowed { peak: 350.0, rise: 17.0, soft_rise: 3.0, fall: 14.0, soft_fall: 4.5, fade: 3.7, fade_slope: -0.7, pluck: 0.13, gain: 0.3, count: 32, level: -15.0 }, Fit { body: 98.1, gains: [[0.0; 8]; 3], levels: [-11.15, -15.50, -19.65], swell: (0.95, 0.45) }),
-        bowed("cello", Bowed { peak: 144.0, rise: 14.0, soft_rise: 3.0, fall: 10.0, soft_fall: 6.5, fade: 4.0, fade_slope: -0.15, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit {
-            body: 49.05,
-            gains: [[18.5, 16.8, 9.3, 8.1, 24.4, 3.6, 20.8, 18.7], [20.0, 15.2, 9.6, 6.5, 26.3, 9.3, 27.8, 19.2], [7.0, 7.4, 1.6, 3.0, 17.3, 4.6, 22.4, 14.4]],
-            levels: [-41.85, -47.70, -35.75],
-            swell: (0.95, 0.3),
+        bowed("violin", Bowed { peak: 333.0, rise: 18.0, soft_rise: 6.0, fall: 12.0, soft_fall: 3.0, fade: 2.1, fade_slope: -0.55, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit {
+            body: 384.3,
+            gains: [[0.0, 0.0, 12.2, -3.9, 5.1, -11.6, 4.5, 5.0], [0.0, 0.0, 7.2, 2.1, 1.4, -1.5, 8.0, 6.1], [0.0, 0.0, 3.8, 2.0, 3.4, -3.2, 3.5, 11.5]],
+            levels: [-25.05, -28.90, -30.45],
+            swell: [0.875, 0.65, 0.35],
         }),
-        bowed("double_bass", Bowed { peak: 84.0, rise: 24.0, soft_rise: 5.0, fall: 19.5, soft_fall: 2.0, fade: 3.9, fade_slope: 0.0, pluck: 0.13, gain: 0.6, count: 64, level: 0.0 }, Fit { body: 30.9, gains: [[0.0; 8]; 3], levels: [-9.15, -11.80, -14.35], swell: (0.45, 0.18) }),
+        bowed("viola", Bowed { peak: 350.0, rise: 17.0, soft_rise: 3.0, fall: 14.0, soft_fall: 4.5, fade: 3.7, fade_slope: -0.7, pluck: 0.13, gain: 0.3, count: 32, level: -15.0 }, Fit {
+            body: 367.1,
+            gains: [[0.0, 9.3, 8.8, -6.2, 7.6, -0.8, 10.4, 3.7], [0.0, 13.2, 6.4, -4.6, 10.4, -0.7, 15.3, 0.5], [0.0, 12.7, 11.2, -6.2, 8.0, 2.4, 17.0, 1.7]],
+            levels: [-21.45, -29.20, -35.05],
+            swell: [0.815, 0.68, 0.5],
+        }),
+        bowed("cello", Bowed { peak: 144.0, rise: 14.0, soft_rise: 3.0, fall: 10.0, soft_fall: 6.5, fade: 4.0, fade_slope: -0.15, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit {
+            body: 133.1,
+            gains: [[-2.7, 2.1, 2.8, -7.2, 6.4, -8.3, 5.6, -5.3], [-1.5, 1.1, 2.8, -6.1, 7.8, -2.1, 11.7, -6.2], [-5.5, 1.4, -2.3, -3.8, 3.7, -1.5, 12.3, -4.9]],
+            levels: [-18.75, -22.40, -20.35],
+            swell: [0.86, 0.77, 0.65],
+        }),
+        bowed("double_bass", Bowed { peak: 84.0, rise: 24.0, soft_rise: 5.0, fall: 19.5, soft_fall: 2.0, fade: 3.9, fade_slope: 0.0, pluck: 0.13, gain: 0.6, count: 64, level: 0.0 }, Fit {
+            body: 67.5,
+            gains: [[8.4, 4.1, -5.9, -6.8, -8.7, -3.0, -8.3, -3.0], [11.2, 5.1, -2.6, -3.4, -7.2, -0.0, -3.7, -9.4], [17.3, 8.1, -0.1, 1.2, -1.4, 3.5, 0.9, -0.7]],
+            levels: [-19.05, -24.20, -31.55],
+            swell: [0.396, 0.342, 0.22],
+        }),
     ]
 }
 
