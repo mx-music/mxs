@@ -1,7 +1,7 @@
 use fundsp::prelude::*;
 use mxs::graph::{Clause, Graph};
 use mxs::nodes::{hz, struck};
-use mxs::{Engine, Event, Note, RATE, Spec, Synth, Value};
+use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
 
 fn n(x: f64) -> Graph {
     Graph::Number(x)
@@ -122,4 +122,35 @@ fn an_option_the_note_leaves_out_takes_its_fallback() {
     let synth = || Synth::graph("drum", specs.clone(), vec![Clause { matches: vec![], graph: rings(call("mul", vec![call("impulse", vec![]), level.clone()]), 0.1) }]).unwrap();
     assert_eq!(render(synth(), &[])[0], 63.0 * std::f32::consts::FRAC_1_SQRT_2);
     assert_eq!(render(synth(), &[("note", Value::Number(40.0))])[0], 40.0 * std::f32::consts::FRAC_1_SQRT_2);
+}
+
+fn through(effect: Option<Effect>) -> Vec<f32> {
+    let mut engine = Engine::offline(RATE);
+    let level = call("mul", vec![opt("vel"), n(0.5)]);
+    engine.register(Synth::graph("traced", note_specs(), vec![Clause { matches: vec![], graph: rings(struck_mode(1.0, level), 0.8) }]).unwrap());
+    let chain = effect.map(|effect| {
+        let name = effect.name().to_string();
+        engine.register_effect(effect);
+        engine.start_effects(&[(name, vec![])]).unwrap()
+    });
+    engine.play(&[(0.0, Event::Note { id: None, synth: "traced".to_string(), options: vec![], chain })]).unwrap();
+    engine.render(1.0).unwrap().0
+}
+
+#[test]
+fn an_effect_traced_as_a_graph_shapes_each_channel_coming_in() {
+    let dry = through(None);
+    let halved = through(Some(Effect::graph("halve", vec![], call("mul", vec![call("input", vec![]), n(0.5)])).unwrap()));
+    let doubled = through(Some(Effect::graph("double", vec![], call("add", vec![call("input", vec![]), call("input", vec![])])).unwrap()));
+    let peak = |s: &[f32]| s.iter().fold(0f32, |m, x| m.max(x.abs()));
+    assert!(peak(&dry) > 0.01);
+    assert!((peak(&halved) / peak(&dry) - 0.5).abs() < 1e-3);
+    assert!((peak(&doubled) / peak(&dry) - 2.0).abs() < 1e-3);
+}
+
+#[test]
+fn a_synth_that_takes_an_input_is_refused_when_registered() {
+    let graph = rings(call("input", vec![]), 0.5);
+    let refused = Synth::graph("listens", note_specs(), vec![Clause { matches: vec![], graph }]);
+    assert!(matches!(refused, Err(reason) if reason.contains("a synth has no input")));
 }

@@ -2,7 +2,7 @@
 //! An option is read once, when the note starts; arithmetic on options and numbers is worked out then, and a node whose level works out to 0 is left out.
 
 use crate::nodes::{self, db, hz};
-use crate::{Context, Note, Options, Spec, Synth, Value};
+use crate::{Context, Effect, Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
 
 /// A traced value: a number, a name such as a noise's colour, one of the note's options, a list, or a call of the vocabulary.
@@ -34,7 +34,7 @@ const ARITHMETIC: &[&str] = &[
 ];
 const NODES: &[&str] = &[
     "impulse", "follow", "time", "sine", "partials", "bowed_string", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "delay", "dc_block", "envelope", "perc",
-    "mix", "gain", "note_envelope", "rings",
+    "mix", "gain", "note_envelope", "rings", "input",
 ];
 
 impl Synth {
@@ -42,18 +42,50 @@ impl Synth {
     pub fn graph(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth, String> {
         for clause in &clauses {
             known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
+            if calls(&clause.graph, "input") {
+                return Err(format!("{name}: a synth has no input; an effect takes one"));
+            }
         }
         let owner = name.to_string();
         Ok(Synth::new(name).options(specs).build(move |options, ctx| {
             let Some(clause) = clauses.iter().find(|c| c.matches.iter().all(|(k, v)| options.value(k) == v)) else {
                 return Note::rings(dc(0.0f32), 0.0);
             };
-            match (Build { options, ctx }).eval(&clause.graph) {
+            match (Build { options, ctx, inputs: None }).eval(&clause.graph) {
                 Ok(V::Note(note)) => note,
                 Ok(_) => panic!("{owner} ends with neither note_envelope nor rings"),
                 Err(reason) => panic!("{owner}: {reason}"),
             }
         }))
+    }
+}
+
+impl Effect {
+    /// An effect traced by defeffect: `graph` is one channel's sound, its `input` that channel coming in, and it is built once for each channel.
+    pub fn graph(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, String> {
+        known(&graph).map_err(|reason| format!("{name}: {reason}"))?;
+        let owner = name.to_string();
+        let decl = specs.into_iter().fold(Effect::new(name), |decl, spec| decl.option(spec));
+        Ok(decl.build(move |options, ctx| {
+            let mut channel = || -> Net {
+                let mut build = Build { options, ctx, inputs: Some(0) };
+                let sound = build.eval(&graph).and_then(signal).unwrap_or_else(|reason| panic!("{owner}: {reason}"));
+                // Each input in the graph takes the same channel.
+                match build.inputs.unwrap_or(0) {
+                    0 => net(sink()) | sound,
+                    uses => (1..uses).fold(net(pass()), |inputs, _| inputs ^ net(pass())) >> sound,
+                }
+            };
+            channel() | channel()
+        }))
+    }
+}
+
+fn calls(graph: &Graph, node: &str) -> bool {
+    match graph {
+        Graph::List(items) => items.iter().any(|g| calls(g, node)),
+        Graph::Call { name, args, named } => name == node || args.iter().chain(named.iter().map(|(_, v)| v)).any(|g| calls(g, node)),
+        _ => false,
     }
 }
 
@@ -141,6 +173,8 @@ fn mul(a: V, b: V) -> Result<V, String> {
 struct Build<'a> {
     options: &'a Options,
     ctx: &'a mut Context,
+    /// How many times an effect's graph takes its input so far; None in a synth, which has none.
+    inputs: Option<usize>,
 }
 
 impl Build<'_> {
@@ -216,6 +250,13 @@ impl Build<'_> {
                 let phase = take("phase").map(|p| number(p, "a sine's phase")).transpose()?.unwrap_or(0.0);
                 Ok(V::Sig(freq >> net(An(Sine::<f32>::with_phase((phase / std::f64::consts::TAU).rem_euclid(1.0) as f32)))))
             }
+            "input" => match self.inputs.as_mut() {
+                Some(uses) => {
+                    *uses += 1;
+                    Ok(V::Sig(net(pass())))
+                }
+                None => Err("a synth has no input; an effect takes one".to_string()),
+            },
             "time" => Ok(V::Sig(nodes::shape(|t| t))),
             "bowed_string" => {
                 let note = signal(take("note").ok_or("bowed_string needs note:")?)?;
