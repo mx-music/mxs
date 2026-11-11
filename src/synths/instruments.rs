@@ -606,7 +606,8 @@ fn timpani() -> Synth {
         let skin_rings: Vec<f64> = skin_hz.iter().map(|f| between(*f, &bands, &[1.8, 0.6, 0.6, 0.5, 0.42])).collect();
         let skin_at: Vec<f64> = skin_hz.iter().map(|f| f * freq / 150.0).collect();
         let skin = modes(mallet(), &skin_at, &skin_levels, &skin_rings);
-        let gain = db(-34.0) * (vel / 0.6).powi(2);
+        // 3.9 dB under the design's level, as its mallet's noise, drawn from another generator than scsynth's, sets the drum ringing that much louder than scsynth's render.
+        let gain = db(-34.0 - 3.9) * (vel / 0.6).powi(2);
         let all: Vec<f64> = quieter.iter().chain(&skin_levels).copied().collect();
         let longest: Vec<f64> = rings.iter().chain(&skin_rings).copied().collect();
         Note::envelope((drum + skin) * gain as f32, o).within(silent_after(&all, &longest, gain))

@@ -138,9 +138,9 @@ pub fn white_noise(seed: u64) -> Net {
     Net::wrap(Box::new(white().seed(seed)))
 }
 
-/// Pink noise drawn from `seed`.
+/// Pink noise drawn from `seed`, as loud in each band as scsynth's pink noise, which mx's designs were made with; FunDSP's measures 4.3 dB louder from 100 Hz to 8 kHz.
 pub fn pink_noise(seed: u64) -> Net {
-    Net::wrap(Box::new(pink::<f64>().seed(seed)))
+    Net::wrap(Box::new(pink::<f64>().seed(seed))) * db(-4.3) as f32
 }
 
 #[derive(Clone)]
