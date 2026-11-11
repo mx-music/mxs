@@ -464,3 +464,27 @@ fn five_hundred_berimbau_strokes_at_once_render_faster_than_they_play_under_the_
     let stolen = 500 - mxs::VOICES;
     assert_eq!(engine.warnings(), [format!("{stolen} notes were stolen to keep to {} at once", mxs::VOICES)]);
 }
+
+#[test]
+fn events_sent_5_ms_late_play_at_once_and_are_counted_late() {
+    let mut engine = engine();
+    engine.register(level());
+    engine.play(&[(0.0, Event::note(Some(1), "level", &[("level", 0.5)]))]).unwrap();
+    engine.render(0.1).unwrap();
+    let late = engine.now() - 0.005;
+    let change = Event::Set { target: Target::Sounds(vec![1]), options: vec![("level".into(), 0.0)] };
+    engine.play(&[(late, Event::note(None, "level", &[])), (late, change)]).unwrap();
+    let (left, _) = engine.render(0.1).unwrap();
+    let centre = 0.5f32.sqrt();
+    assert!((left[0] - centre).abs() < 1e-6, "{}", left[0]);
+    assert_eq!(engine.warnings(), ["2 events arrived after their time, by up to 5.0 ms, and played at once"]);
+    assert!(engine.warnings().is_empty());
+}
+
+#[test]
+fn an_offline_engine_has_no_system_clock_to_play_at() {
+    let mut engine = engine();
+    assert_eq!(engine.clock().1, None);
+    let at = std::time::SystemTime::now();
+    assert_eq!(engine.play_at(&[(at, Event::note(None, "saw", &[]))]), Err(Error::Offline));
+}

@@ -22,15 +22,17 @@ pub(crate) enum Out {
     Tap,
 }
 
-/// How many notes may sound at once, and how many the mixer has stolen to keep to it.
+/// How many notes may sound at once, how many the mixer has stolen to keep to it, and how many events reached it after their time, by up to how many frames.
 pub(crate) struct Voices {
     pub limit: AtomicUsize,
     pub stolen: AtomicU64,
+    pub late: AtomicU64,
+    pub most_late: AtomicU64,
 }
 
 impl Voices {
     pub fn new(limit: usize) -> Arc<Voices> {
-        Arc::new(Voices { limit: AtomicUsize::new(limit), stolen: AtomicU64::new(0) })
+        Arc::new(Voices { limit: AtomicUsize::new(limit), stolen: AtomicU64::new(0), late: AtomicU64::new(0), most_late: AtomicU64::new(0) })
     }
 }
 
@@ -41,6 +43,8 @@ pub(crate) struct Voice {
     pub input: Option<(usize, usize)>,
     pub unit: Box<dyn AudioUnit>,
     pub start: u64,
+    /// How many frames its time had passed when it was sent, which moved its start to then.
+    pub late: u64,
     pub end: u64,
     pub fade: u64,
     /// The loudest sample of its last block, which picks the quietest note to steal.
@@ -160,8 +164,14 @@ impl Mixer {
     pub fn receive(&mut self) {
         while let Ok(command) = self.commands.pop() {
             match command {
-                Command::Start(voice) => self.voices.push(voice),
-                Command::Change(change) => self.changes.push(change),
+                Command::Start(voice) => {
+                    self.count_late(voice.late + self.now.saturating_sub(voice.start));
+                    self.voices.push(voice);
+                }
+                Command::Change(change) => {
+                    self.count_late(self.now.saturating_sub(change.at));
+                    self.changes.push(change);
+                }
                 Command::StartChain(chain) => self.chains.push(chain),
                 Command::StopChain { key, at } => {
                     if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
@@ -195,6 +205,13 @@ impl Mixer {
                     }
                 }
             }
+        }
+    }
+
+    fn count_late(&self, frames: u64) {
+        if frames > 0 {
+            self.limit.late.fetch_add(1, Ordering::Relaxed);
+            self.limit.most_late.fetch_max(frames, Ordering::Relaxed);
         }
     }
 

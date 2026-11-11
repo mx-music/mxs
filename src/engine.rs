@@ -1,5 +1,6 @@
 //! The engine: synths and effects registered by name, samples loaded from files, and events stamped with seconds, played live or rendered offline.
 
+use crate::clock::Timing;
 use crate::device::{self, Format, Range, Settings};
 use crate::mixer::{CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices};
 use crate::options::{Context, Control, Options};
@@ -11,9 +12,9 @@ use fundsp::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Seconds of silence a note's end fades over, so a note cut at its end does not click.
 const END_FADE: f64 = 0.01;
@@ -163,6 +164,7 @@ pub struct Engine {
     failed: Arc<AtomicBool>,
     lost: Arc<AtomicBool>,
     device: String,
+    timing: Option<Arc<Mutex<Timing>>>,
     output: Output,
 }
 
@@ -209,7 +211,7 @@ impl Engine {
         let clock = Arc::new(AtomicU64::new(0));
         let failed = Arc::new(AtomicBool::new(false));
         let (stop, stopped) = mpsc::channel::<()>();
-        let (ready, started) = mpsc::channel::<Result<(f64, usize, String), String>>();
+        let (ready, started) = mpsc::channel::<Result<Opened, String>>();
         let failing = failed.clone();
         let lost = Arc::new(AtomicBool::new(false));
         let losing = lost.clone();
@@ -219,8 +221,8 @@ impl Engine {
         let limiting = voices.clone();
         // cpal's streams cannot move between threads on every platform, so one thread owns them until the engine is dropped.
         std::thread::spawn(move || match open(receiving, returning, mixing, limiting, failing, losing, &settings) {
-            Ok((streams, rate, inputs, name)) => {
-                let _ = ready.send(Ok((rate, inputs, name)));
+            Ok((streams, opened)) => {
+                let _ = ready.send(Ok(opened));
                 let _ = stopped.recv();
                 drop(streams);
             }
@@ -228,11 +230,12 @@ impl Engine {
                 let _ = ready.send(Err(reason));
             }
         });
-        let (rate, inputs, name) = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
-        let mut engine = Engine::with(rate, commands, garbage, clock, voices, failed, Output::Live { stop });
-        engine.inputs = inputs;
+        let opened = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
+        let mut engine = Engine::with(opened.rate, commands, garbage, clock, voices, failed, Output::Live { stop });
+        engine.inputs = opened.inputs;
         engine.lost = lost;
-        engine.device = name;
+        engine.device = opened.name;
+        engine.timing = Some(opened.timing);
         Ok(engine)
     }
 
@@ -270,6 +273,7 @@ impl Engine {
             failed,
             lost: Arc::new(AtomicBool::new(false)),
             device: String::new(),
+            timing: None,
             output,
         }
     }
@@ -286,6 +290,35 @@ impl Engine {
     /// The seconds the engine has played or rendered so far.
     pub fn now(&self) -> f64 {
         self.clock.load(Ordering::Acquire) as f64 / self.rate
+    }
+
+    /// The engine's seconds now, and the system time at which it renders them; a live engine knows it from its first buffer on, an offline one never.
+    pub fn clock(&self) -> (f64, Option<SystemTime>) {
+        let now = self.now();
+        let system = self.timing().and_then(|t| t.system(now)).map(|s| SystemTime::UNIX_EPOCH + Duration::from_secs_f64(s));
+        (now, system)
+    }
+
+    /// Seconds from rendering a frame to the device playing it, as the device gives it.
+    pub fn latency(&self) -> Option<f64> {
+        self.timing().and_then(|t| t.latency)
+    }
+
+    /// Plays events, each at a system time, which the engine maps to its own seconds however far the two clocks have drifted apart.
+    pub fn play_at(&mut self, events: &[(SystemTime, Event)]) -> Result<(), Error> {
+        let Some(timing) = self.timing() else { return Err(Error::Offline) };
+        let events: Vec<(f64, Event)> = events
+            .iter()
+            .map(|(at, event)| {
+                let system = at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+                (timing.engine(system).unwrap_or(0.0), event.clone())
+            })
+            .collect();
+        self.play(&events)
+    }
+
+    fn timing(&self) -> Option<Timing> {
+        self.timing.as_ref().map(|t| t.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
     /// Adds a synth, replacing one of the same name.
@@ -340,6 +373,13 @@ impl Engine {
 
     /// Values held to their ranges since the last call, once for each option, and how many notes were stolen to keep to the voice limit.
     pub fn warnings(&mut self) -> Vec<String> {
+        let late = self.voices.late.swap(0, Ordering::Relaxed);
+        let most = self.voices.most_late.swap(0, Ordering::Relaxed);
+        if late > 0 {
+            let events = if late == 1 { "event arrived" } else { "events arrived" };
+            let ms = most as f64 / self.rate * 1000.0;
+            self.warnings.push(format!("{late} {events} after their time, by up to {ms:.1} ms, and played at once"));
+        }
         let stolen = self.voices.stolen.swap(0, Ordering::Relaxed);
         if stolen > 0 {
             let limit = self.voices.limit.load(Ordering::Relaxed);
@@ -718,10 +758,12 @@ impl Engine {
         unit.allocate();
         self.next += 1;
         let key = self.next;
-        let start = Ord::max(self.frames(at), self.clock.load(Ordering::Acquire));
+        let now = self.clock.load(Ordering::Acquire);
+        let start = Ord::max(self.frames(at), now);
+        let late = now.saturating_sub(self.frames(at));
         let end = start.saturating_add(Ord::max(self.frames(note.end), 1));
         let fade = Ord::max(self.frames(END_FADE), 1);
-        let voice = Voice { key, out, input, unit: Box::new(unit), start, end, fade, level: 0.0, stolen: false };
+        let voice = Voice { key, out, input, unit: Box::new(unit), start, late, end, fade, level: 0.0, stolen: false };
         let chain = match out {
             Out::Chain(key) => Some(key),
             _ => None,
@@ -820,7 +862,7 @@ fn open(
     failed: Arc<AtomicBool>,
     lost: Arc<AtomicBool>,
     settings: &Settings,
-) -> Result<(Streams, f64, usize, String), String> {
+) -> Result<(Streams, Opened), String> {
     let host = cpal::default_host();
     let device = device::output(&host, settings.device.as_deref())?;
     let name = device::name_of(&device);
@@ -833,38 +875,69 @@ fn open(
     let (input_stream, input) =
         if settings.with_input { open_input(&host, settings.input_device.as_deref(), chosen.rate)? } else { (None, None) };
     let inputs = input.as_ref().map_or(0, |i| i.channels);
+    let frames = clock.clone();
     let mixer = Mixer::new(commands, garbage, clock, voices, input);
+    let timing = Arc::new(Mutex::new(Timing::new(chosen.rate as f64)));
+    let live = Live { mixer, failed, lost, frames, timing: timing.clone() };
     let config = cpal::StreamConfig {
         channels: chosen.channels,
         sample_rate: chosen.rate,
         buffer_size: chosen.buffer.map_or(cpal::BufferSize::Default, cpal::BufferSize::Fixed),
     };
     let stream = match chosen.format {
-        Format::F32 => output_stream::<f32>(&device, config, mixer, failed, lost),
-        Format::I24 => output_stream::<cpal::I24>(&device, config, mixer, failed, lost),
-        Format::I16 => output_stream::<i16>(&device, config, mixer, failed, lost),
+        Format::F32 => output_stream::<f32>(&device, config, live),
+        Format::I24 => output_stream::<cpal::I24>(&device, config, live),
+        Format::I16 => output_stream::<i16>(&device, config, live),
     }?;
     stream.play().map_err(|e| e.to_string())?;
-    Ok(((input_stream, stream), chosen.rate as f64, inputs, name))
+    let waiting = Instant::now();
+    while timing.lock().unwrap_or_else(|e| e.into_inner()).system(0.0).is_none() {
+        if waiting.elapsed() > Duration::from_secs(2) {
+            return Err(format!("{name} started but asked for no audio within 2 seconds"));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    Ok(((input_stream, stream), Opened { rate: chosen.rate as f64, inputs, name, timing }))
 }
 
-fn output_stream<T>(
-    device: &cpal::Device,
-    config: cpal::StreamConfig,
-    mut mixer: Mixer,
+/// What a live engine learns once its device is playing.
+struct Opened {
+    rate: f64,
+    inputs: usize,
+    name: String,
+    timing: Arc<Mutex<Timing>>,
+}
+
+/// What the output callback owns.
+struct Live {
+    mixer: Mixer,
     failed: Arc<AtomicBool>,
     lost: Arc<AtomicBool>,
-) -> Result<cpal::Stream, String>
+    frames: Arc<AtomicU64>,
+    timing: Arc<Mutex<Timing>>,
+}
+
+fn output_stream<T>(device: &cpal::Device, config: cpal::StreamConfig, live: Live) -> Result<cpal::Stream, String>
 where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {
+    let Live { mut mixer, failed, lost, frames, timing } = live;
     let channels = config.channels as usize;
     let mut left = vec![0.0f32; 16384];
     let mut right = vec![0.0f32; 16384];
     device
         .build_output_stream(
             config,
-            move |data: &mut [T], _| fill(&mut mixer, &failed, data, channels, &mut left, &mut right),
+            move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
+                let stamp = info.timestamp();
+                let latency = stamp.playback.duration_since(stamp.callback).as_secs_f64();
+                let system = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+                // The callback never waits on the engine's thread; a reading missed while it holds the lock is one of hundreds a second.
+                if let Ok(mut timing) = timing.try_lock() {
+                    timing.observe(frames.load(Ordering::Acquire), system, Some(latency));
+                }
+                fill(&mut mixer, &failed, data, channels, &mut left, &mut right)
+            },
             move |e| match e.kind() {
                 cpal::ErrorKind::DeviceNotAvailable => lost.store(true, Ordering::Release),
                 _ => eprintln!("mxs output: {e}"),
