@@ -649,6 +649,13 @@ impl Engine {
         }
     }
 
+    /// The voices of the notes played so far on an offline engine, taken out of its mixer, for measuring them alone.
+    #[cfg(test)]
+    pub(crate) fn take_voices(&mut self) -> Vec<Box<Voice>> {
+        let Output::Offline(mixer) = &mut self.output else { panic!("only an offline engine's voices can be taken") };
+        mixer.take_voices()
+    }
+
     fn frames(&self, seconds: f64) -> u64 {
         (seconds.max(0.0) * self.rate).round() as u64
     }
