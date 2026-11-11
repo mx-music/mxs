@@ -3,6 +3,7 @@
 mod basic;
 mod berimbau;
 mod drums;
+mod instruments;
 mod cello;
 mod piano;
 
@@ -15,5 +16,6 @@ pub fn all() -> Vec<crate::Synth> {
     let mut synths = vec![piano(), berimbau(), cello()];
     synths.extend(basic::all());
     synths.extend(drums::all());
+    synths.extend(instruments::all());
     synths
 }
