@@ -459,9 +459,8 @@ fn organ() -> Synth {
             let bourdon_level = if note >= 60.0 { loud * db(-13.0) * db(loud_level) } else { 0.0 };
             let bourdon = partials(pitch(), &[0.5, 1.5, 2.5], &[bourdon_level, 0.2 * bourdon_level, 0.05 * bourdon_level], &[0.0; 3]);
             let speak = segments(&[0.0, 1.0], &[0.12 + loud * 0.04], &[3.0]);
-            let chiff = (white_noise(ctx.seed()) >> bpf(freq * 3.0, 0.5)) * segments(&[0.0, 1.0, 0.0], &[0.005, 0.06], &[-4.0, -4.0]) * 0.05;
-            let wind = (pink_noise(ctx.seed()) >> bpf(freq * 2.0, 1.0)) * 0.005;
-            Note::envelope((pipes + bourdon) * speak * 0.03 + chiff + wind, o)
+            let wind = (pink_noise(ctx.seed()) >> bpf(freq * 2.0, 1.0)) * speak.clone() * 0.005;
+            Note::envelope((pipes + bourdon) * speak * 0.03 + wind, o)
         })
 }
 
