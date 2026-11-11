@@ -1,6 +1,6 @@
 //! mx's berimbau, after its design in mx's priv/synthdefs/mx-drums.scd: the string's partials struck by the stick, swung by the gourd, over the wire's close modes and the stick's thud.
 
-use crate::{db_amp, fast_envelope, midi_hz, perc, struck, Opts};
+use crate::{db_amp, fast_envelope, midi_hz, perc, struck, struck_coefficients, Opts};
 use fundsp::math::rnd1;
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -104,5 +104,80 @@ pub fn berimbau(opts: &Opts, rate: f64) -> Box<dyn AudioUnit> {
     let brighter = db_amp((vel - 0.6) * 5.0) as f32;
     let level = (0.2 * (vel / 0.6).powf(1.5) * GAIN) as f32;
     let length = Net::wrap(Box::new(envelope(|t: f64| if t < LENGTH { 1.0 } else { 0.0 })));
+    Box::new((sound >> highshelf_hz(1500.0, 0.707, brighter)) * level * length)
+}
+
+/// The same berimbau as one static graph of a fixed shape, as a compiled design would be: every partial swings, at 0 dB when its swing is none, and the coin's rattle is always there, silent without buzz.
+pub fn berimbau_static(opts: &Opts, rate: f64) -> Box<dyn AudioUnit> {
+    let vel = opts.get("vel", 0.6).clamp(0.0, 1.0);
+    let buzz = opts.get("buzz", 0.0).clamp(0.0, 1.0);
+    let coin = opts.get("coin", 0.0).clamp(0.0, 1.0).max(buzz);
+    let mix = |a: f64, b: f64| a + (b - a) * coin;
+    let hz = midi_hz(opts.get("note", 39.11)) * 1.0621f64.powf(coin);
+    let damp = 1.0 - buzz * 0.96;
+    let gourd = opts.get("gourd", 2.3);
+
+    let partials: [((f64, f64, f64, f64), f64); 19] = std::array::from_fn(|i| {
+        let swing = match RATIOS[i] as u32 {
+            2 => -4.5,
+            3 => -7.0,
+            5 => 12.0,
+            6 => 13.0,
+            _ => 0.0,
+        };
+        let swing = if gourd > 0.0 { swing } else { 0.0 };
+        (struck_coefficients(hz * RATIOS[i], 0.0, db_amp(mix(OPEN[i], PRESSED[i])), RINGS[i] * damp, rate), swing)
+    });
+    let string = (impulse::<U1>() >> lowpass_hz(5000.0, 0.707))
+        >> busi::<U19, _, _>(|i| {
+            let ((a1, a2, b0, b1), swing) = partials[i as usize];
+            biquad::<f64>(a1, a2, b0, b1, 0.0) * envelope(move |t: f64| db_amp((2.0 * PI * gourd * t).cos() * swing))
+        });
+
+    let at = |f: f64, table: &[f64; 7]| {
+        let f = f.clamp(BANDS[0], BANDS[6]);
+        let i = Ord::min(BANDS.iter().rposition(|&b| b <= f).unwrap(), 5);
+        table[i] + (table[i + 1] - table[i]) * (f - BANDS[i]) / (BANDS[i + 1] - BANDS[i])
+    };
+    let wire_levels: [f64; 7] = std::array::from_fn(|i| mix(WIRE_OPEN[i], WIRE_PRESSED[i]) + WIRE_FIT[i]);
+    let wire_modes: [(f64, f64, f64, f64); 96] = std::array::from_fn(|i| {
+        let f = 700.0 * (16000.0f64 / 700.0).powf((i as f64 + rnd1(2 * i as u64 + SEED)) / 96.0);
+        let spread = 0.2 * 30f64.powf(rnd1(2 * i as u64 + SEED + 1));
+        let long = i % 4 == 0;
+        let loud = db_amp(at(f, &wire_levels)) * if long { db_amp(at(f, &TAILS) + 10.0) } else { 1.0 };
+        let ring = if long { 1.5 } else { (at(f, &WIRE_RINGS) * spread).min(2.5) };
+        struck_coefficients(f, 0.0, loud, ring * damp.sqrt(), rate)
+    });
+    let wire = (white().seed(1) * fast_envelope(|t: f32| perc(t, 0.0002, 0.002)) * 0.6)
+        >> busi::<U96, _, _>(|i| {
+            let (a1, a2, b0, b1) = wire_modes[i as usize];
+            biquad::<f64>(a1, a2, b0, b1, 0.0)
+        });
+
+    let bands = [(200.0, -20.0, 0.3), (316.0, -20.0, 0.3), (502.0, -10.0, 0.5)];
+    let q = 1.0 / 0.35;
+    let thud = busi::<U3, _, _>(|i| {
+        let (centre, level, fade) = bands[i as usize];
+        let fade = fade * damp.sqrt();
+        let shape = envelope(move |t: f64| {
+            if t < 0.001 {
+                t / 0.001
+            } else if t < 0.001 + fade {
+                0.001f64.powf((t - 0.001) / fade)
+            } else {
+                0.001 * (1.0 - (t - 0.001 - fade) / 0.01).max(0.0)
+            }
+        });
+        let band = white().seed(2 + i) >> bandpass_hz(centre, q) >> bandpass_hz(centre, q) >> bandpass_hz(centre, q);
+        band * shape * (db_amp(level) / (q as f64).powi(3)) as f32
+    });
+    let tick = impulse::<U1>() >> highpass_hz(200.0, 0.707) * 0.1;
+    let rattle = (dc((hz as f32, 0.08)) >> pulse()) * 0.5 + 0.42 >> highpass_hz(1200.0, 0.707);
+    let rattle = rattle * fast_envelope(|t: f32| perc(t, 0.002, 0.12)) * (buzz * 0.3) as f32;
+    let sound = string * 0.05 + thud + wire * 0.05 + tick + rattle;
+
+    let brighter = db_amp((vel - 0.6) * 5.0) as f32;
+    let level = (0.2 * (vel / 0.6).powf(1.5) * GAIN) as f32;
+    let length = envelope(|t: f64| if t < LENGTH { 1.0 } else { 0.0 });
     Box::new((sound >> highshelf_hz(1500.0, 0.707, brighter)) * level * length)
 }

@@ -35,6 +35,7 @@ pub fn synth(name: &str, opts: &Opts, rate: f64) -> Option<Box<dyn AudioUnit>> {
         "piano.static" => Some(piano::piano_static(opts, rate)),
         "cello.bowed" => Some(cello::cello(opts, rate)),
         "berimbau" => Some(berimbau::berimbau(opts, rate)),
+        "berimbau.static" => Some(berimbau::berimbau_static(opts, rate)),
         _ => None,
     }
 }

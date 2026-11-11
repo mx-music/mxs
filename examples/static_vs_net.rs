@@ -4,10 +4,20 @@ use mx_engine::{render, synth, Opts, RATE};
 use std::time::Instant;
 
 fn main() {
-    for args in [vec!["note=21", "vel=1"], vec!["note=36", "vel=0.3"], vec!["note=60"], vec!["note=96", "vel=1"]] {
+    let cases = [
+        ("piano", vec!["note=21", "vel=1"]),
+        ("piano", vec!["note=36", "vel=0.3"]),
+        ("piano", vec!["note=60"]),
+        ("piano", vec!["note=96", "vel=1"]),
+        ("berimbau", vec![]),
+        ("berimbau", vec!["coin=1"]),
+        ("berimbau", vec!["buzz=1"]),
+    ];
+    for (name, args) in cases {
         let opts = Opts::parse(args.iter().copied()).unwrap();
-        let net = render("piano", &opts, 4.0).unwrap();
-        let fixed = render("piano.static", &opts, 4.0).unwrap();
+        let net = render(name, &opts, 3.0).unwrap();
+        let fixed = render(&format!("{name}.static"), &opts, 3.0).unwrap();
+        print!("{name} ");
         let peak = net.iter().fold(0f32, |m, x| m.max(x.abs()));
         let diff = net.iter().zip(&fixed).fold(0f32, |m, (a, b)| m.max((a - b).abs()));
         println!("{}: peak {peak:.4}, largest difference {diff:.2e} ({:.0} dB under the peak)", args.join(" "), 20.0 * (diff / peak).log10());
@@ -17,8 +27,17 @@ fn main() {
         println!("  from 50 ms on: largest difference {strings:.2e} ({:.0} dB under the peak)", 20.0 * (strings / peak).log10());
     }
 
-    for name in ["piano", "piano.static"] {
-        for note in ["note=36", "note=60", "note=96"] {
+    for (name, note) in [
+        ("piano", "note=36"),
+        ("piano", "note=60"),
+        ("piano", "note=96"),
+        ("piano.static", "note=36"),
+        ("piano.static", "note=60"),
+        ("piano.static", "note=96"),
+        ("berimbau", "buzz=0"),
+        ("berimbau.static", "buzz=0"),
+    ] {
+        {
             let opts = Opts::parse([note, "sustain=60"]).unwrap();
             let count = 200;
             let start = Instant::now();
