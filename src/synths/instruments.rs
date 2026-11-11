@@ -503,9 +503,8 @@ fn marimba() -> Synth {
         fades.extend([0.3, 0.1, 0.08, 0.06, 0.35, 0.35, 0.35, 0.35].iter().zip(&ratios[2..]).map(|(k, n)| ring * k * (1500.0 / (freq * n)).min(1.0).powf(0.8)));
         let hz_: Vec<f64> = ratios.iter().map(|r| freq * r).collect();
         let bar = modes(net(impulse::<U1>()), &hz_, &levels, &fades);
-        let seed = ctx.seed();
-        let low_tap = (white_noise(seed) >> lpf(2200.0) >> lpf(2200.0) >> lpf(2200.0) >> hpf(1000.0)) * hit(0.0005, 0.12, -4.0) * 0.55;
-        let high_tap = (white_noise(seed + 1) >> lpf(4000.0) >> lpf(4000.0) >> hpf(2500.0)) * hit(0.0005, 0.05, -4.0) * 0.3;
+        let low_tap = (white_noise(ctx.seed()) >> lpf(2200.0) >> lpf(2200.0) >> lpf(2200.0) >> hpf(1000.0)) * hit(0.0005, 0.12, -4.0) * 0.55;
+        let high_tap = (white_noise(ctx.seed()) >> lpf(4000.0) >> lpf(4000.0) >> hpf(2500.0)) * hit(0.0005, 0.05, -4.0) * 0.3;
         let gain = 0.1 * (vel / 0.6).powf(1.9);
         let sound = (bar + (low_tap + high_tap) * (vel / 0.6).sqrt() as f32) * gain as f32;
         Note::envelope(sound, o).within(silent_after(&levels, &fades, gain))
