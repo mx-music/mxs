@@ -25,6 +25,8 @@ pub(crate) struct Fit {
     pub levels: [f64; 3],
     /// The seconds the sound takes to swell in at pp, mf and ff.
     pub swell: [f64; 3],
+    /// How much the rosin's noise sways the bow's speed at pp, mf and ff.
+    pub rosin: [f64; 3],
 }
 
 /// The bow's options, and for fitting, each band's gain in place of the one fitted for the note's vel.
@@ -34,6 +36,7 @@ pub(crate) fn bow_options(mut synth: SynthDecl) -> SynthDecl {
         .option(Spec::float("bow_force").default(1.0).range(0.1, 4.0).doc("How hard the bow presses, against its force at the note's vel: the harder, the wider the speeds at which it holds the string."))
         .option(Spec::float("legato").default(0.0).range(0.0, 1.0).doc("1 changes bow from a note still sounding: the string speaks at once instead of swelling in from silence."))
         .option(Spec::hz("body_hz").range(20.0, 2000.0).doc("The corner below which the body radiates little, in place of the one fitted; for fitting."))
+        .option(Spec::float("rosin").range(0.0, 2.0).doc("How much the rosin's noise sways the bow's speed, in place of the one fitted; for fitting."))
         .option(Spec::float("bow_position").default(0.12).range(0.05, 0.5).doc("Where the bow meets the string, as a fraction of its length from the bridge."));
     for (name, hz) in EQ.iter().zip(BANDS) {
         let doc = format!("The gain in dB of the band at {hz} Hz, in place of the one fitted for the note's vel; for fitting.");
@@ -52,7 +55,7 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let speed = (0.2 + vel * 0.6) * options.number("bow_speed");
     let low = (110.0 / hz(options.number("note"))).clamp(1.0, 2.0);
     let legato = options.number("legato").clamp(0.0, 1.0);
-    let bow = Bow { speed, force: 1.8 * low * speed * options.number("bow_force"), position: options.number("bow_position") as f32, takes: 0.03 - 0.01 * legato };
+    let bow = Bow { speed, force: 1.8 * low * speed * options.number("bow_force"), position: options.number("bow_position") as f32, takes: 0.03 - 0.01 * legato, rosin: options.given("rosin").unwrap_or_else(|| by_vel(fit.rosin[0], fit.rosin[1], fit.rosin[2])) as f32, seed: ctx.seed() };
     let body = options.given("body_hz").unwrap_or(fit.body);
     let mut sound = string(options.follow("note"), bow) >> highpass_hz(body as f32, 0.541) >> highpass_hz(body as f32, 1.307);
     for (i, hz) in BANDS.into_iter().enumerate() {
@@ -106,15 +109,18 @@ struct Bow {
     position: f32,
     /// The seconds the bow takes to reach its speed.
     takes: f64,
+    /// How much the rosin's noise sways the bow's speed, and its seed.
+    rosin: f32,
+    seed: u64,
 }
 
 /// The bowed string: a waveguide whose two halves meet at the bow, where friction holds the string or lets it slip, following its note's pitch.
 fn string(note: Net, bow: Bow) -> Net {
-    let Bow { speed, force, position, takes } = bow;
+    let Bow { speed, force, position, takes, rosin, seed } = bow;
     let (neck_loss, bridge_loss) = (0.995f32, 0.97f32);
 
-    // The bow reaches its speed and force together and quickly, so the string takes up Helmholtz motion at once, after Guettler's attacks.
-    let bow = envelope(move |t: f64| speed * (0.05 + 0.95 * (t / takes).min(1.0))) | envelope(move |t: f64| force * (0.05 + 0.95 * (t / takes).min(1.0)));
+    // The bow reaches its speed and force together and quickly, so the string takes up Helmholtz motion at once, after Guettler's attacks; the rosin's noise sways its speed, which the string shapes around each harmonic.
+    let bow = envelope(move |t: f64| speed * (0.05 + 0.95 * (t / takes).min(1.0))) * (1.0 + pink::<f32>().seed(seed) * rosin) | envelope(move |t: f64| force * (0.05 + 0.95 * (t / takes).min(1.0)));
     // The string sticks to the bow while their speeds are close, and slips once they part; the pitch rides along to each half.
     let junction = map(move |i: &Frame<f32, U5>| -> Frame<f32, U4> {
         let (bow, width, freq, from_neck, from_bridge) = (i[0], i[1], i[2], i[3], i[4]);
