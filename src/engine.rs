@@ -243,7 +243,12 @@ impl Engine {
         Ok(self.next)
     }
 
-    /// Values held to their ranges since the last call, once for each option.
+    /// How many channels a loaded sample has.
+    pub fn sample_channels(&self, sample: u64) -> Option<usize> {
+        self.samples.get(&sample).map(|data| data.channels.len())
+    }
+
+        /// Values held to their ranges since the last call, once for each option.
     pub fn warnings(&mut self) -> Vec<String> {
         std::mem::take(&mut self.warnings)
     }
