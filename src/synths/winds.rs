@@ -127,12 +127,15 @@ pub(crate) struct Jet {
     pub(crate) catch: f32,
     fall: f32,
     last: f32,
+    /// The breath at which the jet takes half a period to cross to the edge, or 0 to hold it there.
+    /// The jet's speed grows as the square root of the breath, so blowing harder shortens its crossing and raises the pitch, as Terrien, Vergez, de la Cuadra and Fabre's jet-drive model has it, https://arxiv.org/abs/1402.3143.
+    pub(crate) tuned: f32,
     rate: f32,
 }
 
 impl Jet {
     pub(crate) fn new(corner: f32, turbulence: f32, even: f32) -> Jet {
-        Jet { bore: Line::new(4096), jet: Line::new(4096), loss: Loss::default(), drive: DcBlock::default(), out: DcBlock::default(), corner, reflection: 0.5, turbulence, even, wander: 0.0, drift: [0.0; 2], catch: 0.0, fall: 0.0, last: 0.0, rate: DEFAULT_SR as f32 }
+        Jet { bore: Line::new(4096), jet: Line::new(4096), loss: Loss::default(), drive: DcBlock::default(), out: DcBlock::default(), corner, reflection: 0.5, turbulence, even, wander: 0.0, drift: [0.0; 2], catch: 0.0, fall: 0.0, last: 0.0, tuned: 0.0, rate: DEFAULT_SR as f32 }
     }
 }
 
@@ -175,7 +178,10 @@ impl AudioNode for Jet {
         let a = Loss::pole(self.corner * freq, self.rate);
         let u = self.loss.y;
         self.jet.write(self.drive.tick(u) + self.turbulence * noise);
-        let swing = self.jet.read(0.5 * period);
+        // Past the tuned breath a player rolls the flute in, taking back most of the rise: the Philharmonia's flute rises 15 cents from mf to ff at A4 and 11 at G5, where the square root alone gives 38.
+        let ratio = self.tuned / breath.max(1.0e-3);
+        let crossing = if self.tuned == 0.0 { 1.0 } else if ratio < 1.0 { ratio.powf(0.17).max(0.5) } else { ratio.sqrt().min(2.0) };
+        let swing = self.jet.read(0.5 * period * crossing);
         let side = (1.5 * swing).tanh();
         let flow = -breath * side;
         self.bore.write(self.reflection * u + flow);
@@ -396,13 +402,13 @@ fn voiced(o: &Options, ctx: &mut Context, model: Net, fit: &Fit, centre: f32) ->
 
 /// The flute's air jet as a defsynth plays it, its turbulence drawn from `seed`.
 pub(crate) fn air_jet(pitch: Net, breath: Net, seed: u64, even: f64) -> Net {
-    played_jet(pitch, breath, seed, even, 0.0, 0.0, 6.0) >> Net::wrap(Box::new(pass() | sink()))
+    played_jet(pitch, breath, seed, even, 0.0, 0.0, 6.0, 0.0) >> Net::wrap(Box::new(pass() | sink()))
 }
 
 /// The air jet with the breath's `wander` and its `catch` at each slur, its sound and the side the jet flows to.
-fn played_jet(pitch: Net, breath: Net, seed: u64, even: f64, wander: f64, catch: f64, corner: f64) -> Net {
+fn played_jet(pitch: Net, breath: Net, seed: u64, even: f64, wander: f64, catch: f64, corner: f64, tuned: f64) -> Net {
     let mut jet = Jet::new(corner as f32, 0.02, even as f32);
-    (jet.wander, jet.catch) = (wander as f32, catch as f32);
+    (jet.wander, jet.catch, jet.tuned) = (wander as f32, catch as f32, tuned as f32);
     (pitch | breath | white_noise(seed)) >> Net::wrap(Box::new(An(jet)))
 }
 
@@ -425,12 +431,13 @@ fn flute() -> Synth {
         .option(Spec::float("corner").range(2.0, 40.0).doc("The bore's corner as a multiple of the pitch, in place of the one fitted; for fitting."))
         .option(Spec::db("shelf").range(-30.0, 30.0).doc("The gain in dB above 4 kHz, in place of the one fitted; for fitting."))
         .option(Spec::db("hiss").range(-90.0, 0.0).doc("The breath's hiss above 3 kHz in dB, in place of the one fitted; for fitting."))
+        .option(Spec::float("tuned").range(0.0, 3.0).doc("The breath at which the jet crosses to the edge in half a period, in place of the mf breath; 0 holds it there."))
         .option(Spec::float("pulse").range(0.0, 1.0).doc("How much the hiss follows the jet across the edge, from 0 steady to 1 only on one side, in place of the one fitted; for fitting."))
         .option(Spec::float("even").range(0.0, 4.0).doc("The part of the square of the jet's sound in the output, in place of the one fitted; for fitting."))
         .build(|o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
-            let jet = played_jet(pitch(o, o.number("vibrato") * vel.powf(0.65), 5.0), breath(o, &FLUTE), ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(6.0));
+            let jet = played_jet(pitch(o, o.number("vibrato") * vel.powf(0.65), 5.0), breath(o, &FLUTE), ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(6.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64));
             // The breath hisses above 3 kHz where the jet strikes the edge, pulsing as it crosses, after the bands, so they do not colour it.
             let pulse = o.given("pulse").unwrap_or(1.0) as f32;
             let side = Net::wrap(Box::new(map(move |s: &Frame<f32, U1>| 1.0 - pulse + 2.0 * pulse * s[0])));
