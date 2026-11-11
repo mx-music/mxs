@@ -304,17 +304,19 @@ impl Engine {
         self.timing().and_then(|t| t.latency)
     }
 
-    /// Plays events, each at a system time, which the engine maps to its own seconds however far the two clocks have drifted apart.
+    /// The engine's seconds at which it renders the system time `at`, however far the two clocks have drifted apart; a live engine knows it, an offline one does not.
+    pub fn seconds_at(&self, at: SystemTime) -> Option<f64> {
+        let system = at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+        self.timing().and_then(|t| t.engine(system))
+    }
+
+    /// Plays events, each at a system time.
     pub fn play_at(&mut self, events: &[(SystemTime, Event)]) -> Result<(), Error> {
-        let Some(timing) = self.timing() else { return Err(Error::Offline) };
-        let events: Vec<(f64, Event)> = events
-            .iter()
-            .map(|(at, event)| {
-                let system = at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
-                (timing.engine(system).unwrap_or(0.0), event.clone())
-            })
-            .collect();
-        self.play(&events)
+        let mut timed = Vec::with_capacity(events.len());
+        for (at, event) in events {
+            timed.push((self.seconds_at(*at).ok_or(Error::Offline)?, event.clone()));
+        }
+        self.play(&timed)
     }
 
     fn timing(&self) -> Option<Timing> {
