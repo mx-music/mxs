@@ -1,6 +1,6 @@
 //! mx's plain synths, after their designs in mx's priv/synthdefs/mx-instruments.scd: waves under a resonant low-pass, FM, a plucked string, a supersaw, an acid bass and a brass.
 
-use crate::nodes::{hz, segments, white_noise};
+use crate::nodes::{db, hz, segments, white_noise};
 use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 
@@ -10,6 +10,22 @@ pub fn all() -> Vec<Synth> {
 
 fn net(unit: impl AudioUnit + 'static) -> Net {
     Net::wrap(Box::new(unit))
+}
+
+// FunDSP's saw and pulse waves measure 4.5 dB louder than scsynth's, and its square 3.8 dB, so they are brought down to the level mx's designs were made at.
+// They start at phase 0 rather than FunDSP's hashed phase, so a saw and a pulse at one pitch add up the same in every note.
+fn saw_wave() -> Net {
+    from_zero(fundsp::prelude::saw()) * db(-4.5) as f32
+}
+
+fn pulse_wave() -> Net {
+    from_zero(fundsp::prelude::pulse()) * db(-4.5) as f32
+}
+
+fn from_zero(mut wave: impl AudioUnit + 'static) -> Net {
+    wave.set(Setting::phase(0.0));
+    wave.reset();
+    net(wave)
 }
 
 /// The note's frequency, gliding with its note option.
@@ -39,11 +55,11 @@ fn wave(name: &str, cutoff: f64, release: f64) -> crate::SynthDecl {
 }
 
 fn saw() -> Synth {
-    wave("saw", 100.0, 1.0).build(|o, _| Note::envelope(filtered(o, pitch(o) >> net(fundsp::prelude::saw())) * 0.5, o))
+    wave("saw", 100.0, 1.0).build(|o, _| Note::envelope(filtered(o, pitch(o) >> saw_wave()) * 0.5, o))
 }
 
 fn square() -> Synth {
-    wave("square", 100.0, 1.0).build(|o, _| Note::envelope(filtered(o, pitch(o) >> net(fundsp::prelude::square())) * 0.5, o))
+    wave("square", 100.0, 1.0).build(|o, _| Note::envelope(filtered(o, pitch(o) >> net(fundsp::prelude::square())) * (0.5 * db(-3.8)) as f32, o))
 }
 
 fn tri() -> Synth {
@@ -55,7 +71,7 @@ fn pulse() -> Synth {
         .option(Spec::float("pulse_width").default(0.3).range(0.01, 0.99).doc("The part of each cycle that is up."))
         .build(|o, _| {
             let width = o.follow("pulse_width") >> net(map(|x: &Frame<f32, U1>| x[0].clamp(0.01, 0.99)));
-            Note::envelope(filtered(o, (pitch(o) | width) >> net(fundsp::prelude::pulse())) * 0.5, o)
+            Note::envelope(filtered(o, (pitch(o) | width) >> pulse_wave()) * 0.5, o)
         })
 }
 
@@ -102,7 +118,7 @@ fn supersaw() -> Synth {
             for offset in [-1.0f32, -0.62, -0.3, 0.0, 0.3, 0.62, 1.0] {
                 let freq = (o.follow("note") | o.follow("detune"))
                     >> net(map(move |x: &Frame<f32, U2>| hz((x[0] + offset * x[1]) as f64) as f32));
-                saws = saws + (freq >> net(fundsp::prelude::saw()));
+                saws = saws + (freq >> saw_wave());
             }
             Note::envelope(filtered(o, saws) * 0.18, o)
         })
@@ -120,7 +136,7 @@ fn acid() -> Synth {
                 >> net(map(|x: &Frame<f32, U2>| hz((x[0] + x[1]) as f64).clamp(20.0, 18_000.0) as f32));
             let q = o.follow("res") >> net(map(|x: &Frame<f32, U1>| 1.0 / (1.0 - x[0].clamp(0.0, 1.0) * 0.93)));
             let half = pitch(o) >> net(map(|x: &Frame<f32, U1>| x[0] * 0.5));
-            let sound = (pitch(o) >> net(fundsp::prelude::saw())) + ((half | net(dc(0.5))) >> net(fundsp::prelude::pulse())) * 0.25;
+            let sound = (pitch(o) >> saw_wave()) + ((half | net(dc(0.5))) >> pulse_wave()) * 0.25;
             let filtered = (sound | cutoff | q) >> net(lowpass::<f32>());
             let driven = filtered >> net(map(|x: &Frame<f32, U1>| (x[0] * 1.6).tanh() * 0.45));
             Note::envelope(driven, o)
@@ -141,7 +157,7 @@ fn brass() -> Synth {
                 (o.follow("note") | scoop.clone() | vibrato.clone())
                     >> net(map(|x: &Frame<f32, U3>| hz((x[0] + x[1] + x[2]) as f64) as f32))
             };
-            let reed = (freq() >> net(fundsp::prelude::saw())) + ((freq() | net(dc(0.38))) >> net(fundsp::prelude::pulse())) * 0.5;
+            let reed = (freq() >> saw_wave()) + ((freq() | net(dc(0.38))) >> pulse_wave()) * 0.5;
             let cutoff = (freq() | breath())
                 >> net(map(move |x: &Frame<f32, U2>| (x[0] * (1.5 + x[1] * (2.0 + vel * 9.0))).clamp(20.0, 18_000.0)));
             let horn = (reed | cutoff | net(dc(1.0 / 0.7))) >> net(lowpass::<f32>());

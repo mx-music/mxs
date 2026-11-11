@@ -1,6 +1,6 @@
 //! Synths and effects, each a name, the options it declares, and a function that builds its sound.
 
-use crate::nodes::shape;
+use crate::nodes::{segment_at, shape};
 use crate::options::{Context, Options};
 use crate::spec::Spec;
 use fundsp::prelude::*;
@@ -79,18 +79,10 @@ impl Note {
         let peak = options.number("attack_level");
         let held = options.number("sustain_level");
         let decayed = Some(options.number("decay_level")).filter(|&l| l >= 0.0).unwrap_or(held);
-        let level = shape(move |t| {
-            let ease = |from: f64, to: f64, x: f64, power: i32| to + (from - to) * (1.0 - x.clamp(0.0, 1.0)).powi(power);
-            if t < attack {
-                peak * t / attack
-            } else if t < attack + decay {
-                ease(peak, decayed, (t - attack) / decay, 2)
-            } else if t < attack + decay + sustain {
-                decayed + (held - decayed) * (t - attack - decay) / sustain
-            } else {
-                ease(held, 0.0, (t - attack - decay - sustain) / release, 3)
-            }
-        });
+        // The same curves as mx's envelope on scsynth: a slow attack, a quick decay, a straight sustain and a quick release.
+        let levels = [0.0, peak, decayed, held, 0.0];
+        let times = [attack, decay, sustain, release];
+        let level = shape(move |t| segment_at(&levels, &times, &[1.0, -2.0, 0.0, -3.0], t));
         let sound = net(sound);
         let sound = if sound.outputs() == 2 { sound * (level >> split::<U2>()) } else { sound * level };
         Note { sound, end: attack + decay + sustain + release }
