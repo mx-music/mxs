@@ -4,6 +4,7 @@
 mod clock;
 mod device;
 mod engine;
+pub mod graph;
 mod mixer;
 pub mod effects;
 pub mod keys;

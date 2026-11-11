@@ -25,7 +25,7 @@ impl Options {
         Options { owner, specs, values, controls: Mutex::new(HashMap::new()) }
     }
 
-    fn value(&self, name: &str) -> &Value {
+    pub(crate) fn value(&self, name: &str) -> &Value {
         let spec = self.specs.iter().find(|s| s.name == name);
         let spec = spec.unwrap_or_else(|| panic!("{} reads the option {name}, which it does not declare", self.owner));
         self.values
