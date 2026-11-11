@@ -1,0 +1,158 @@
+//! Synths and effects, each a name, the options it declares, and a function that builds its sound.
+
+use crate::nodes::shape;
+use crate::options::{Context, Options};
+use crate::spec::Spec;
+use fundsp::prelude::*;
+use std::sync::Arc;
+
+type BuildNote = dyn Fn(&Options, &mut Context) -> Note + Send + Sync;
+type BuildEffect = dyn Fn(&Options, &mut Context) -> Net + Send + Sync;
+
+/// A synth: a name, its options, and how it builds one note's sound.
+#[derive(Clone)]
+pub struct Synth {
+    pub(crate) name: String,
+    pub(crate) specs: Vec<Spec>,
+    pub(crate) build: Arc<BuildNote>,
+}
+
+/// A synth being declared, until `build` gives it its sound.
+pub struct SynthDecl {
+    name: String,
+    specs: Vec<Spec>,
+}
+
+impl Synth {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(name: &str) -> SynthDecl {
+        SynthDecl { name: name.to_string(), specs: Vec::new() }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn specs(&self) -> &[Spec] {
+        &self.specs
+    }
+}
+
+impl SynthDecl {
+    pub fn option(mut self, spec: Spec) -> Self {
+        self.specs.push(spec);
+        self
+    }
+
+    pub fn options(mut self, specs: impl IntoIterator<Item = Spec>) -> Self {
+        self.specs.extend(specs);
+        self
+    }
+
+    pub fn build<F>(self, build: F) -> Synth
+    where
+        F: Fn(&Options, &mut Context) -> Note + Send + Sync + 'static,
+    {
+        Synth { name: self.name, specs: self.specs, build: Arc::new(build) }
+    }
+}
+
+/// One note's sound, mono or stereo, and the seconds after which it is silent, which the engine needs when it starts the note.
+pub struct Note {
+    pub(crate) sound: Net,
+    pub(crate) end: f64,
+}
+
+impl Note {
+    /// A sound that rings until it fades by itself, after `seconds`.
+    pub fn rings(sound: impl AudioUnit + 'static, seconds: f64) -> Note {
+        Note { sound: net(sound), end: seconds }
+    }
+
+    /// A sound shaped by the note's envelope, from its options attack, decay, sustain, release, attack_level, decay_level and sustain_level, which ends when the envelope does.
+    pub fn envelope(sound: impl AudioUnit + 'static, options: &Options) -> Note {
+        let attack = options.number("attack");
+        let decay = options.number("decay");
+        let sustain = options.number("sustain");
+        let release = options.number("release");
+        let peak = options.number("attack_level");
+        let held = options.number("sustain_level");
+        let decayed = Some(options.number("decay_level")).filter(|&l| l >= 0.0).unwrap_or(held);
+        let level = shape(move |t| {
+            let ease = |from: f64, to: f64, x: f64, power: i32| to + (from - to) * (1.0 - x.clamp(0.0, 1.0)).powi(power);
+            if t < attack {
+                peak * t / attack
+            } else if t < attack + decay {
+                ease(peak, decayed, (t - attack) / decay, 2)
+            } else if t < attack + decay + sustain {
+                decayed + (held - decayed) * (t - attack - decay) / sustain
+            } else {
+                ease(held, 0.0, (t - attack - decay - sustain) / release, 3)
+            }
+        });
+        let sound = net(sound);
+        let sound = if sound.outputs() == 2 { sound * (level >> split::<U2>()) } else { sound * level };
+        Note { sound, end: attack + decay + sustain + release }
+    }
+
+    /// Ends the note after `seconds`, if it would end later.
+    pub fn within(mut self, seconds: f64) -> Note {
+        self.end = self.end.min(seconds);
+        self
+    }
+}
+
+/// An effect: a name, its options, how long it sounds on after its input stops, and how it builds a stereo sound from a stereo input.
+#[derive(Clone)]
+pub struct Effect {
+    pub(crate) name: String,
+    pub(crate) specs: Vec<Spec>,
+    pub(crate) tail: f64,
+    pub(crate) build: Arc<BuildEffect>,
+}
+
+pub struct EffectDecl {
+    name: String,
+    specs: Vec<Spec>,
+    tail: f64,
+}
+
+impl Effect {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(name: &str) -> EffectDecl {
+        EffectDecl { name: name.to_string(), specs: Vec::new(), tail: 1.0 }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn specs(&self) -> &[Spec] {
+        &self.specs
+    }
+}
+
+impl EffectDecl {
+    pub fn option(mut self, spec: Spec) -> Self {
+        self.specs.push(spec);
+        self
+    }
+
+    /// How many seconds the effect sounds on after its input stops, such as a reverb's tail.
+    pub fn tail(mut self, seconds: f64) -> Self {
+        self.tail = seconds;
+        self
+    }
+
+    pub fn build<F>(self, build: F) -> Effect
+    where
+        F: Fn(&Options, &mut Context) -> Net + Send + Sync + 'static,
+    {
+        Effect { name: self.name, specs: self.specs, tail: self.tail, build: Arc::new(build) }
+    }
+}
+
+fn net(sound: impl AudioUnit + 'static) -> Net {
+    let boxed: Box<dyn AudioUnit> = Box::new(sound);
+    Net::wrap(boxed)
+}

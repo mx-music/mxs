@@ -1,11 +1,7 @@
-//! Plays a short phrase through the default output, scheduled on FunDSP's Sequencer, or writes it to the WAV file given: play [synth] [out.wav]
+//! Plays a short phrase through the default output through the engine, or writes it to the WAV file given: play [synth] [out.wav]
 //! The piano plays it in chords, the berimbau plays four bars of the toque of Angola, and any other synth plays the phrase's top line an octave down.
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SizedSample};
-use fundsp::prelude::*;
-use mx_engine::{synth, Opts};
-
+use mx_engine::{Engine, Event, RATE, Value, synths};
 
 // (beat, note, vel, beats held)
 const PHRASE: &[(f64, f64, f64, f64)] = &[
@@ -27,64 +23,55 @@ fn main() {
         [name] => (name.clone(), None),
         _ => ("piano".to_string(), None),
     };
-    // Each note as its beat, its beats held and its options; mx sends every time option in beats, the synth's default release included.
+    // Each note as its beat, its beats held and its options; mx sends every time option in seconds, the synth's default release included.
     let (bpm, notes): (f64, Vec<(f64, f64, Vec<(&str, f64)>)>) = match synth_name.as_str() {
         "piano" => (84.0, PHRASE.iter().map(|&(beat, note, vel, held)| (beat, held, vec![("note", note), ("vel", vel), ("release", 1.0)])).collect()),
         "berimbau" => (119.0, angola()),
         _ => (84.0, top_line().into_iter().map(|(beat, note, vel, held)| (beat, held, vec![("note", note), ("vel", vel), ("release", 0.3)])).collect()),
     };
     let seconds = |beat: f64| beat * 60.0 / bpm;
+    let drum = synth_name == "berimbau";
 
-    let device = cpal::default_host().default_output_device().expect("no output device");
-    let config = device.default_output_config().expect("no output config");
-    let rate = if path.is_some() { 48_000.0 } else { config.sample_rate() as f64 };
-    let channels = config.channels() as usize;
-    println!("playing on {} at {rate} Hz", device.description().map(|d| d.to_string()).unwrap_or_default());
-
-    let mut sequencer = Sequencer::new(0, 1, ReplayMode::None);
-    sequencer.set_sample_rate(rate);
-    let backend = sequencer.backend();
-
-    let lead = 0.2;
+    let mut engine = match path {
+        Some(_) => Engine::offline(RATE),
+        None => Engine::live().unwrap_or_else(|e| panic!("{e}")),
+    };
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let lead = engine.now() + 0.2;
     let mut end: f64 = 0.0;
-    for (beat, held, options) in notes {
-        let mut opts = Opts::default();
-        for (name, value) in options {
-            let value = if name == "release" { seconds(value) } else { value };
-            opts.0.insert(name.to_string(), value);
-        }
-        let sustain = seconds(held);
-        opts.0.insert("sustain".to_string(), sustain);
-        // A drum lasts as long as its longest part, 2.9 seconds for the berimbau.
-        let length = opts.0.get("release").map_or(2.9, |release| sustain + release);
-        let mut unit = synth(&synth_name, &opts, rate).expect("no such synth");
-        unit.set_sample_rate(rate);
-        let start = lead + seconds(beat);
-        let stop = start + length;
-        end = end.max(stop);
-        sequencer.push(start, stop, Fade::Smooth, 0.0, 0.0, unit);
-    }
+    let events: Vec<(f64, Event)> = notes
+        .into_iter()
+        .map(|(beat, held, options)| {
+            let mut options: Vec<(String, Value)> = options
+                .into_iter()
+                .map(|(name, value)| {
+                    let value = if name == "release" { seconds(value) } else { value };
+                    (name.to_string(), Value::Number(value))
+                })
+                .collect();
+            if !drum {
+                options.push(("sustain".to_string(), Value::Number(seconds(held))));
+            }
+            let start = lead + seconds(beat);
+            end = end.max(start + seconds(held) + 3.0);
+            (start, Event::Note { id: None, synth: synth_name.clone(), options, chain: None })
+        })
+        .collect();
+    engine.play(&events).unwrap_or_else(|e| panic!("{e}"));
 
     if let Some(path) = path {
-        let spec = hound::WavSpec { channels: 2, sample_rate: rate as u32, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+        let (left, right) = engine.render(end).unwrap();
+        let spec = hound::WavSpec { channels: 2, sample_rate: RATE as u32, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
         let mut wav = hound::WavWriter::create(&path, spec).unwrap();
-        let mut backend = backend;
-        for _ in 0..((end + 0.3) * rate) as usize {
-            let s = backend.get_mono();
-            wav.write_sample(s).unwrap();
-            wav.write_sample(s).unwrap();
+        for (l, r) in left.into_iter().zip(right) {
+            wav.write_sample(l).unwrap();
+            wav.write_sample(r).unwrap();
         }
         wav.finalize().unwrap();
         return;
     }
-
-    let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), channels, backend),
-        cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), channels, backend),
-        other => panic!("unsupported sample format {other}"),
-    };
-    stream.play().unwrap();
-    std::thread::sleep(std::time::Duration::from_secs_f64(end + 0.3));
+    println!("playing at {} Hz", engine.rate());
+    std::thread::sleep(std::time::Duration::from_secs_f64(end));
 }
 
 /// Four bars of the toque of Angola, as mx's examples/berimbau/solo.exs writes it, "O C . xx": the open string, the coin pressed, a rest and two buzzes a sixteenth apart.
@@ -116,25 +103,4 @@ fn top_line() -> Vec<(f64, f64, f64, f64)> {
         }
     }
     line
-}
-
-fn run<T: SizedSample + FromSample<f32>>(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-    channels: usize,
-    mut backend: impl AudioUnit + 'static,
-) -> cpal::Stream {
-    device
-        .build_output_stream(
-            config.clone(),
-            move |data: &mut [T], _| {
-                for frame in data.chunks_mut(channels) {
-                    let s = T::from_sample(backend.get_mono().clamp(-1.0, 1.0));
-                    frame.iter_mut().for_each(|x| *x = s);
-                }
-            },
-            |e| eprintln!("stream error: {e}"),
-            None,
-        )
-        .unwrap()
 }
