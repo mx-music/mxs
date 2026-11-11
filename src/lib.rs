@@ -32,6 +32,7 @@ impl Opts {
 pub fn synth(name: &str, opts: &Opts, rate: f64) -> Option<Box<dyn AudioUnit>> {
     match name {
         "piano" => Some(piano::piano(opts, rate)),
+        "piano.static" => Some(piano::piano_static(opts, rate)),
         "cello.bowed" => Some(cello::cello(opts, rate)),
         "berimbau" => Some(berimbau::berimbau(opts, rate)),
         _ => None,
@@ -73,11 +74,16 @@ pub fn render(name: &str, opts: &Opts, seconds: f64) -> Option<Vec<f32>> {
 
 /// A resonator struck by its input, which an impulse sets ringing from `phase` at `level`, fading 60 dB over `fade` seconds.
 pub(crate) fn struck(hz: f64, phase: f64, level: f64, fade: f64, rate: f64) -> Net {
+    let (a1, a2, b0, b1) = struck_coefficients(hz, phase, level, fade, rate);
+    Net::wrap(Box::new(biquad::<f64>(a1, a2, b0, b1, 0.0)))
+}
+
+/// The biquad coefficients of `struck`, as `(a1, a2, b0, b1)`.
+pub(crate) fn struck_coefficients(hz: f64, phase: f64, level: f64, fade: f64, rate: f64) -> (f64, f64, f64, f64) {
     let w = 2.0 * std::f64::consts::PI * hz / rate;
     let r = 1000f64.powf(-1.0 / (fade * rate));
     // Its impulse response is level * r^n * sin((n + 1) * w + phase).
-    let (b0, b1) = (level * (w + phase).sin(), -level * r * phase.sin());
-    Net::wrap(Box::new(biquad::<f64>(-2.0 * r * w.cos(), r * r, b0, b1, 0.0)))
+    (-2.0 * r * w.cos(), r * r, level * (w + phase).sin(), -level * r * phase.sin())
 }
 
 /// An envelope from `f(t)`, sampled every 20 microseconds rather than every 2 milliseconds as FunDSP's envelope is, for shapes of a few milliseconds.

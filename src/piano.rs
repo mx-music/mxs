@@ -1,13 +1,50 @@
 //! mx's piano, after its design in mx's priv/synthdefs/mx-instruments.scd: each harmonic a resonator struck once, with a thump of noise.
 
-use crate::{db_amp, fast_envelope, midi_hz, perc, struck, Opts};
+use crate::{db_amp, fast_envelope, midi_hz, perc, struck, struck_coefficients, Opts};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
 
 /// Scales the piano to the loudness of scsynth's render of the same notes.
 const GAIN: f64 = 1.4;
 
+/// The most modes a note has: 48 harmonics and 10 beating twins.
+const MODES: usize = 58;
+
 pub fn piano(opts: &Opts, rate: f64) -> Box<dyn AudioUnit> {
+    let vel = opts.get("vel", 0.6).clamp(0.05, 1.0);
+    let modes = modes(opts)
+        .into_iter()
+        .map(|(hz, phase, level, fade)| struck(hz, phase, level, fade, rate));
+    let bank = modes.reduce(|a, b| a & b).expect("a piano note has harmonics");
+    let strings = Net::wrap(Box::new(impulse::<U1>())) >> bank;
+
+    let thump = Net::wrap(Box::new(
+        white() >> lowpass_hz(400.0 + vel as f32 * 2000.0, 0.707) * fast_envelope(|t: f32| perc(t, 0.001, 0.02)),
+    ));
+    let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3)) * ((vel / 0.6).powf(2.5) * GAIN) as f32;
+    let note_envelope = Net::wrap(Box::new(crate::note_envelope(opts, 1.0, 1.0)));
+    Box::new(sound * note_envelope)
+}
+
+/// The same piano as one static graph of a fixed shape, as a compiled design would be: a bank of `MODES` resonators, those a note does not use silent.
+pub fn piano_static(opts: &Opts, rate: f64) -> Box<dyn AudioUnit> {
+    let vel = opts.get("vel", 0.6).clamp(0.05, 1.0);
+    let mut coefficients = [(0.0, 0.0, 0.0, 0.0); MODES];
+    for (slot, (hz, phase, level, fade)) in coefficients.iter_mut().zip(modes(opts)) {
+        *slot = struck_coefficients(hz, phase, level, fade, rate);
+    }
+    let bank = busi::<U58, _, _>(|i| {
+        let (a1, a2, b0, b1) = coefficients[i as usize];
+        biquad::<f64>(a1, a2, b0, b1, 0.0)
+    });
+    let strings = impulse::<U1>() >> bank;
+    let thump = white() >> lowpass_hz(400.0 + vel as f32 * 2000.0, 0.707) * fast_envelope(|t: f32| perc(t, 0.001, 0.02));
+    let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3)) * ((vel / 0.6).powf(2.5) * GAIN) as f32;
+    Box::new(sound * crate::note_envelope(opts, 1.0, 1.0))
+}
+
+/// Each mode of a note as `(hz, phase, level, fade)`: the strings' harmonics, then their beating twins.
+fn modes(opts: &Opts) -> Vec<(f64, f64, f64, f64)> {
     let note = opts.get("note", 52.0);
     let freq = midi_hz(note);
     let vel = opts.get("vel", 0.6).clamp(0.05, 1.0);
@@ -58,15 +95,7 @@ pub fn piano(opts: &Opts, rate: f64) -> Box<dyn AudioUnit> {
 
     // Harmonics that all start rising together add up to a click at the strike, louder than scsynth's, so their phases are spread by the golden angle.
     // Beating strings start together, or they would cancel for seconds.
-    let modes = (strings.into_iter().chain(beating))
-        .map(|(hz, n, level, fade)| struck(hz, n * 2.399_963, level, fade, rate));
-    let bank = modes.reduce(|a, b| a & b).expect("a piano note has harmonics");
-    let strings = Net::wrap(Box::new(impulse::<U1>())) >> bank;
-
-    let thump = Net::wrap(Box::new(
-        white() >> lowpass_hz(400.0 + vel as f32 * 2000.0, 0.707) * fast_envelope(|t: f32| perc(t, 0.001, 0.02)),
-    ));
-    let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3)) * ((vel / 0.6).powf(2.5) * GAIN) as f32;
-    let note_envelope = Net::wrap(Box::new(crate::note_envelope(opts, 1.0, 1.0)));
-    Box::new(sound * note_envelope)
+    (strings.into_iter().chain(beating))
+        .map(|(hz, n, level, fade)| (hz, n * 2.399_963, level, fade))
+        .collect()
 }
