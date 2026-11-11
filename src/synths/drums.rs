@@ -1031,8 +1031,8 @@ fn tabla(name: &str, fixed: Option<&'static str>) -> Synth {
             if b.noise[i] <= -90.0 {
                 continue;
             }
-            let at = pitch.clone() * (centre / hz(b.note)) as f32 >> net(map(|x: &Frame<f32, U1>| x[0].clamp(20.0, 20_000.0)));
-            let narrow = |sound: Net| (sound | at.clone() | net(dc(1.0 / 0.35))) >> net(bandpass::<f32>()) * 0.35;
+            let at = (pitch.clone() * (centre / hz(b.note)) as f32) >> net(map(|x: &Frame<f32, U1>| x[0].clamp(20.0, 20_000.0)));
+            let narrow = |sound: Net| (sound | at.clone() | net(dc(1.0 / 0.35))) >> (net(bandpass::<f32>()) * 0.35);
             let band = narrow(narrow(narrow(narrow(noise(ctx)))));
             let fall = segments(&[0.0, 1.0], &[0.001], &[0.0]) * exp_segments(&[1.0, 1.0, 0.001], &[0.001, b.fades[i]]);
             hiss = hiss + band * fall * db(b.noise[i]) as f32;
