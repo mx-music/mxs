@@ -218,8 +218,8 @@ fn clap() -> Synth {
 fn crash() -> Synth {
     Synth::new("crash")
         .options(strike_options(60.0))
-        .option(Spec::seconds("sustain").default(9.0).range(0.0, f64::INFINITY).doc("How long it rings before it is choked."))
-        .option(Spec::seconds("release").default(1.0).range(0.0, f64::INFINITY).doc("How long the choke takes."))
+        .option(Spec::beats("sustain").default(9.0).range(0.0, f64::INFINITY).doc("How long it rings before it is choked."))
+        .option(Spec::beats("release").default(1.0).range(0.0, f64::INFINITY).doc("How long the choke takes."))
         .build(|o, ctx| {
             let vel = vel(o, 0.0);
             let scale = 2f64.powf((o.number("note") - 60.0) / 12.0);
@@ -257,9 +257,9 @@ const OPEN_RINGS: [f64; 10] = [2.4, 2.5, 2.5, 2.5, 2.5, 2.6, 2.6, 2.5, 2.6, 2.7]
 fn hat(name: &'static str, levels: &'static [f64; 10], rings: &'static [f64; 10], length: f64, pedal: bool) -> Synth {
     let mut decl = Synth::new(name)
         .options(strike_options(92.0))
-        .option(Spec::seconds("release").default(0.05).range(0.0, f64::INFINITY).doc("How long the hat takes to close."));
+        .option(Spec::beats("release").default(0.05).range(0.0, f64::INFINITY).doc("How long the hat takes to close."));
     if pedal {
-        decl = decl.option(Spec::seconds("sustain").default(length).range(0.0, f64::INFINITY).doc("How long it rings open."));
+        decl = decl.option(Spec::beats("sustain").default(length).range(0.0, f64::INFINITY).doc("How long it rings open."));
     }
     decl.build(move |o, ctx| {
         let vel = vel(o, 0.0);
@@ -674,7 +674,7 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
 fn guiro() -> Synth {
     Synth::new("guiro")
         .options(strike_options(93.29))
-        .option(Spec::seconds("sustain").default(0.25).range(0.02, f64::INFINITY).doc("How long the scrape lasts."))
+        .option(Spec::beats("sustain").default(0.25).range(0.02, f64::INFINITY).doc("How long the scrape lasts."))
         .build(|o, ctx| {
             let freq = hz(o.number("note"));
             let vel = vel(o, 0.05);
@@ -708,8 +708,8 @@ fn guiro() -> Synth {
 fn triangle() -> Synth {
     Synth::new("triangle")
         .options(strike_options(69.0))
-        .option(Spec::seconds("sustain").default(30.0).range(0.0, f64::INFINITY).doc("How long the bar rings before the hand damps it."))
-        .option(Spec::seconds("release").default(1.0).range(0.0, f64::INFINITY).doc("How long the hand takes to damp it."))
+        .option(Spec::beats("sustain").default(30.0).range(0.0, f64::INFINITY).doc("How long the bar rings before the hand damps it."))
+        .option(Spec::beats("release").default(1.0).range(0.0, f64::INFINITY).doc("How long the hand takes to damp it."))
         .build(|o, ctx| {
             let vel = vel(o, 0.05);
             let scale = 2f64.powf((o.number("note") - 69.0) / 12.0);
@@ -743,7 +743,7 @@ fn triangle() -> Synth {
 fn tambourine(name: &'static str, shaken: bool) -> Synth {
     let mut decl = Synth::new(name).options(strike_options(69.0));
     if shaken {
-        decl = decl.option(Spec::seconds("sustain").default(0.25).range(0.02, f64::INFINITY).doc("How long it is shaken."));
+        decl = decl.option(Spec::beats("sustain").default(0.25).range(0.02, f64::INFINITY).doc("How long it is shaken."));
     }
     decl.build(move |o, ctx| {
         let vel = vel(o, 0.05);
@@ -777,7 +777,7 @@ fn cabasa() -> Synth {
     Synth::new("cabasa")
         .options(strike_options(96.0))
         .option(Spec::float("rub").default(0.0).range(0.0, 1.0).doc("1 turns the beads against the cylinder for the sustain."))
-        .option(Spec::seconds("sustain").default(0.1).range(0.01, f64::INFINITY).doc("How long a rub lasts."))
+        .option(Spec::beats("sustain").default(0.1).range(0.01, f64::INFINITY).doc("How long a rub lasts."))
         .build(|o, ctx| {
             let freq = hz(o.number("note"));
             let vel = vel(o, 0.0);

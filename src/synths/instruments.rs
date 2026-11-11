@@ -712,7 +712,7 @@ fn tanpura() -> Synth {
     Synth::new("tanpura")
         .option(Spec::note("note").default(52.0).doc("Sa, the note the drone is tuned to."))
         .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard the strings are plucked."))
-        .option(Spec::seconds("gap").default(0.8).range(0.05, f64::INFINITY).doc("The seconds between plucks; a cycle of the four strings takes six gaps."))
+        .option(Spec::beats("gap").default(0.8).range(0.05, f64::INFINITY).doc("The time between plucks; a cycle of the four strings takes six gaps."))
         .options(Spec::envelope(16.0, 4.0))
         .build(|o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
