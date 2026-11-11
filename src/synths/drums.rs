@@ -1,7 +1,7 @@
 //! mx's drums and hand percussion, after their designs in mx's priv/synthdefs/mx-drums.scd.
 //! Their seeded modes are drawn from mxs's own generator, so they sit at other frequencies than scsynth's draws, with the same levels and rings at each band.
 
-use crate::nodes::{Draws, between, db, decay2, dust, exp_segments, hit, hz, modes, segments, white_noise};
+use crate::nodes::{Draws, between, db, decay2, dust, exp_segments, hit, hz, modes, segments, struck_gliding, white_noise};
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 
@@ -1013,15 +1013,27 @@ fn tabla(name: &str, fixed: Option<&'static str>) -> Synth {
         let vel = vel(o, 0.0);
         let freq = hz(note);
         let finger = impulse_net() >> lpf(3000.0);
-        let head = modes(finger, &scaled(b.ratios, freq), &amps(b.levels), b.rings);
+        // Ghe's pitch glides with its note option, as a palm pressing the bayan's head bends it.
+        let gliding = b.name == "ghe" && (fixed.is_some() || o.given("note").is_some());
+        let pitch = if gliding { o.follow("note") >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32)) } else { net(dc(freq as f32)) };
+        let head = if gliding {
+            let levels = amps(b.levels);
+            let bank = b.ratios.iter().zip(&levels).zip(b.rings).map(|((&ratio, &level), &ring)| {
+                net(map(move |x: &Frame<f32, U2>| -> Frame<f32, U2> { [x[0], x[1] * ratio as f32].into() })) >> struck_gliding(level, ring)
+            });
+            (finger | pitch.clone()) >> bank.reduce(|a, b| a & b).expect("a bol has modes")
+        } else {
+            modes(finger, &scaled(b.ratios, freq), &amps(b.levels), b.rings)
+        };
         let centres = [113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, b.high, 5019.0, 7937.0, 12649.0];
         let mut hiss = Net::wrap(Box::new(zero()));
         for (i, centre) in centres.iter().enumerate() {
             if b.noise[i] <= -90.0 {
                 continue;
             }
-            let at = centre * freq / hz(b.note);
-            let band = noise(ctx) >> bpf(at, 0.35) >> bpf(at, 0.35) >> bpf(at, 0.35) >> bpf(at, 0.35);
+            let at = pitch.clone() * (centre / hz(b.note)) as f32 >> net(map(|x: &Frame<f32, U1>| x[0].clamp(20.0, 20_000.0)));
+            let narrow = |sound: Net| (sound | at.clone() | net(dc(1.0 / 0.35))) >> net(bandpass::<f32>()) * 0.35;
+            let band = narrow(narrow(narrow(narrow(noise(ctx)))));
             let fall = segments(&[0.0, 1.0], &[0.001], &[0.0]) * exp_segments(&[1.0, 1.0, 0.001], &[0.001, b.fades[i]]);
             hiss = hiss + band * fall * db(b.noise[i]) as f32;
         }

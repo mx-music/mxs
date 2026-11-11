@@ -1,4 +1,4 @@
-use mxs::{Engine, Event, RATE, synths};
+use mxs::{Engine, Event, RATE, Target, synths};
 
 #[test]
 fn every_synth_renders_a_finite_audible_note_with_its_defaults() {
@@ -13,4 +13,20 @@ fn every_synth_renders_a_finite_audible_note_with_its_defaults() {
         assert!(peak > 1e-4, "{name} is silent");
         assert!(peak < 4.0, "{name} peaks at {peak}");
     }
+}
+
+#[test]
+fn the_tabla_ghe_glides_to_a_new_note_over_its_slide() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    engine.play(&[(0.0, Event::note(Some(1), "tabla_ghe", &[]))]).unwrap();
+    let up = Event::Set { target: Target::Sounds(vec![1]), options: vec![("note".into(), 54.25), ("note_slide".into(), 0.1)] };
+    engine.play(&[(0.2, up)]).unwrap();
+    let (left, _) = engine.render(0.7).unwrap();
+    let crossings = |from: f64, to: f64| {
+        let part = &left[(from * RATE) as usize..(to * RATE) as usize];
+        part.windows(2).filter(|w| w[0] < 0.0 && w[1] >= 0.0).count() as f64
+    };
+    let ratio = crossings(0.45, 0.65) / crossings(0.0, 0.2);
+    assert!((ratio - 2.0).abs() < 0.15, "the pitch rose by a ratio of {ratio}");
 }

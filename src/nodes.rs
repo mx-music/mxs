@@ -26,6 +26,11 @@ pub fn struck(hz: f64, level: f64, fade: f64) -> Net {
     Net::wrap(Box::new(An(resonator)))
 }
 
+/// `struck`, at the frequency its second input gives at each sample, so it glides as the note does.
+pub fn struck_gliding(level: f64, fade: f64) -> Net {
+    Net::wrap(Box::new(An(Gliding { level, fade, rate: DEFAULT_SR, hz: -1.0, coefficients: (0.0, 0.0, 0.0, 0.0), x1: 0.0, y1: 0.0, y2: 0.0 })))
+}
+
 /// A level worked out from the seconds since the note started, at every sample.
 pub fn shape<F>(f: F) -> Net
 where
@@ -186,6 +191,49 @@ impl AudioNode for Mode {
     }
 
     fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let (a1, a2, b0, b1) = self.coefficients;
+        let x = input[0] as f64;
+        let y = b0 * x + b1 * self.x1 - a1 * self.y1 - a2 * self.y2;
+        (self.x1, self.y2, self.y1) = (x, self.y1, y);
+        [y as f32].into()
+    }
+}
+
+/// The response of `struck`, written out: level (1 + cos w)(1 - r z^-1) / (1 - 2 r cos w z^-1 + r^2 z^-2).
+#[derive(Clone)]
+struct Gliding {
+    level: f64,
+    fade: f64,
+    rate: f64,
+    hz: f64,
+    coefficients: (f64, f64, f64, f64),
+    x1: f64,
+    y1: f64,
+    y2: f64,
+}
+
+impl AudioNode for Gliding {
+    const ID: u64 = 0x6d78_0004;
+    type Inputs = U2;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        (self.x1, self.y1, self.y2, self.hz) = (0.0, 0.0, 0.0, -1.0);
+    }
+
+    fn set_sample_rate(&mut self, rate: f64) {
+        (self.rate, self.hz) = (rate, -1.0);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+        let hz = (input[1] as f64).clamp(1.0, self.rate * 0.49);
+        if hz != self.hz {
+            let w = 2.0 * std::f64::consts::PI * hz / self.rate;
+            let r = 1000f64.powf(-1.0 / (self.fade * self.rate));
+            let gain = self.level * (1.0 + w.cos());
+            self.coefficients = (-2.0 * r * w.cos(), r * r, gain, -gain * r);
+            self.hz = hz;
+        }
         let (a1, a2, b0, b1) = self.coefficients;
         let x = input[0] as f64;
         let y = b0 * x + b1 * self.x1 - a1 * self.y1 - a2 * self.y2;
