@@ -33,7 +33,7 @@ const ARITHMETIC: &[&str] = &[
     "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
 ];
 const NODES: &[&str] = &[
-    "impulse", "follow", "time", "sine", "partials", "bowed_string", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "delay", "dc_block", "envelope", "perc",
+    "impulse", "follow", "time", "sine", "partials", "bowed_string", "air_jet", "wind_bands", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "delay", "dc_block", "envelope", "perc",
     "mix", "gain", "note_envelope", "rings", "input",
 ];
 
@@ -263,6 +263,22 @@ impl Build<'_> {
                 let mut figure = |key: &str| number(take(key).ok_or(format!("bowed_string needs {key}:"))?, "a bow's figure");
                 let (speed, force, position, takes, rosin) = (figure("speed")?, figure("force")?, figure("position")?, figure("takes")?, figure("rosin")?);
                 Ok(V::Sig(crate::synths::bowed_string(note, speed, force, position, takes, rosin, self.ctx.seed())))
+            }
+            "air_jet" => {
+                let pitch = signal(take("hz").ok_or("air_jet needs hz:")?)?;
+                let breath = signal(take("breath").ok_or("air_jet needs breath:")?)?;
+                let even = number(take("even").ok_or("air_jet needs even:")?, "a jet's even part")?;
+                Ok(V::Sig(crate::synths::air_jet(pitch, breath, self.ctx.seed(), even)))
+            }
+            "wind_bands" => {
+                let sound = signal(arg(0)?)?;
+                let vel = signal(take("vel").ok_or("wind_bands needs vel:")?)?;
+                let gains = numbers(take("gains").ok_or("wind_bands needs gains:")?, "a band's gain")?;
+                let levels = numbers(take("levels").ok_or("wind_bands needs levels:")?, "a level")?;
+                if gains.len() != 24 || levels.len() != 3 {
+                    return Err("wind_bands takes 24 gains, eight at each of pp, mf and ff, and 3 levels".to_string());
+                }
+                Ok(V::Sig(crate::synths::wind_bands(sound, vel, &gains, &levels)))
             }
             "partials" => {
                 let pitch = signal(arg(0)?)?;
