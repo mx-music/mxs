@@ -33,7 +33,7 @@ const ARITHMETIC: &[&str] = &[
     "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
 ];
 const NODES: &[&str] = &[
-    "impulse", "sine", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "envelope", "perc",
+    "impulse", "sine", "partials", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "envelope", "perc",
     "mix", "gain", "note_envelope", "rings",
 ];
 
@@ -97,6 +97,13 @@ fn number(v: V, what: &str) -> Result<f64, String> {
     match v {
         V::Num(x) => Ok(x),
         _ => Err(format!("{what} must be known when the note starts")),
+    }
+}
+
+fn numbers(v: V, what: &str) -> Result<Vec<f64>, String> {
+    match v {
+        V::List(items) => items.into_iter().map(|item| number(item, what)).collect(),
+        _ => Err(format!("{what}s must be a list")),
     }
 }
 
@@ -204,6 +211,16 @@ impl Build<'_> {
                 let freq = signal(take("hz").ok_or("sine needs hz:")?)?;
                 let phase = take("phase").map(|p| number(p, "a sine's phase")).transpose()?.unwrap_or(0.0);
                 Ok(V::Sig(freq >> net(An(Sine::<f32>::with_phase((phase / std::f64::consts::TAU).rem_euclid(1.0) as f32)))))
+            }
+            "partials" => {
+                let pitch = signal(arg(0)?)?;
+                let ratios = numbers(take("ratios").ok_or("partials needs ratios:")?, "a partial's ratio")?;
+                let levels = numbers(take("levels").ok_or("partials needs levels:")?, "a partial's level")?;
+                let phases = take("phases").map(|p| numbers(p, "a partial's phase")).transpose()?.unwrap_or_else(|| vec![0.0; ratios.len()]);
+                if levels.len() != ratios.len() || phases.len() != ratios.len() {
+                    return Err("partials takes as many levels and phases as ratios".to_string());
+                }
+                Ok(V::Sig(crate::synths::partials(pitch, &ratios, &levels, &phases)))
             }
             "saw" | "square" | "triangle" => {
                 let freq = signal(take("hz").ok_or(format!("{name} needs hz:"))?)?;

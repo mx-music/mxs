@@ -9,6 +9,7 @@ mod piano;
 
 pub use berimbau::berimbau;
 pub use piano::piano;
+pub(crate) use instruments::partials;
 
 /// Every synth mx ships.
 pub fn all() -> Vec<crate::Synth> {
