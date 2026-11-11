@@ -138,6 +138,18 @@ fn a_change_glides_a_playing_notes_option_over_its_slide() {
 }
 
 #[test]
+fn a_change_reaches_a_note_of_the_same_batch() {
+    let mut engine = engine();
+    engine.register(level());
+    let note = Event::note(Some(3), "level", &[]);
+    let change = Event::Set { target: Target::Sounds(vec![3]), options: vec![("amp".into(), 0.0)] };
+    engine.play(&[(0.0, note), (0.2, change)]).unwrap();
+    let (left, _) = engine.render(0.5).unwrap();
+    assert!(left[frame(0.1)] > 0.5);
+    assert_eq!(left[frame(0.3)], 0.0);
+}
+
+#[test]
 fn amp_and_pan_place_every_note() {
     let mut engine = engine();
     engine.register(level());

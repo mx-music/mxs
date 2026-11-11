@@ -325,22 +325,26 @@ impl Engine {
                     commands.push(Command::Start(voice));
                     sounds.push((*id, sound));
                 }
-                Event::Set { target, options } => {
-                    for change in self.changes(*at, target, options) {
-                        commands.push(Command::Change(Box::new(change)));
-                    }
-                }
+                Event::Set { .. } => {}
             }
         }
-        for command in commands {
-            self.send(command)?;
-        }
+        // The batch's sounds are known before its changes are resolved, so a change can reach a note of the same batch.
         for (id, sound) in sounds {
             self.next += 1;
             if let Some(id) = id {
                 self.ids.insert(id, self.next);
             }
             self.sounds.insert(self.next, sound);
+        }
+        for (at, event) in events {
+            if let Event::Set { target, options } = event {
+                for change in self.changes(*at, target, options) {
+                    commands.push(Command::Change(Box::new(change)));
+                }
+            }
+        }
+        for command in commands {
+            self.send(command)?;
         }
         Ok(())
     }
