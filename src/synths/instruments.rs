@@ -1,6 +1,7 @@
 //! mx's instruments measured from recordings, after their designs in mx's priv/synthdefs/mx-instruments.scd: plucked strings, winds and the organ.
 
 use crate::nodes::{between, db, decay2, hit, hz, modes, pink_noise, segment_at, segments, shape, struck_gliding, white_noise};
+use super::bowed::{self, Fit};
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -29,10 +30,15 @@ pub fn all() -> Vec<Synth> {
         sitar(),
         harmonium(),
         tanpura(),
-        bowed("violin", Bowed { lowest: 196.0, body: &[-2.0, 12.0, 20.0, 19.0, 18.0, 14.0, 11.0, 15.0, 10.0, -3.0, -10.0, -21.0], top: -19.0, dark_from: 300.0, dark: 5.0, swell: (1.1, 0.75), bow: -23.0, peak: 333.0, rise: 18.0, soft_rise: 6.0, fall: 12.0, soft_fall: 3.0, fade: 2.1, fade_slope: -0.55, pluck: 0.13, gain: 0.6, count: 32, dark_power: 2.5, level: 0.0 }),
-        bowed("viola", Bowed { lowest: 130.8, body: &[2.0, 20.0, 36.0, 31.0, 25.0, 30.0, 29.0, 25.0, 26.0, 13.0, 2.0, -12.0, -26.0], top: -10.0, dark_from: 400.0, dark: 2.0, swell: (0.95, 0.45), bow: -15.0, peak: 350.0, rise: 17.0, soft_rise: 3.0, fall: 14.0, soft_fall: 4.5, fade: 3.7, fade_slope: -0.7, pluck: 0.13, gain: 0.3, count: 32, dark_power: 2.5, level: -15.0 }),
-        bowed("cello", Bowed { lowest: 65.4, body: &[0.0, 14.0, 19.0, 20.0, 17.0, 15.0, 12.0, 15.0, 12.0, 10.0, 7.0, -3.0, -18.0, -28.0], top: -10.0, dark_from: 300.0, dark: 4.0, swell: (0.95, 0.3), bow: -23.0, peak: 144.0, rise: 14.0, soft_rise: 3.0, fall: 10.0, soft_fall: 6.5, fade: 4.0, fade_slope: -0.15, pluck: 0.13, gain: 0.6, count: 32, dark_power: 2.5, level: 0.0 }),
-        bowed("double_bass", Bowed { lowest: 41.2, body: &[0.0, 20.0, 28.0, 26.0, 21.0, 17.0, 10.0, 2.0, -6.0, -4.0, -8.0, -14.0, -18.0, -27.0, -30.0], top: -10.0, dark_from: 70.0, dark: 3.0, swell: (0.45, 0.18), bow: -23.0, peak: 84.0, rise: 24.0, soft_rise: 5.0, fall: 19.5, soft_fall: 2.0, fade: 3.9, fade_slope: 0.0, pluck: 0.13, gain: 0.6, count: 64, dark_power: 1.5, level: 0.0 }),
+        bowed("violin", Bowed { peak: 333.0, rise: 18.0, soft_rise: 6.0, fall: 12.0, soft_fall: 3.0, fade: 2.1, fade_slope: -0.55, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit { body: 147.0, gains: [[0.0; 8]; 3], levels: [-16.75, -16.70, -18.15], swell: (1.1, 0.75) }),
+        bowed("viola", Bowed { peak: 350.0, rise: 17.0, soft_rise: 3.0, fall: 14.0, soft_fall: 4.5, fade: 3.7, fade_slope: -0.7, pluck: 0.13, gain: 0.3, count: 32, level: -15.0 }, Fit { body: 98.1, gains: [[0.0; 8]; 3], levels: [-11.15, -15.50, -19.65], swell: (0.95, 0.45) }),
+        bowed("cello", Bowed { peak: 144.0, rise: 14.0, soft_rise: 3.0, fall: 10.0, soft_fall: 6.5, fade: 4.0, fade_slope: -0.15, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit {
+            body: 49.05,
+            gains: [[18.5, 16.8, 9.3, 8.1, 24.4, 3.6, 20.8, 18.7], [20.0, 15.2, 9.6, 6.5, 26.3, 9.3, 27.8, 19.2], [7.0, 7.4, 1.6, 3.0, 17.3, 4.6, 22.4, 14.4]],
+            levels: [-41.85, -47.70, -35.75],
+            swell: (0.95, 0.3),
+        }),
+        bowed("double_bass", Bowed { peak: 84.0, rise: 24.0, soft_rise: 5.0, fall: 19.5, soft_fall: 2.0, fade: 3.9, fade_slope: 0.0, pluck: 0.13, gain: 0.6, count: 64, level: 0.0 }, Fit { body: 30.9, gains: [[0.0; 8]; 3], levels: [-9.15, -11.80, -14.35], swell: (0.45, 0.18) }),
     ]
 }
 
@@ -736,15 +742,8 @@ fn tanpura() -> Synth {
         })
 }
 
-/// The figures a bowed string is measured by: its held harmonics' curve from `lowest`, and its plucked harmonics' peak, slopes and fades.
+/// The figures a plucked string is measured by: its harmonics' peak, slopes and fades.
 struct Bowed {
-    lowest: f64,
-    body: &'static [f64],
-    top: f64,
-    dark_from: f64,
-    dark: f64,
-    swell: (f64, f64),
-    bow: f64,
     peak: f64,
     rise: f64,
     soft_rise: f64,
@@ -755,52 +754,46 @@ struct Bowed {
     pluck: f64,
     gain: f64,
     count: usize,
-    dark_power: f64,
     level: f64,
 }
 
 /// A bowed string, which pizz: 1 plucks instead.
-fn bowed(name: &'static str, s: Bowed) -> Synth {
-    Synth::new(name)
+fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
+    let synth = Synth::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard the string is bowed or plucked."))
         .option(Spec::float("pizz").default(0.0).range(0.0, 1.0).doc("1 plucks the string instead of bowing it."))
         .option(Spec::float("vibrato").default(0.25).range(0.0, 2.0).doc("The vibrato's depth in semitones, reached as the note holds."))
-        .options(Spec::envelope(1.0, 0.3))
-        .build(move |o, ctx| {
-            let vel = o.number("vel").clamp(0.0, 1.0);
-            let pizz = o.number("pizz").clamp(0.0, 1.0);
-            let freq = hz(o.number("note"));
-            let soft = ((1.0 - vel) / 0.7).max(0.0);
-            let ratios = harmonics(s.count);
-            let hz_: Vec<f64> = ratios.iter().map(|n| freq * n).collect();
+        .options(Spec::envelope(1.0, 0.3));
+    bowed::bow_options(synth).build(move |o, ctx| {
+        let vel = o.number("vel").clamp(0.0, 1.0);
+        let pizz = o.number("pizz").clamp(0.0, 1.0);
+        let freq = hz(o.number("note"));
+        let soft = ((1.0 - vel) / 0.7).max(0.0);
+        let mut sound = net(zero());
+        if pizz < 1.0 {
+            sound = sound + bowed::held(o, ctx, &fit) * (1.0 - pizz) as f32;
+        }
+        let mut end = f64::INFINITY;
+        if pizz > 0.0 {
+            let hz_: Vec<f64> = harmonics(s.count).iter().map(|n| freq * n).collect();
+            let octaves: Vec<f64> = hz_.iter().map(|f| (f / s.peak).log2()).collect();
+            let levels: Vec<f64> = (0..s.count)
+                .map(|i| {
+                    let p = octaves[i];
+                    let level = p.min(0.0) * (s.rise + s.soft_rise * soft.powi(3)) - p.max(0.0) * (s.fall + s.soft_fall * soft);
+                    if hz_[i] < 16_000.0 { db(level) } else { 0.0 }
+                })
+                .collect();
+            let fades: Vec<f64> = octaves.iter().map(|p| s.fade * 2f64.powf(p * s.fade_slope)).collect();
             let gain = vel.powf(s.gain) * db(s.level);
-            let mut sound = net(zero());
-            if pizz < 1.0 {
-                let curve = shaped(&hz_, s.lowest, s.body, s.top);
-                let levels: Vec<f64> = (0..s.count).map(|i| if hz_[i] < 16_000.0 { db(curve[i] - soft.powf(s.dark_power) * s.dark * above(hz_[i], s.dark_from)) } else { 0.0 }).collect();
-                let held = partials(vibrato_after(o, o.number("vibrato"), 5.4, 0.3, 1.0), &ratios, &levels, &spread_phases(s.count)) * 0.008
-                    + (pink_noise(ctx.seed()) >> bpf(freq * 3.0, 1.5)) * (db(s.bow) * vel) as f32;
-                sound = sound + held * swell(o, s.swell.0 - s.swell.1 * vel) * (1.0 - pizz) as f32;
+            sound = sound + modes(net(impulse::<U1>()), &hz_, &levels, &fades) * (s.pluck * pizz * gain) as f32;
+            if pizz >= 1.0 {
+                end = silent_after(&levels, &fades, s.pluck);
             }
-            let mut end = f64::INFINITY;
-            if pizz > 0.0 {
-                let octaves: Vec<f64> = hz_.iter().map(|f| (f / s.peak).log2()).collect();
-                let levels: Vec<f64> = (0..s.count)
-                    .map(|i| {
-                        let p = octaves[i];
-                        let level = p.min(0.0) * (s.rise + s.soft_rise * soft.powi(3)) - p.max(0.0) * (s.fall + s.soft_fall * soft);
-                        if hz_[i] < 16_000.0 { db(level) } else { 0.0 }
-                    })
-                    .collect();
-                let fades: Vec<f64> = octaves.iter().map(|p| s.fade * 2f64.powf(p * s.fade_slope)).collect();
-                sound = sound + modes(net(impulse::<U1>()), &hz_, &levels, &fades) * (s.pluck * pizz) as f32;
-                if pizz >= 1.0 {
-                    end = silent_after(&levels, &fades, s.pluck);
-                }
-            }
-            Note::envelope(sound * gain as f32, o).within(end)
-        })
+        }
+        Note::envelope(sound, o).within(end)
+    })
 }
 
 /// Impulses every `period` seconds from `start`, until `until` seconds.

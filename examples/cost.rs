@@ -4,7 +4,7 @@ use mxs::{Engine, Event, RATE, synths};
 use std::time::Instant;
 
 fn main() {
-    for (name, note) in [("piano", 36.0), ("piano", 60.0), ("cello.bowed", 48.0), ("berimbau", 39.11)] {
+    for (name, note) in [("piano", 36.0), ("piano", 60.0), ("cello", 48.0), ("berimbau", 39.11)] {
         let mut engine = Engine::offline(RATE);
         synths::all().into_iter().for_each(|s| engine.register(s));
         let count = 50;
