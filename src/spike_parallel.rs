@@ -9,6 +9,7 @@ use std::time::Instant;
 
 const BLOCK: usize = 64;
 
+#[allow(clippy::vec_box, reason = "the mixer keeps its voices boxed")]
 fn voices(name: &str, note: f64, count: usize) -> Vec<Box<Voice>> {
     let mut engine = Engine::offline(RATE);
     synths::all().into_iter().for_each(|s| engine.register(s));
