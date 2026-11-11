@@ -46,7 +46,43 @@ pub fn all() -> Vec<Synth> {
     for bol in BOLS.iter().map(|b| b.name) {
         drums.push(tabla(&format!("tabla_{bol}"), Some(bol)));
     }
-    drums
+    drums.into_iter().map(trimmed).collect()
+}
+
+/// How many dB each drum's default stroke measured louder than scsynth's render of it, which it is turned down by.
+/// Their strikes' noise comes from another generator than scsynth's, and in a short burst it sets the modes ringing a few dB louder or softer.
+/// The timbales' noise is not seeded on scsynth either, so theirs are the mean of four renders, which spread over 3 dB.
+const TRIMS: [(&str, f64); 17] = [
+    ("snare", 3.3),
+    ("crash", 4.9),
+    ("closed_hihat", 3.2),
+    ("open_hihat", 5.4),
+    ("mid_tom", 5.0),
+    ("clave", 4.4),
+    ("ganza", 2.3),
+    ("low_conga", 3.4),
+    ("mid_conga", -3.2),
+    ("low_timbale", 5.2),
+    ("high_timbale", 2.5),
+    ("guiro", 5.5),
+    ("triangle", 3.5),
+    ("tambourine", 7.2),
+    ("tambourine_shake", 6.6),
+    ("cajon", -3.5),
+    ("low_bongo", -5.2),
+];
+
+fn trimmed(synth: Synth) -> Synth {
+    let Some(&(_, louder)) = TRIMS.iter().find(|(name, _)| *name == synth.name) else { return synth };
+    let gain = db(-louder) as f32;
+    let build = synth.build.clone();
+    Synth {
+        build: std::sync::Arc::new(move |o, ctx| {
+            let note = build(o, ctx);
+            Note { sound: note.sound * gain, end: note.end }
+        }),
+        ..synth
+    }
 }
 
 fn net(unit: impl AudioUnit + 'static) -> Net {
@@ -597,10 +633,10 @@ struct Stroke {
 }
 
 const PANDEIRO: [Stroke; 4] = [
-    Stroke { name: "thumb", gain: 0.1, head: [1.0, 0.5, 0.18, 0.1, 0.05], rings: [0.55, 0.8, 0.6, 0.3, 0.2], crack: [3.0, 0.15, 8.0], jingle: [1.0, 0.5], length: 1.6 },
+    Stroke { name: "thumb", gain: 0.0507, head: [1.0, 0.5, 0.18, 0.1, 0.05], rings: [0.55, 0.8, 0.6, 0.3, 0.2], crack: [3.0, 0.15, 8.0], jingle: [1.0, 0.5], length: 1.6 },
     Stroke { name: "heel", gain: 0.074, head: [0.25, 1.0, 0.45, 0.2, 0.12], rings: [0.12, 0.5, 0.3, 0.2, 0.15], crack: [10.0, 0.15, 8.0], jingle: [3.5, 0.4], length: 1.0 },
     Stroke { name: "slap", gain: 0.221, head: [0.01, 0.015, 0.015, 0.01, 0.01], rings: [0.6, 0.6, 0.5, 0.4, 0.3], crack: [6.0, 0.13, 5.0], jingle: [1.5, 0.3], length: 0.8 },
-    Stroke { name: "jingles", gain: 0.75, head: [0.035, 0.025, 0.012, 0.006, 0.003], rings: [0.4, 0.4, 0.3, 0.2, 0.1], crack: [1.0, 0.08, 10.0], jingle: [1.0, 0.35], length: 1.2 },
+    Stroke { name: "jingles", gain: 0.582, head: [0.035, 0.025, 0.012, 0.006, 0.003], rings: [0.4, 0.4, 0.3, 0.2, 0.1], crack: [1.0, 0.08, 10.0], jingle: [1.0, 0.35], length: 1.2 },
 ];
 
 /// The pandeiro, whose `stroke` option picks the stroke; `fixed` makes one of the old names that each played one stroke.

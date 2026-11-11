@@ -75,13 +75,17 @@ pub fn hit(attack: f64, decay: f64, curve: f64) -> Net {
 }
 
 /// Resonators set ringing by `exciter`, one at each of `hz`, with its level and the seconds it takes to fade 60 dB; those above 20 kHz are left out.
+/// They answer as mx's designs' resonators on scsynth do, measured from their renders: an impulse rings each at 2 cos(w / 2) times its level, half a sample late, w being its frequency in radians per sample.
 pub fn modes(exciter: Net, hz: &[f64], levels: &[f64], rings: &[f64]) -> Net {
     let mut bank: Option<Net> = None;
     for ((&f, &level), &ring) in hz.iter().zip(levels).zip(rings) {
         if f >= 20_000.0 || f <= 0.0 || ring <= 0.0 {
             continue;
         }
-        let one = mode(f, 0.0, level, ring);
+        let mut resonator = Mode::new(f, 0.0, level, ring);
+        resonator.like_scsynth = true;
+        resonator.set_sample_rate(DEFAULT_SR);
+        let one = Net::wrap(Box::new(An(resonator)));
         bank = Some(match bank {
             Some(bank) => bank & one,
             None => one,
@@ -140,6 +144,7 @@ struct Mode {
     phase: f64,
     level: f64,
     fade: f64,
+    like_scsynth: bool,
     coefficients: (f64, f64, f64, f64),
     x1: f64,
     y1: f64,
@@ -148,7 +153,7 @@ struct Mode {
 
 impl Mode {
     fn new(hz: f64, phase: f64, level: f64, fade: f64) -> Self {
-        let mut mode = Mode { hz, phase, level, fade, coefficients: (0.0, 0.0, 0.0, 0.0), x1: 0.0, y1: 0.0, y2: 0.0 };
+        let mut mode = Mode { hz, phase, level, fade, like_scsynth: false, coefficients: (0.0, 0.0, 0.0, 0.0), x1: 0.0, y1: 0.0, y2: 0.0 };
         mode.set_sample_rate(DEFAULT_SR);
         mode
     }
@@ -166,9 +171,13 @@ impl AudioNode for Mode {
     fn set_sample_rate(&mut self, rate: f64) {
         let w = 2.0 * std::f64::consts::PI * self.hz / rate;
         let r = 1000f64.powf(-1.0 / (self.fade * rate));
+        let (level, phase) = if self.like_scsynth {
+            (self.level * 2.0 * (w / 2.0).cos(), std::f64::consts::FRAC_PI_2 - w / 2.0)
+        } else {
+            (self.level, self.phase)
+        };
         // Its impulse response is level * r^n * sin((n + 1) * w + phase).
-        self.coefficients =
-            (-2.0 * r * w.cos(), r * r, self.level * (w + self.phase).sin(), -self.level * r * self.phase.sin());
+        self.coefficients = (-2.0 * r * w.cos(), r * r, level * (w + phase).sin(), -level * r * phase.sin());
     }
 
     fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
