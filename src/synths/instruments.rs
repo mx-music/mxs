@@ -88,6 +88,17 @@ pub(crate) fn partials(pitch: Net, ratios: &[f64], levels: &[f64], phases: &[f64
     pitch >> net(An(Partials { start: kept.iter().map(|k| k.2).collect(), ratios: kept.iter().map(|k| (k.0, k.1)).collect(), phases: kept.iter().map(|k| k.2).collect(), rate: DEFAULT_SR as f32 }))
 }
 
+/// Partials as `partials` plays them, each raised by its `raised` dB times the level of `by`, a second input from 0 to 1.
+pub(crate) fn raised_partials(pitch: Net, by: Net, ratios: &[f64], levels: &[f64], raised: &[f64], phases: &[f64]) -> Net {
+    let kept: Vec<(f32, f32, f32, f32)> = (0..ratios.len())
+        .filter(|&i| levels[i] != 0.0)
+        .map(|i| (ratios[i] as f32, levels[i] as f32, (raised[i] * std::f64::consts::LN_10 / 20.0) as f32, (phases[i] / (2.0 * PI)).rem_euclid(1.0) as f32))
+        .collect();
+    let start: Vec<f32> = kept.iter().map(|k| k.3).collect();
+    let harmonics = kept.iter().map(|k| (k.0, k.1, k.2)).collect();
+    (pitch | by) >> net(An(RaisedPartials { phases: start.clone(), start, harmonics, rate: DEFAULT_SR as f32 }))
+}
+
 /// The phases mx's additive designs start their harmonics at, so they do not all peak together.
 pub(crate) fn spread_phases(count: usize) -> Vec<f64> {
     (1..=count).map(|n| PI * n as f64 * (n as f64 - 1.0) / 24.0).collect()
@@ -331,17 +342,12 @@ fn tenor_sax() -> Synth {
         let darkness: Vec<f64> = hz_.iter().map(|f| soft * 6.0 * (f / 600.0).log2().max(0.0)).collect();
         let held: Vec<f64> = (0..32).map(|i| curve[i] + (note - 44.0) * 0.1 - darkness[i]).collect();
         let onset: Vec<f64> = (0..32).map(|i| short * (20.0 * (hz_[i] / 400.0).log2().clamp(0.0, 1.0) + 0.5 * darkness[i])).collect();
-        // The onset fades out over 0.4 s, so the tone is its held levels plus a brighter set that fades.
-        let fading = segments(&[1.0, 0.0], &[0.4], &[-4.0]);
         let depth = o.number("vibrato") * 0.146;
-        let steady = partials(vibrato(o, depth, 4.94), &ratios, &audible(held.clone(), freq, &ratios, 16_000.0), &spread_phases(32));
+        let levels = audible(held, freq, &ratios, 16_000.0);
         let tone = if short > 0.0 {
-            let bright: Vec<f64> = (0..32).map(|i| held[i] + onset[i]).collect();
-            let brighter = partials(vibrato(o, depth, 4.94), &ratios, &audible(bright, freq, &ratios, 16_000.0), &spread_phases(32));
-            let fade = fading.clone();
-            steady * (net(dc(1.0)) - fade.clone()) + brighter * fade
+            raised_partials(vibrato(o, depth, 4.94), segments(&[1.0, 0.0], &[0.4], &[-4.0]), &ratios, &levels, &onset, &spread_phases(32))
         } else {
-            steady
+            partials(vibrato(o, depth, 4.94), &ratios, &levels, &spread_phases(32))
         };
         let sound = (tone * 0.07 + breath(ctx, 1500.0, -33.0, vel)) * swell(o, 0.15 - 0.1 * vel) * vel.powf(1.25) as f32;
         Note::envelope(sound, o)
@@ -833,6 +839,39 @@ struct Partials {
     ratios: Vec<(f32, f32)>,
     phases: Vec<f32>,
     rate: f32,
+}
+
+#[derive(Clone)]
+struct RaisedPartials {
+    start: Vec<f32>,
+    /// Each harmonic's ratio, level, and natural log of its raise.
+    harmonics: Vec<(f32, f32, f32)>,
+    phases: Vec<f32>,
+    rate: f32,
+}
+
+impl AudioNode for RaisedPartials {
+    const ID: u64 = 0x6d78_0042;
+    type Inputs = U2;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+    }
+
+    fn reset(&mut self) {
+        self.phases.clone_from(&self.start);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+        let step = input[0] / self.rate;
+        let mut sum = 0.0;
+        for ((ratio, level, raise), phase) in self.harmonics.iter().zip(self.phases.iter_mut()) {
+            sum += level * (raise * input[1]).exp() * (std::f32::consts::TAU * *phase).sin();
+            *phase = (*phase + step * ratio).fract();
+        }
+        [sum].into()
+    }
 }
 
 impl AudioNode for Partials {
