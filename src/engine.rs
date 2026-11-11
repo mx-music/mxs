@@ -1,11 +1,12 @@
 //! The engine: synths and effects registered by name, samples loaded from files, and events stamped with seconds, played live or rendered offline.
 
+use crate::device::{self, Format, Range, Settings};
 use crate::mixer::{CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices};
 use crate::options::{Context, Control, Options};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Spec, Value};
 use crate::synth::{Effect, Note, Synth};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use fundsp::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -79,6 +80,7 @@ pub enum Error {
     Offline,
     Live,
     Failed,
+    DeviceLost(String),
 }
 
 impl std::fmt::Display for Error {
@@ -103,6 +105,7 @@ impl std::fmt::Display for Error {
             Error::Offline => write!(f, "this engine renders offline and has no output"),
             Error::Live => write!(f, "this engine plays live and cannot render"),
             Error::Failed => write!(f, "the engine failed while filling audio, and has to be started again"),
+            Error::DeviceLost(name) => write!(f, "the output device {name} went away, and the engine has to be started again"),
         }
     }
 }
@@ -136,7 +139,7 @@ struct Recording {
 
 type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
 
-/// The engine, live on the default output or offline.
+/// The engine, live on an output device or offline.
 pub struct Engine {
     rate: f64,
     synths: HashMap<String, Registered<Synth>>,
@@ -158,6 +161,8 @@ pub struct Engine {
     clock: Arc<AtomicU64>,
     voices: Arc<Voices>,
     failed: Arc<AtomicBool>,
+    lost: Arc<AtomicBool>,
+    device: String,
     output: Output,
 }
 
@@ -189,29 +194,33 @@ impl Engine {
 
     /// An engine that plays through the default output device at its own rate.
     pub fn live() -> Result<Engine, Error> {
-        Engine::open_live(false)
+        Engine::live_with(&Settings::default())
     }
 
     /// An engine that plays through the default output device, and reads the default input device at the same rate.
     pub fn live_with_input() -> Result<Engine, Error> {
-        Engine::open_live(true)
+        Engine::live_with(&Settings { with_input: true, ..Settings::default() })
     }
 
-    fn open_live(with_input: bool) -> Result<Engine, Error> {
+    /// An engine that plays as `settings` ask, on the default output device at its own rate for what they leave out.
+    pub fn live_with(settings: &Settings) -> Result<Engine, Error> {
         let (commands, receiving) = rtrb::RingBuffer::new(CAPACITY);
         let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
         let clock = Arc::new(AtomicU64::new(0));
         let failed = Arc::new(AtomicBool::new(false));
         let (stop, stopped) = mpsc::channel::<()>();
-        let (ready, started) = mpsc::channel::<Result<(f64, usize), String>>();
+        let (ready, started) = mpsc::channel::<Result<(f64, usize, String), String>>();
         let failing = failed.clone();
+        let lost = Arc::new(AtomicBool::new(false));
+        let losing = lost.clone();
+        let settings = settings.clone();
         let mixing = clock.clone();
         let voices = Voices::new(VOICES);
         let limiting = voices.clone();
         // cpal's streams cannot move between threads on every platform, so one thread owns them until the engine is dropped.
-        std::thread::spawn(move || match open(receiving, returning, mixing, limiting, failing, with_input) {
-            Ok((streams, rate, inputs)) => {
-                let _ = ready.send(Ok((rate, inputs)));
+        std::thread::spawn(move || match open(receiving, returning, mixing, limiting, failing, losing, &settings) {
+            Ok((streams, rate, inputs, name)) => {
+                let _ = ready.send(Ok((rate, inputs, name)));
                 let _ = stopped.recv();
                 drop(streams);
             }
@@ -219,9 +228,11 @@ impl Engine {
                 let _ = ready.send(Err(reason));
             }
         });
-        let (rate, inputs) = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
+        let (rate, inputs, name) = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
         let mut engine = Engine::with(rate, commands, garbage, clock, voices, failed, Output::Live { stop });
         engine.inputs = inputs;
+        engine.lost = lost;
+        engine.device = name;
         Ok(engine)
     }
 
@@ -257,6 +268,8 @@ impl Engine {
             clock,
             voices,
             failed,
+            lost: Arc::new(AtomicBool::new(false)),
+            device: String::new(),
             output,
         }
     }
@@ -580,7 +593,13 @@ impl Engine {
     }
 
     fn check_running(&self) -> Result<(), Error> {
-        if self.failed.load(Ordering::Acquire) { Err(Error::Failed) } else { Ok(()) }
+        if self.lost.load(Ordering::Acquire) {
+            Err(Error::DeviceLost(self.device.clone()))
+        } else if self.failed.load(Ordering::Acquire) {
+            Err(Error::Failed)
+        } else {
+            Ok(())
+        }
     }
 
     fn send(&mut self, mut command: Command) -> Result<(), Error> {
@@ -799,36 +818,64 @@ fn open(
     clock: Arc<AtomicU64>,
     voices: Arc<Voices>,
     failed: Arc<AtomicBool>,
-    with_input: bool,
-) -> Result<(Streams, f64, usize), String> {
+    lost: Arc<AtomicBool>,
+    settings: &Settings,
+) -> Result<(Streams, f64, usize, String), String> {
     let host = cpal::default_host();
-    let device = host.default_output_device().ok_or("no output device")?;
-    let config = device.default_output_config().map_err(|e| e.to_string())?;
-    if config.sample_format() != cpal::SampleFormat::F32 {
-        return Err(format!("the output takes {} samples, and the engine writes f32", config.sample_format()));
-    }
-    let rate = config.sample_rate() as f64;
-    let channels = config.channels() as usize;
-    let (input_stream, input) = if with_input { open_input(&host, config.sample_rate())? } else { (None, None) };
+    let device = device::output(&host, settings.device.as_deref())?;
+    let name = device::name_of(&device);
+    let rate = match settings.rate {
+        Some(rate) => rate,
+        None => device.default_output_config().map_err(|e| e.to_string())?.sample_rate(),
+    };
+    let ranges: Vec<Range> = device.supported_output_configs().map_err(|e| e.to_string())?.map(Range::from).collect();
+    let chosen = device::choose(&name, &ranges, rate, settings.buffer)?;
+    let (input_stream, input) =
+        if settings.with_input { open_input(&host, settings.input_device.as_deref(), chosen.rate)? } else { (None, None) };
     let inputs = input.as_ref().map_or(0, |i| i.channels);
-    let mut mixer = Mixer::new(commands, garbage, clock, voices, input);
-    let mut left = vec![0.0f32; 16384];
-    let mut right = vec![0.0f32; 16384];
-    let stream = device
-        .build_output_stream(
-            config.into(),
-            move |data: &mut [f32], _| fill(&mut mixer, &failed, data, channels, &mut left, &mut right),
-            |e| eprintln!("mxs output: {e}"),
-            None,
-        )
-        .map_err(|e| e.to_string())?;
+    let mixer = Mixer::new(commands, garbage, clock, voices, input);
+    let config = cpal::StreamConfig {
+        channels: chosen.channels,
+        sample_rate: chosen.rate,
+        buffer_size: chosen.buffer.map_or(cpal::BufferSize::Default, cpal::BufferSize::Fixed),
+    };
+    let stream = match chosen.format {
+        Format::F32 => output_stream::<f32>(&device, config, mixer, failed, lost),
+        Format::I24 => output_stream::<cpal::I24>(&device, config, mixer, failed, lost),
+        Format::I16 => output_stream::<i16>(&device, config, mixer, failed, lost),
+    }?;
     stream.play().map_err(|e| e.to_string())?;
-    Ok(((input_stream, stream), rate, inputs))
+    Ok(((input_stream, stream), chosen.rate as f64, inputs, name))
 }
 
-/// The default input device at the output's rate, sending its frames to the mixer over a ring buffer.
-fn open_input(host: &cpal::Host, rate: cpal::SampleRate) -> Result<(Option<cpal::Stream>, Option<Input>), String> {
-    let device = host.default_input_device().ok_or("no input device")?;
+fn output_stream<T>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    mut mixer: Mixer,
+    failed: Arc<AtomicBool>,
+    lost: Arc<AtomicBool>,
+) -> Result<cpal::Stream, String>
+where
+    T: cpal::SizedSample + cpal::FromSample<f32>,
+{
+    let channels = config.channels as usize;
+    let mut left = vec![0.0f32; 16384];
+    let mut right = vec![0.0f32; 16384];
+    device
+        .build_output_stream(
+            config,
+            move |data: &mut [T], _| fill(&mut mixer, &failed, data, channels, &mut left, &mut right),
+            move |e| match e.kind() {
+                cpal::ErrorKind::DeviceNotAvailable => lost.store(true, Ordering::Release),
+                _ => eprintln!("mxs output: {e}"),
+            },
+            None,
+        )
+        .map_err(|e| e.to_string())
+}
+
+fn open_input(host: &cpal::Host, name: Option<&str>, rate: cpal::SampleRate) -> Result<(Option<cpal::Stream>, Option<Input>), String> {
+    let device = device::input(host, name)?;
     let ranges = device.supported_input_configs().map_err(|e| e.to_string())?;
     let config = ranges
         .filter(|range| range.sample_format() == cpal::SampleFormat::F32)
@@ -856,9 +903,16 @@ fn open_input(host: &cpal::Host, rate: cpal::SampleRate) -> Result<(Option<cpal:
 }
 
 /// Fills an interleaved buffer of `channels` from the mixer, or silence once it has panicked, which marks the engine failed instead of aborting the process.
-fn fill(mixer: &mut Mixer, failed: &AtomicBool, data: &mut [f32], channels: usize, left: &mut [f32], right: &mut [f32]) {
+fn fill<T: cpal::Sample + cpal::FromSample<f32>>(
+    mixer: &mut Mixer,
+    failed: &AtomicBool,
+    data: &mut [T],
+    channels: usize,
+    left: &mut [f32],
+    right: &mut [f32],
+) {
     if failed.load(Ordering::Relaxed) {
-        data.fill(0.0);
+        data.fill(T::EQUILIBRIUM);
         return;
     }
     let filled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -866,17 +920,17 @@ fn fill(mixer: &mut Mixer, failed: &AtomicBool, data: &mut [f32], channels: usiz
             let n = frames.len() / channels;
             mixer.render(&mut left[..n], &mut right[..n]);
             for (i, frame) in frames.chunks_mut(channels).enumerate() {
-                frame[0] = left[i];
+                frame[0] = T::from_sample(left[i]);
                 if channels > 1 {
-                    frame[1] = right[i];
+                    frame[1] = T::from_sample(right[i]);
                 }
-                frame.iter_mut().skip(2).for_each(|x| *x = 0.0);
+                frame.iter_mut().skip(2).for_each(|x| *x = T::EQUILIBRIUM);
             }
         }
     }));
     if filled.is_err() {
         failed.store(true, Ordering::Release);
-        data.fill(0.0);
+        data.fill(T::EQUILIBRIUM);
     }
 }
 
@@ -1007,6 +1061,37 @@ mod tests {
         fill(mixer, &failed, &mut data, 2, &mut left, &mut right);
         assert!(failed.load(Ordering::Acquire));
         assert!(data.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn a_device_of_16_bit_samples_gets_the_float_samples_rounded_to_them() {
+        let render = || {
+            let mut engine = Engine::offline(48_000.0);
+            crate::synths::all().into_iter().for_each(|s| engine.register(s));
+            engine.play(&[(0.0, Event::note(None, "saw", &[("amp", 2.0)]))]).unwrap();
+            engine
+        };
+        let (mut floats, mut ints) = (render(), render());
+        let (Output::Offline(a), Output::Offline(b)) = (&mut floats.output, &mut ints.output) else { unreachable!() };
+        let failed = AtomicBool::new(false);
+        let (mut left, mut right) = (vec![0.0; 64], vec![0.0; 64]);
+        let mut float_data = vec![0.0f32; 2 * 4800];
+        let mut int_data = vec![0i16; 2 * 4800];
+        fill(a, &failed, &mut float_data, 2, &mut left, &mut right);
+        fill(b, &failed, &mut int_data, 2, &mut left, &mut right);
+        assert!(float_data.iter().any(|x| x.abs() > 0.1));
+        for (x, n) in float_data.iter().zip(&int_data) {
+            assert!((x * 32768.0 - *n as f32).abs() <= 1.0, "{x} as {n}");
+        }
+    }
+
+    #[test]
+    fn once_the_output_device_goes_away_the_next_call_names_it() {
+        let mut engine = Engine::offline(48_000.0);
+        engine.device = "USB Interface".to_string();
+        engine.lost.store(true, Ordering::Release);
+        let error = engine.play(&[(0.0, Event::note(None, "saw", &[]))]).unwrap_err();
+        assert_eq!(error.to_string(), "the output device USB Interface went away, and the engine has to be started again");
     }
 
     /// Renders `seconds` 1024 frames at a time, feeding each frame's input before it, as a sound card would.
