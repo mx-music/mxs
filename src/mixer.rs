@@ -4,7 +4,7 @@
 use crate::options::Control;
 use fundsp::prelude::*;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 pub(crate) const CAPACITY: usize = 16384;
 /// The most input channels the mixer reads.
@@ -22,6 +22,18 @@ pub(crate) enum Out {
     Tap,
 }
 
+/// How many notes may sound at once, and how many the mixer has stolen to keep to it.
+pub(crate) struct Voices {
+    pub limit: AtomicUsize,
+    pub stolen: AtomicU64,
+}
+
+impl Voices {
+    pub fn new(limit: usize) -> Arc<Voices> {
+        Arc::new(Voices { limit: AtomicUsize::new(limit), stolen: AtomicU64::new(0) })
+    }
+}
+
 pub(crate) struct Voice {
     pub key: u64,
     pub out: Out,
@@ -31,6 +43,9 @@ pub(crate) struct Voice {
     pub start: u64,
     pub end: u64,
     pub fade: u64,
+    /// The loudest sample of its last block, which picks the quietest note to steal.
+    pub level: f32,
+    pub stolen: bool,
 }
 
 pub(crate) struct Chain {
@@ -99,6 +114,7 @@ pub(crate) struct Mixer {
     output_recorder: Option<Box<Recorder>>,
     now: u64,
     clock: Arc<AtomicU64>,
+    limit: Arc<Voices>,
 }
 
 impl Mixer {
@@ -106,6 +122,7 @@ impl Mixer {
         commands: rtrb::Consumer<Command>,
         garbage: rtrb::Producer<Garbage>,
         clock: Arc<AtomicU64>,
+        limit: Arc<Voices>,
         input: Option<Input>,
     ) -> Self {
         Mixer {
@@ -122,6 +139,7 @@ impl Mixer {
             output_recorder: None,
             now: clock.load(Ordering::Acquire),
             clock,
+            limit,
         }
     }
 
@@ -200,6 +218,8 @@ impl Mixer {
             }
         }
 
+        self.keep_to_the_limit(end);
+
         for chain in &mut self.chains {
             chain.input.clear();
         }
@@ -230,12 +250,14 @@ impl Mixer {
                     Out::Tap => Some(None),
                     Out::Main => None,
                 };
+                let mut loudest = 0.0f32;
                 for k in 0..length {
                     let at = self.now + (from + k) as u64;
                     let left_to_end = voice.end - at;
                     let gain = if left_to_end < voice.fade { left_to_end as f32 / voice.fade as f32 } else { 1.0 };
                     let l = self.buffer.at_f32(0, k) * gain;
                     let r = self.buffer.at_f32(1, k) * gain;
+                    loudest = loudest.max(l.abs()).max(r.abs());
                     match target {
                         Some(c) => {
                             let input = match c {
@@ -251,6 +273,7 @@ impl Mixer {
                         }
                     }
                 }
+                voice.level = loudest;
             }
             if voice.end <= end {
                 let voice = self.voices.swap_remove(i);
@@ -296,6 +319,25 @@ impl Mixer {
 
         self.now = end;
         self.clock.store(end, Ordering::Release);
+    }
+
+    /// Steals notes until no more than the limit sound by the block's `end`: first the quietest of those already playing, which fade out over their last 10 ms, then the earliest of those starting in this block, which never start.
+    /// Live input is not a note, and a note always starts, so a new note past the limit takes the place of an old one.
+    fn keep_to_the_limit(&mut self, end: u64) {
+        let limit = self.limit.limit.load(Ordering::Relaxed);
+        let now = self.now;
+        let sounding = |v: &Voice| v.input.is_none() && !v.stolen && v.start < end && v.end > now;
+        let mut count = self.voices.iter().filter(|v| sounding(v)).count();
+        while count > limit {
+            let playing = self.voices.iter().enumerate().filter(|(_, v)| sounding(v) && v.start < now).min_by(|a, b| a.1.level.total_cmp(&b.1.level));
+            let starting = || self.voices.iter().enumerate().filter(|(_, v)| sounding(v)).min_by_key(|(_, v)| v.start);
+            let Some((i, _)) = playing.or_else(starting) else { break };
+            let voice = &mut self.voices[i];
+            voice.stolen = true;
+            voice.end = if voice.start >= now { voice.start } else { Ord::min(voice.end, now + voice.fade) };
+            self.limit.stolen.fetch_add(1, Ordering::Relaxed);
+            count -= 1;
+        }
     }
 
     /// The frames every running recording has room for before its ring is full.

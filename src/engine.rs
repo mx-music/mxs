@@ -1,6 +1,6 @@
 //! The engine: synths and effects registered by name, samples loaded from files, and events stamped with seconds, played live or rendered offline.
 
-use crate::mixer::{CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice};
+use crate::mixer::{CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices};
 use crate::options::{Context, Control, Options};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Spec, Value};
@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 
 /// Seconds of silence a note's end fades over, so a note cut at its end does not click.
 const END_FADE: f64 = 0.01;
+/// How many notes sound at once unless the caller sets another limit: what one core fills in time with the berimbau, mx's costliest struck instrument.
+pub const VOICES: usize = 48;
 
 /// What a change applies to.
 #[derive(Clone, Debug)]
@@ -154,6 +156,7 @@ pub struct Engine {
     warned: HashSet<(String, String)>,
     warnings: Vec<String>,
     clock: Arc<AtomicU64>,
+    voices: Arc<Voices>,
     failed: Arc<AtomicBool>,
     output: Output,
 }
@@ -164,8 +167,9 @@ impl Engine {
         let (commands, receiving) = rtrb::RingBuffer::new(CAPACITY);
         let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
         let clock = Arc::new(AtomicU64::new(0));
-        let mixer = Mixer::new(receiving, returning, clock.clone(), None);
-        Engine::with(rate, commands, garbage, clock, Arc::new(AtomicBool::new(false)), Output::Offline(Box::new(mixer)))
+        let voices = Voices::new(VOICES);
+        let mixer = Mixer::new(receiving, returning, clock.clone(), voices.clone(), None);
+        Engine::with(rate, commands, garbage, clock, voices, Arc::new(AtomicBool::new(false)), Output::Offline(Box::new(mixer)))
     }
 
     /// An offline engine whose input is `channels` fed through the producer returned, for tests of live input.
@@ -175,9 +179,10 @@ impl Engine {
         let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
         let (feed, frames) = rtrb::RingBuffer::new(CAPACITY * channels);
         let clock = Arc::new(AtomicU64::new(0));
-        let mixer = Mixer::new(receiving, returning, clock.clone(), Some(Input { frames, channels }));
+        let voices = Voices::new(VOICES);
+        let mixer = Mixer::new(receiving, returning, clock.clone(), voices.clone(), Some(Input { frames, channels }));
         let output = Output::Offline(Box::new(mixer));
-        let mut engine = Engine::with(rate, commands, garbage, clock, Arc::new(AtomicBool::new(false)), output);
+        let mut engine = Engine::with(rate, commands, garbage, clock, voices, Arc::new(AtomicBool::new(false)), output);
         engine.inputs = channels;
         (engine, feed)
     }
@@ -201,8 +206,10 @@ impl Engine {
         let (ready, started) = mpsc::channel::<Result<(f64, usize), String>>();
         let failing = failed.clone();
         let mixing = clock.clone();
+        let voices = Voices::new(VOICES);
+        let limiting = voices.clone();
         // cpal's streams cannot move between threads on every platform, so one thread owns them until the engine is dropped.
-        std::thread::spawn(move || match open(receiving, returning, mixing, failing, with_input) {
+        std::thread::spawn(move || match open(receiving, returning, mixing, limiting, failing, with_input) {
             Ok((streams, rate, inputs)) => {
                 let _ = ready.send(Ok((rate, inputs)));
                 let _ = stopped.recv();
@@ -213,7 +220,7 @@ impl Engine {
             }
         });
         let (rate, inputs) = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
-        let mut engine = Engine::with(rate, commands, garbage, clock, failed, Output::Live { stop });
+        let mut engine = Engine::with(rate, commands, garbage, clock, voices, failed, Output::Live { stop });
         engine.inputs = inputs;
         Ok(engine)
     }
@@ -223,6 +230,7 @@ impl Engine {
         commands: rtrb::Producer<Command>,
         garbage: rtrb::Consumer<Garbage>,
         clock: Arc<AtomicU64>,
+        voices: Arc<Voices>,
         failed: Arc<AtomicBool>,
         output: Output,
     ) -> Engine {
@@ -247,6 +255,7 @@ impl Engine {
             warned: HashSet::new(),
             warnings: Vec::new(),
             clock,
+            voices,
             failed,
             output,
         }
@@ -316,9 +325,20 @@ impl Engine {
         self.samples.get(&sample).map(|data| data.channels.len())
     }
 
-        /// Values held to their ranges since the last call, once for each option.
+    /// Values held to their ranges since the last call, once for each option, and how many notes were stolen to keep to the voice limit.
     pub fn warnings(&mut self) -> Vec<String> {
+        let stolen = self.voices.stolen.swap(0, Ordering::Relaxed);
+        if stolen > 0 {
+            let limit = self.voices.limit.load(Ordering::Relaxed);
+            let notes = if stolen == 1 { "note was" } else { "notes were" };
+            self.warnings.push(format!("{stolen} {notes} stolen to keep to {limit} at once"));
+        }
         std::mem::take(&mut self.warnings)
+    }
+
+    /// Sets how many notes sound at once; a note past it takes the place of the quietest, which fades out over 10 ms.
+    pub fn set_voice_limit(&mut self, limit: usize) {
+        self.voices.limit.store(limit, Ordering::Relaxed);
     }
 
     /// Starts an effect chain of `effects`, each a name and its options, in order, and returns the chain notes name to play into.
@@ -682,7 +702,7 @@ impl Engine {
         let start = Ord::max(self.frames(at), self.clock.load(Ordering::Acquire));
         let end = start.saturating_add(Ord::max(self.frames(note.end), 1));
         let fade = Ord::max(self.frames(END_FADE), 1);
-        let voice = Voice { key, out, input, unit: Box::new(unit), start, end, fade };
+        let voice = Voice { key, out, input, unit: Box::new(unit), start, end, fade, level: 0.0, stolen: false };
         let chain = match out {
             Out::Chain(key) => Some(key),
             _ => None,
@@ -777,6 +797,7 @@ fn open(
     commands: rtrb::Consumer<Command>,
     garbage: rtrb::Producer<Garbage>,
     clock: Arc<AtomicU64>,
+    voices: Arc<Voices>,
     failed: Arc<AtomicBool>,
     with_input: bool,
 ) -> Result<(Streams, f64, usize), String> {
@@ -790,7 +811,7 @@ fn open(
     let channels = config.channels() as usize;
     let (input_stream, input) = if with_input { open_input(&host, config.sample_rate())? } else { (None, None) };
     let inputs = input.as_ref().map_or(0, |i| i.channels);
-    let mut mixer = Mixer::new(commands, garbage, clock, input);
+    let mut mixer = Mixer::new(commands, garbage, clock, voices, input);
     let mut left = vec![0.0f32; 16384];
     let mut right = vec![0.0f32; 16384];
     let stream = device

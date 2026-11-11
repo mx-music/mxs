@@ -361,3 +361,64 @@ fn sounding_counts_notes_until_they_end_and_not_live_input() {
     engine.render(0.6).unwrap();
     assert!(!engine.sounding());
 }
+
+/// A struck resonator that dies away over 5 seconds, so each note is quieter than the one after it.
+fn ping() -> Synth {
+    Synth::new("ping").build(|_, _| Note::rings(Net::wrap(Box::new(impulse::<U1>())) >> mode(440.0, 0.0, 1.0, 5.0), 5.0))
+}
+
+#[test]
+fn past_the_voice_limit_the_quietest_notes_are_stolen_leaving_the_latest() {
+    let render = |from: usize, limit: usize| {
+        let mut engine = engine();
+        engine.register(ping());
+        engine.set_voice_limit(limit);
+        let notes: Vec<_> = (from..20).map(|i| (i as f64 * 0.05, Event::note(None, "ping", &[]))).collect();
+        engine.play(&notes).unwrap();
+        let (left, _) = engine.render(1.5).unwrap();
+        (left, engine.warnings())
+    };
+    let (limited, warnings) = render(0, 8);
+    let (latest, _) = render(12, 100);
+    for k in frame(0.97)..frame(1.5) {
+        assert!((limited[k] - latest[k]).abs() < 1e-5, "frame {k}: {} against {}", limited[k], latest[k]);
+    }
+    assert_eq!(warnings, ["12 notes were stolen to keep to 8 at once"]);
+}
+
+#[test]
+fn a_stolen_note_fades_out_over_10_ms() {
+    let render = |notes: &[f64], limit: usize| {
+        let mut engine = engine();
+        engine.register(level());
+        engine.set_voice_limit(limit);
+        let notes: Vec<_> = notes.iter().map(|&at| (at, Event::note(None, "level", &[]))).collect();
+        engine.play(&notes).unwrap();
+        engine.render(1.0).unwrap().0
+    };
+    let both = render(&[0.0, 0.5], 1);
+    let second = render(&[0.5], 1);
+    let first: Vec<f32> = both.iter().zip(&second).map(|(a, b)| a - b).collect();
+    let centre = 0.5f32.sqrt();
+    let from = (frame(0.5) / 64) * 64;
+    let fade = frame(0.01);
+    assert!((first[from - 1] - centre).abs() < 1e-6);
+    for k in 0..fade {
+        let expected = centre * (fade - k) as f32 / fade as f32;
+        assert!((first[from + k] - expected).abs() < 1e-4, "{k} into the fade: {} against {expected}", first[from + k]);
+    }
+    assert!(first[from + fade..].iter().all(|x| x.abs() < 1e-6));
+}
+
+#[test]
+fn five_hundred_berimbau_strokes_at_once_render_faster_than_they_play_under_the_default_limit() {
+    let mut engine = engine();
+    let strokes: Vec<_> = (0..500).map(|_| (0.0, Event::note(None, "berimbau", &[]))).collect();
+    engine.play(&strokes).unwrap();
+    let start = std::time::Instant::now();
+    engine.render(2.0).unwrap();
+    let took = start.elapsed().as_secs_f64();
+    assert!(took < 2.0, "2 seconds took {took} seconds to render");
+    let stolen = 500 - mxs::VOICES;
+    assert_eq!(engine.warnings(), [format!("{stolen} notes were stolen to keep to {} at once", mxs::VOICES)]);
+}
