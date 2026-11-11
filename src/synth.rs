@@ -1,6 +1,6 @@
 //! Synths and effects, each a name, the options it declares, and a function that builds its sound.
 
-use crate::nodes::gated;
+use crate::nodes::{gated, onset};
 use crate::options::{Context, Options};
 use crate::spec::Spec;
 use fundsp::prelude::*;
@@ -85,7 +85,7 @@ impl Note {
         let levels = [0.0, peak, decayed, held, 0.0];
         let times = [attack, decay, sustain, release];
         let gate = shared(1.0);
-        let level = net(var(&gate)) >> gated(&levels, &times, &[1.0, -2.0, 0.0, -3.0]);
+        let level = net(var(&gate)) >> gated(&levels, &times, &[1.0, -2.0, 0.0, -3.0]) >> onset();
         let sound = net(sound);
         let sound = if sound.outputs() == 2 { sound * (level >> split::<U2>()) } else { sound * level };
         Note { sound, end: attack + decay + sustain + release, release: Some((gate, release)) }

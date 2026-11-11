@@ -360,6 +360,32 @@ impl AudioNode for Gated {
     }
 }
 
+/// Its input silenced for 64 samples and then let in over the next 64, as scsynth starts a note under its control-rate envelope.
+pub fn onset() -> Net {
+    Net::wrap(Box::new(An(Onset { at: 0 })))
+}
+
+#[derive(Clone)]
+struct Onset {
+    at: usize,
+}
+
+impl AudioNode for Onset {
+    const ID: u64 = 0x6d78_0032;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        self.at = 0;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let level = (self.at.saturating_sub(64) as f32 / 64.0).min(1.0);
+        self.at += 1;
+        [input[0] * level].into()
+    }
+}
+
 /// Impulses at random times, as many a second on average as its input, each of a random level from 0 to 1, drawn from `seed`.
 pub fn dust(seed: u64) -> Net {
     Net::wrap(Box::new(An(Dust { seed, state: seed, rate: DEFAULT_SR })))
