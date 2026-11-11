@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 type BuildNote = dyn Fn(&Options, &mut Context) -> Note + Send + Sync;
 type BuildEffect = dyn Fn(&Options, &mut Context) -> Net + Send + Sync;
+type Tail = dyn Fn(&Options) -> f64 + Send + Sync;
 
 /// A synth: a name, its options, and how it builds one note's sound.
 #[derive(Clone)]
@@ -107,20 +108,20 @@ impl Note {
 pub struct Effect {
     pub(crate) name: String,
     pub(crate) specs: Vec<Spec>,
-    pub(crate) tail: f64,
+    pub(crate) tail: Arc<Tail>,
     pub(crate) build: Arc<BuildEffect>,
 }
 
 pub struct EffectDecl {
     name: String,
     specs: Vec<Spec>,
-    tail: f64,
+    tail: Arc<Tail>,
 }
 
 impl Effect {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(name: &str) -> EffectDecl {
-        EffectDecl { name: name.to_string(), specs: Vec::new(), tail: 1.0 }
+        EffectDecl { name: name.to_string(), specs: Vec::new(), tail: Arc::new(|_| 1.0) }
     }
 
     pub fn name(&self) -> &str {
@@ -140,7 +141,16 @@ impl EffectDecl {
 
     /// How many seconds the effect sounds on after its input stops, such as a reverb's tail.
     pub fn tail(mut self, seconds: f64) -> Self {
-        self.tail = seconds;
+        self.tail = Arc::new(move |_| seconds);
+        self
+    }
+
+    /// How many seconds the effect sounds on after its input stops, worked out from its options, such as an echo's decay.
+    pub fn tail_from<F>(mut self, tail: F) -> Self
+    where
+        F: Fn(&Options) -> f64 + Send + Sync + 'static,
+    {
+        self.tail = Arc::new(tail);
         self
     }
 

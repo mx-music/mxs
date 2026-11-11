@@ -3,6 +3,7 @@
 
 mod engine;
 mod mixer;
+pub mod effects;
 pub mod nodes;
 mod options;
 mod sample;

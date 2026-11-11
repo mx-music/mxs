@@ -330,7 +330,7 @@ impl Engine {
         for (name, given) in effects {
             let registered = self.effects.get(name).ok_or_else(|| Error::UnknownEffect(name.clone()))?;
             let (owner, specs) = (registered.owner.clone(), registered.specs.clone());
-            let (build, effect_tail) = (registered.item.build.clone(), registered.item.tail);
+            let (build, effect_tail) = (registered.item.build.clone(), registered.item.tail.clone());
             let values = self.check(&owner, &specs, given)?;
             let options = Options::new(owner.clone(), specs, values);
             let wet = build(&options, &mut Context::new(owner.clone()));
@@ -343,7 +343,7 @@ impl Engine {
                 (Net::wrap(Box::new(multipass::<U2>())) ^ wet) | options.follow("mix") | options.follow("amp");
             unit = unit >> (blended >> Net::wrap(Box::new(An(Blend))));
             controls.push(options.take_controls());
-            tail += effect_tail;
+            tail += effect_tail(&options);
         }
         unit.set_sample_rate(self.rate);
         unit.allocate();
