@@ -114,3 +114,12 @@ fn a_call_outside_the_vocabulary_is_refused_when_the_synth_is_registered() {
     let refused = Synth::graph("odd", note_specs(), vec![Clause { matches: vec![], graph }]);
     assert_eq!(refused.err(), Some("odd: wobble is not in the vocabulary".to_string()));
 }
+
+#[test]
+fn an_option_the_note_leaves_out_takes_its_fallback() {
+    let specs = vec![Spec::note("note")];
+    let level = call("or_else", vec![opt("note"), n(63.0)]);
+    let synth = || Synth::graph("drum", specs.clone(), vec![Clause { matches: vec![], graph: rings(call("mul", vec![call("impulse", vec![]), level.clone()]), 0.1) }]).unwrap();
+    assert_eq!(render(synth(), &[])[0], 63.0 * std::f32::consts::FRAC_1_SQRT_2);
+    assert_eq!(render(synth(), &[("note", Value::Number(40.0))])[0], 40.0 * std::f32::consts::FRAC_1_SQRT_2);
+}

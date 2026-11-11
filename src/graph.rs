@@ -30,7 +30,7 @@ impl Graph {
 }
 
 const ARITHMETIC: &[&str] = &[
-    "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select",
+    "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
 ];
 const NODES: &[&str] = &[
     "impulse", "sine", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "envelope", "perc",
@@ -148,6 +148,13 @@ impl Build<'_> {
     }
 
     fn call(&mut self, name: &str, args: &[Graph], named: &[(String, Graph)]) -> Result<V, String> {
+        // An option the note may leave out, such as a drum's pitch: its value when given, and the fallback otherwise.
+        if let ("or_else", [Graph::Option(option), fallback]) = (name, args) {
+            return match self.options.given(option) {
+                Some(x) => Ok(V::Num(x)),
+                None => self.eval(fallback),
+            };
+        }
         let mut args: Vec<V> = args.iter().map(|g| self.eval(g)).collect::<Result<_, _>>()?;
         let count = args.len();
         let mut named: Vec<(String, V)> = named.iter().map(|(k, g)| Ok((k.clone(), self.eval(g)?))).collect::<Result<_, String>>()?;
