@@ -149,6 +149,48 @@ fn a_change_reaches_a_note_of_the_same_batch() {
     assert_eq!(left[frame(0.3)], 0.0);
 }
 
+/// A held level note with changes to its options at `changes`, each a frame and its options, rendered for half a second.
+fn changed(changes: &[(usize, Vec<(String, f64)>)]) -> Vec<f32> {
+    let mut engine = engine();
+    engine.register(level());
+    engine.play(&[(0.0, Event::note(Some(5), "level", &[]))]).unwrap();
+    let events: Vec<_> = changes
+        .iter()
+        .map(|(at, options)| (*at as f64 / RATE, Event::Set { target: Target::Sounds(vec![5]), options: options.clone() }))
+        .collect();
+    engine.play(&events).unwrap();
+    engine.render(0.5).unwrap().0
+}
+
+#[test]
+fn a_change_applies_at_its_exact_sample() {
+    let at = frame(0.20025);
+    let left = changed(&[(at, vec![("amp".into(), 0.0)])]);
+    let centre = 0.5f32.sqrt();
+    assert!((left[at - 1] - centre).abs() < 1e-6, "{}", left[at - 1]);
+    assert!(left[at..].iter().all(|&x| x == 0.0), "{}", left[at]);
+}
+
+#[test]
+fn two_changes_in_one_block_each_apply_at_their_own_sample() {
+    let left = changed(&[(9620, vec![("level".into(), 0.5)]), (9630, vec![("level".into(), 0.25)])]);
+    let centre = 0.5f32.sqrt();
+    assert_eq!(9620 / 64, 9630 / 64, "both fall in one block");
+    assert!((left[9619] - centre).abs() < 1e-6);
+    assert!((left[9620] - centre * 0.5).abs() < 1e-6 && (left[9629] - centre * 0.5).abs() < 1e-6);
+    assert!((left[9630] - centre * 0.25).abs() < 1e-6);
+}
+
+#[test]
+fn a_slide_starts_gliding_at_its_changes_sample() {
+    let at = frame(0.20025);
+    let left = changed(&[(at, vec![("level".into(), 0.0), ("level_slide".into(), 0.1)])]);
+    let centre = 0.5f32.sqrt();
+    assert!((left[at - 1] - centre).abs() < 1e-6);
+    assert!((left[at + frame(0.05)] - centre * 0.5).abs() < 1e-3, "{}", left[at + frame(0.05)]);
+    assert!(left[at + frame(0.1) + 1].abs() < 1e-4, "{}", left[at + frame(0.1) + 1]);
+}
+
 #[test]
 fn amp_and_pan_place_every_note() {
     let mut engine = engine();

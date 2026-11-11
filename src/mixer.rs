@@ -147,7 +147,11 @@ impl Mixer {
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         let mut done = 0;
         while done < left.len() {
-            let n = Ord::min(left.len() - done, BLOCK);
+            self.receive();
+            let mut n = Ord::min(left.len() - done, BLOCK);
+            if let Some(next) = self.changes.iter().map(|c| c.at).filter(|&at| at > self.now).min() {
+                n = Ord::min(n, (next - self.now) as usize);
+            }
             self.block(&mut left[done..done + n], &mut right[done..done + n]);
             done += n;
         }
@@ -195,16 +199,15 @@ impl Mixer {
     }
 
     fn block(&mut self, left: &mut [f32], right: &mut [f32]) {
-        self.receive();
         let n = left.len();
         let end = self.now + n as u64;
         left.fill(0.0);
         right.fill(0.0);
 
-        // Changes apply at the start of the block they fall in, within 1.3 ms of their time at 48 kHz.
+        // Blocks are cut where the next change falls, so each change applies at its own sample.
         let mut i = 0;
         while i < self.changes.len() {
-            if self.changes[i].at < end {
+            if self.changes[i].at <= self.now {
                 let change = self.changes.swap_remove(i);
                 if let Some(slide) = change.slide {
                     change.control.slide.set_value(slide);
