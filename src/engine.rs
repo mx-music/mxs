@@ -39,35 +39,56 @@ pub enum Target {
 pub enum Event {
     /// A note of a synth; `id` lets a later change reach it, and `chain` is the effect chain it plays into.
     Note {
+        /// What a later change reaches the note by.
         id: Option<u64>,
+        /// The name of the synth.
         synth: String,
+        /// The options the note is played with.
         options: Vec<(String, Value)>,
+        /// The effect chain the note plays into, if any.
         chain: Option<u64>,
     },
     /// A sample `load_sample` returned, with the sample player's options.
     Sample {
+        /// What a later change reaches the sample by.
         id: Option<u64>,
+        /// The sample, as `load_sample` returned it.
         sample: u64,
+        /// The options of the sample player.
         options: Vec<(String, Value)>,
+        /// The effect chain the sample plays into, if any.
         chain: Option<u64>,
     },
     /// Channels of the sound card's input, from `input`, numbered from 0, with amp and pan, playing until stopped.
     Input {
+        /// What a later change reaches the input by.
         id: Option<u64>,
+        /// The first channel of the sound card's input, numbered from 0.
         input: usize,
+        /// How many channels it reads from `input` up.
         channels: usize,
+        /// The input's options, amp and pan.
         options: Vec<(String, Value)>,
+        /// The effect chain the input plays into, if any.
         chain: Option<u64>,
     },
     /// New values for options of sounds already playing, each gliding over its `_slide` option when given.
     Set {
+        /// The sounds the change applies to.
         target: Target,
+        /// The new number of each option.
         options: Vec<(String, f64)>,
     },
     /// Ends the sounds started with these ids, fading them over 10 ms.
-    Stop { ids: Vec<u64> },
+    Stop {
+        /// The ids the sounds were started with.
+        ids: Vec<u64>,
+    },
     /// Lets the sounds started with these ids go, as keys let up: a note shaped by its envelope falls silent over its release, and any other sound fades over 10 ms.
-    Release { ids: Vec<u64> },
+    Release {
+        /// The ids the sounds were started with.
+        ids: Vec<u64>,
+    },
 }
 
 /// What `record` writes to its file.
@@ -95,37 +116,64 @@ impl Event {
     }
 }
 
+/// What went wrong when the engine was asked to do something; its `Display` says it in a sentence.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
+    /// No synth is registered by this name.
     UnknownSynth(String),
+    /// No effect is registered by this name.
     UnknownEffect(String),
+    /// No sample was loaded under this id.
     UnknownSample(u64),
+    /// No effect chain was started under this id.
     UnknownChain(u64),
+    /// A sound was given an option its declaration does not list.
     UnknownOption {
+        /// The synth, effect or player it was given to.
         owner: String,
+        /// The option's name.
         option: String,
     },
+    /// An option was given a value its declaration does not accept.
     BadValue {
+        /// The synth, effect or player it was given to.
         owner: String,
+        /// The option's name.
         option: String,
+        /// Why the value is refused, worded to follow the option's name.
         reason: String,
     },
+    /// A required option was left out.
     MissingOption {
+        /// The synth, effect or player that needs it.
         owner: String,
+        /// The option's name.
         option: String,
     },
+    /// A synth or an effect made a sound of neither 1 nor 2 channels.
     BadSound {
+        /// The synth or effect that made it.
         owner: String,
+        /// How many channels the sound had.
         outputs: usize,
     },
+    /// A sample could not be loaded or is not usable; the reason.
     Sample(String),
+    /// A device could not be used; the reason.
     Device(String),
+    /// The sound card has no input of this number, counted from 0.
     UnknownInput(usize),
+    /// A recording could not start or finish; the reason.
     Record(String),
+    /// More events are waiting than the engine can take.
     Busy,
+    /// The call needs a live engine, and this one renders offline.
     Offline,
+    /// The call needs an offline engine, and this one plays live.
     Live,
+    /// The engine failed while filling audio, and has to be started again.
     Failed,
+    /// The output device of this name went away, and the engine has to be started again.
     DeviceLost(String),
 }
 

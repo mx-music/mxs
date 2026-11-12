@@ -6,8 +6,11 @@ use cpal::traits::{DeviceTrait, HostTrait};
 /// An output or input device, with every channel count, sample rate and buffer size it supports.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Device {
+    /// The name `Settings` picks the device by.
     pub name: String,
+    /// Whether it is an output device, and not an input one.
     pub output: bool,
+    /// Each channel count it supports.
     pub channels: Vec<u16>,
     /// Each a lowest and highest rate, in frames a second.
     pub rates: Vec<(u32, u32)>,
@@ -24,6 +27,7 @@ pub struct Settings {
     pub with_input: bool,
     /// The input device, by name; the default input when none is given.
     pub input_device: Option<String>,
+    /// The rate to run at, in frames a second; the device's default when none is given.
     pub rate: Option<u32>,
     /// The frames the device asks for at a time.
     pub buffer: Option<u32>,

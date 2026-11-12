@@ -134,6 +134,7 @@ pub struct Effect {
     pub(crate) build: Arc<BuildEffect>,
 }
 
+/// An effect being declared, until `build` gives it its sound.
 pub struct EffectDecl {
     name: String,
     specs: Vec<Spec>,

@@ -3,7 +3,9 @@
 /// An option's value: a number, or a name from the values its declaration lists.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
+    /// A number.
     Number(f64),
+    /// A name from the values the option lists.
     Name(String),
 }
 
@@ -24,13 +26,19 @@ impl From<&str> for Value {
 pub enum Kind {
     /// A MIDI note, fractions allowed.
     Note,
+    /// A frequency in hertz.
     Hz,
+    /// A level in decibels.
     Db,
+    /// A time in seconds.
     Seconds,
     /// A time a song writes in beats, which mx turns into seconds at the tempo before it reaches the engine.
     Beats,
+    /// Any number.
     Float,
+    /// A whole number.
     Integer,
+    /// 0 or 1.
     Boolean,
     /// One of a list of names.
     Name(Vec<String>),
@@ -39,11 +47,17 @@ pub enum Kind {
 /// The declaration of one option.
 #[derive(Clone, Debug)]
 pub struct Spec {
+    /// What notes call the option.
     pub name: String,
+    /// What the option measures.
     pub kind: Kind,
+    /// The value it takes when a note leaves it out, if it has one.
     pub default: Option<Value>,
+    /// The lowest and highest number it accepts, if bounded.
     pub range: Option<(f64, f64)>,
+    /// Whether every note must give it.
     pub required: bool,
+    /// What it means, for whoever writes a note.
     pub doc: String,
 }
 

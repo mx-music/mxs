@@ -8,13 +8,21 @@ use fundsp::prelude::*;
 /// A traced value: a number, a name such as a noise's colour, one of the note's options, a list, or a call of the vocabulary.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Graph {
+    /// A number.
     Number(f64),
+    /// A name, such as a noise's colour.
     Name(String),
+    /// One of the note's options, by its name.
     Option(String),
+    /// A list of values.
     List(Vec<Graph>),
+    /// A call of a function of the vocabulary.
     Call {
+        /// The function's name.
         name: String,
+        /// The arguments given by position.
         args: Vec<Graph>,
+        /// The arguments given by name.
         named: Vec<(String, Graph)>,
     },
 }
@@ -22,7 +30,9 @@ pub enum Graph {
 /// One clause of a synth: the values of options it matches, and the graph it traces to.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Clause {
+    /// The values the note's options must have for the clause to apply.
     pub matches: Vec<(String, Value)>,
+    /// What the clause traces to.
     pub graph: Graph,
 }
 
