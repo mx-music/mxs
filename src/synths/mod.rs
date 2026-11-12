@@ -1,7 +1,6 @@
 //! mx's own synths.
 
 mod basic;
-mod berimbau;
 mod bowed;
 mod common;
 mod drums;
@@ -10,9 +9,9 @@ mod strings;
 mod tuned;
 mod winds;
 
-pub use berimbau::berimbau;
 pub(crate) use bowed::bowed_string;
 pub(crate) use common::partials;
+pub use drums::berimbau;
 pub use strings::piano;
 pub(crate) use winds::{air_jet, wind_bands};
 

@@ -428,7 +428,8 @@ impl AudioNode for Pulses {
     }
 }
 
-/// The piano: `note`, `vel` for how hard the key is struck, and `pedal` for the sustain pedal.
+/// The piano: each harmonic a resonator struck once, with a thump of noise.
+/// Its options are `note`, `vel` for how hard the key is struck, and `pedal` for the sustain pedal.
 pub fn piano() -> Synth {
     Synth::new("piano")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
