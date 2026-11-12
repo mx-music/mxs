@@ -17,14 +17,14 @@ const EQ: [&str; 8] = ["eq0", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7"];
 pub fn all() -> Vec<Synth> {
     vec![
         flute(),
-        reed_wind("clarinet", 5.0, Bore { conical: false, radiate: 1, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &CLARINET),
-        reed_wind("oboe", 5.0, Bore { conical: true, radiate: 2, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &OBOE),
-        reed_wind("bassoon", 5.5, Bore { conical: true, radiate: 1, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25 }, &BASSOON),
-        reed_wind("tenor_sax", 4.94, Bore { conical: true, radiate: 1, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25 }, &TENOR_SAX),
-        reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 2, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &TRUMPET),
-        reed_wind("trombone", 4.95, Bore { conical: true, radiate: 2, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0 }, &TROMBONE),
-        reed_wind("horn", 5.0, Bore { conical: true, radiate: 1, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2 }, &HORN),
-        reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6 }, &TUBA),
+        reed_wind("clarinet", 5.0, Bore { conical: false, radiate: 1, bell: 2570.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &CLARINET),
+        reed_wind("oboe", 5.0, Bore { conical: true, radiate: 2, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &OBOE),
+        reed_wind("bassoon", 5.5, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25 }, &BASSOON),
+        reed_wind("tenor_sax", 4.94, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25 }, &TENOR_SAX),
+        reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 2, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &TRUMPET),
+        reed_wind("trombone", 4.95, Bore { conical: true, radiate: 2, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0 }, &TROMBONE),
+        reed_wind("horn", 5.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2 }, &HORN),
+        reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6 }, &TUBA),
     ]
 }
 
@@ -216,29 +216,33 @@ impl AudioNode for Jet {
 
 /// A reed, or the lips, as a valve the pressure across it opens and closes, at the end of a bore.
 /// The clarinet's bore is a cylinder, closed at the reed and open at the bell, whose sound comes back inverted after half a period, so it favours the odd harmonics.
-/// A conical bore, as the oboe's, bassoon's and saxophone's, and the brass's, whose bell and mouthpiece bring their resonances to whole multiples, comes back upright after a whole period, with every harmonic.
-/// The valve follows Julius O. Smith III's reed table, https://ccrma.stanford.edu/~jos/pasp/Single_Reed_Instruments.html: the pressure wave it lets into the bore is the half mouth pressure less the part of the difference across it that the valve reflects.
+/// A conical bore, as the oboe's, bassoon's and saxophone's, and the brass's, whose bell and mouthpiece bring their resonances to whole multiples, is a cylinder beside a short one as long as its missing apex, both open, with every harmonic.
 /// Its inputs are the pitch in Hz, the mouth's pressure, and white noise for the breath's turbulence.
 #[derive(Clone)]
 pub(crate) struct Reed {
     bore: Line,
     loss: Loss,
-    steady: DcBlock,
+    /// A conical bore's missing apex, a short open tube beside the bore, as part of the whole length.
+    apex: Line,
+    apex_loss: Loss,
+    apex_part: f32,
     out: DcBlock,
     conical: bool,
-    /// How much of the difference the valve reflects when there is none, and how fast that grows with the difference.
-    offset: f32,
-    slope: f32,
+    /// How freely the reed lets the air through, the embouchure's ζ, from 0 to 1.
+    zeta: f32,
     /// The bore's corner as a multiple of the pitch, and its loss at each round trip.
     corner: f32,
     keep: f32,
     turbulence: f32,
-    /// How many times the sound in the bore is differenced as it radiates from the bell, each rising 6 dB an octave.
+    /// How many one-pole high-passes the sound in the bore goes through as it radiates from the bell, each rising 6 dB an octave up to `bell` Hz, and their last input and output.
     radiate: usize,
-    radiated: [f32; 2],
-    /// The bore's delay the sample before, the one a jump of note fades from, and how far it has faded, from 0 to 1.
+    bell: f32,
+    radiated: [[f32; 2]; 2],
+    /// The bore's and the apex's delays the sample before, the ones a jump of note fades from, and how far it has faded, from 0 to 1.
     delay: f32,
     from: f32,
+    short: f32,
+    short_from: f32,
     fade: f32,
     /// The part of the mouth's pressure the tongue's release sends into the bore, and the samples left of it, which the breath's first arrival starts.
     pub(crate) tongue_part: f32,
@@ -248,8 +252,8 @@ pub(crate) struct Reed {
 }
 
 impl Reed {
-    pub(crate) fn new(conical: bool, corner: f32, keep: f32, radiate: usize) -> Reed {
-        Reed { bore: Line::new(8192), loss: Loss::default(), steady: DcBlock::default(), out: DcBlock::default(), conical, offset: 0.7, slope: 0.3, corner, keep, turbulence: 0.005, radiate, radiated: [0.0; 2], delay: 0.0, from: 0.0, fade: 1.0, tongue_part: 0.0, tongue: -1, pulse: 1.0, rate: DEFAULT_SR as f32 }
+    pub(crate) fn new(conical: bool, corner: f32, keep: f32, radiate: usize, bell: f32) -> Reed {
+        Reed { bore: Line::new(8192), loss: Loss::default(), apex: Line::new(4096), apex_loss: Loss::default(), apex_part: 0.15, out: DcBlock::default(), conical, zeta: 0.4, corner, keep, turbulence: 0.005, radiate, bell, radiated: [[0.0; 2]; 2], delay: 0.0, from: 0.0, short: 1.0, short_from: 1.0, fade: 1.0, tongue_part: 0.0, tongue: -1, pulse: 1.0, rate: DEFAULT_SR as f32 }
     }
 }
 
@@ -265,9 +269,10 @@ impl AudioNode for Reed {
     fn reset(&mut self) {
         self.bore.clear();
         self.loss = Loss::default();
-        self.steady = DcBlock::default();
+        self.apex.clear();
+        self.apex_loss = Loss::default();
         self.out = DcBlock::default();
-        self.radiated = [0.0; 2];
+        self.radiated = [[0.0; 2]; 2];
         self.delay = 0.0;
         self.fade = 1.0;
         self.tongue = -1;
@@ -279,9 +284,20 @@ impl AudioNode for Reed {
         let period = self.rate / freq;
         let w = TAU * freq / self.rate;
         let a = Loss::pole(self.corner * freq, self.rate);
-        let back = if self.conical { self.loss.y } else { -self.loss.y };
-        let across = mouth / 2.0 - back;
-        let reflects = (self.offset + self.slope * across).clamp(-1.0, 1.0);
+        // A cone is played as Dalmont, Gilbert and Kergomard's cylindrical saxophone: the bore beside a tube as long as the missing apex, both open, whose resonances fall on every harmonic of their joint length.
+        let back = if self.conical { -0.5 * (self.loss.y + self.apex_loss.y) } else { -self.loss.y };
+        // The flow through the reed is ζ (1 - γ + p) √(γ - p), the mouth's pressure γ and the mouthpiece's p as parts of the pressure that shuts the reed, as Dalmont, Gilbert and Kergomard's elementary model has it, https://hal.science/hal-00474987, shut from γ - p = 1 and reversed when p passes γ.
+        // The bore takes the flow as p less twice the wave coming back, so the pressure solves p - 2 back = flow(p), which has one root while ζ is under 1; two tubes side by side take twice the flow, so back is their mean.
+        let flow = |p: f32| {
+            let across = mouth - p;
+            if across >= 1.0 { 0.0 } else { self.zeta * (1.0 - across) * across.abs().sqrt() * across.signum() }
+        };
+        let (mut low, mut high) = (2.0 * back - 2.0, 2.0 * back + 2.0);
+        for _ in 0..30 {
+            let mid = 0.5 * (low + high);
+            if mid - 2.0 * back - flow(mid) > 0.0 { high = mid } else { low = mid }
+        }
+        let pressure = 0.5 * (low + high);
         // The tongue's release sends a pulse of the mouth's pressure into the bore over a period, where the bore's own noise takes a third of a second to grow into a low note and Iowa's bassoon speaks in 0.07 to 0.16; it rises and falls smoothly, as a step would click once differenced at the bell.
         if self.tongue < 0 && mouth > 0.1 {
             (self.tongue, self.pulse) = (period as i32, period);
@@ -292,31 +308,34 @@ impl AudioNode for Reed {
         } else {
             0.0
         };
-        let into = mouth / 2.0 - reflects * across + pulse;
+        let into = pressure + self.loss.y + pulse;
         self.bore.write(into);
-        // An upright return would hold the mouth's steady pressure, so a conical bore's is taken out below an eighth of the pitch, and the line lengthened by the lead that gives.
-        let r = Loss::pole(freq / 8.0, self.rate);
-        let delay = if self.conical {
-            let lead = ((std::f32::consts::PI - w) / 2.0 - (r * w.sin()).atan2(1.0 - r * w.cos())) / w;
-            (period - 1.0 - Loss::lag(a, w) + lead).max(2.0)
-        } else {
-            (period / 2.0 - 1.0 - Loss::lag(a, w)).max(2.0)
-        };
-        // A jump of note fades from the old delay to the new over 4 ms, as the flute's does, where switching at once clicks.
+        self.apex.write(pressure + self.apex_loss.y);
+        let delay = if self.conical { period * (1.0 - self.apex_part) } else { period / 2.0 };
+        let delay = (delay - 1.0 - Loss::lag(a, w)).max(2.0);
+        let short = (period * self.apex_part - 1.0 - Loss::lag(a, w)).max(1.0);
+        // A jump of note fades from the old delays to the new over 4 ms, as the flute's does, where switching at once clicks.
         if self.delay > 0.0 && (delay - self.delay).abs() > 0.01 * delay {
-            (self.from, self.fade) = (self.delay, 0.0);
+            (self.from, self.short_from, self.fade) = (self.delay, self.short, 0.0);
         }
-        self.delay = delay;
+        (self.delay, self.short) = (delay, short);
         self.fade = (self.fade + 1.0 / (0.004 * self.rate)).min(1.0);
         let b = self.fade * self.bore.read(delay) + (1.0 - self.fade) * self.bore.read(self.from);
-        let b = if self.conical { self.steady.tick_at(b, r) } else { b };
         self.loss.tick(b * self.keep, a);
-        let mut sound = self.out.tick(into + back);
-        for last in self.radiated.iter_mut().take(self.radiate) {
-            (sound, *last) = (sound - *last, sound);
+        if self.conical {
+            let b = self.fade * self.apex.read(short) + (1.0 - self.fade) * self.apex.read(self.short_from);
+            self.apex_loss.tick(b * self.keep, a);
         }
-        // Each difference also raises the level 6 dB an octave, which an instrument does not, so the sound is taken back by the difference's gain at the pitch.
-        [sound / (2.0 * (w / 2.0).sin()).powi(self.radiate as i32)].into()
+        let mut sound = self.out.tick(pressure);
+        // A bell radiates its low harmonics weakly, rising 6 dB an octave, and its high ones fully; differencing alone would keep rising to the top and lift the reed's turbulence over the note.
+        let r = Loss::pole(self.bell, self.rate);
+        for [x, y] in self.radiated.iter_mut().take(self.radiate) {
+            (*y, *x) = (r * (*y + sound - *x), sound);
+            sound = *y;
+        }
+        // Each high-pass also lowers the pitch's level, which an instrument does not, so the sound is taken back by its gain at the pitch.
+        let gain = r * 2.0 * (w / 2.0).sin() / (1.0 - 2.0 * r * w.cos() + r * r).sqrt();
+        [sound / gain.powi(self.radiate as i32)].into()
     }
 }
 
@@ -524,32 +543,34 @@ fn flute() -> Synth {
         })
 }
 
-/// A reed or brass wind's bore: whether it is conical, how many times its sound is differenced as it radiates, its corner as a multiple of the pitch, how much it keeps at each round trip, the centre in Hz of the breath's noise, and the part of the mouth's pressure its tongue's release sends in.
+/// A reed or brass wind's bore: whether it is conical, how many high-passes its sound goes through as it radiates and their cutoff in Hz, fitted to its recordings at mf, its corner as a multiple of the pitch, how much it keeps at each round trip, the centre in Hz of the breath's noise, and the part of the mouth's pressure its tongue's release sends in.
 struct Bore {
     conical: bool,
     radiate: usize,
+    bell: f32,
     corner: f32,
     keep: f32,
     air: f32,
     tongue: f32,
 }
 
-// The reed sounds fully only from a breath of about 1.3 to 1.9, at one level whatever the breath, so the breath stays inside that and the level carries the dynamics: each wind's pp and mf under its ff as the University of Iowa's recordings have them on the octave of its Philharmonia swell's note, the tenor sax, which Iowa lacks, as the reeds' median, and every ff at -18 dB, as the flute's.
-const fn reed_fit(levels: [f32; 3]) -> Fit {
-    Fit { gains: [[0.0; 8]; 3], levels, breath: [1.6, 1.7, 1.85], rise: [0.05; 3], air: [-40.0; 3] }
+// The breath, its rise and its noise are fitted with mix mx.fit at each dynamic to the University of Iowa's recordings, VSCO 2's for the horn and tuba and VCSL's for the tenor sax, the noise held under -20 dB, where the fit would trade the tone for it, and the horn's pp and tuba's ff breath held at their mf one, where the fit's jumps the pitch.
+// A conical reed starts at its threshold already near full, so its breath stays near there and the level carries the dynamics: each wind's pp and mf under its ff as Iowa's recordings have them, the tenor sax, which Iowa lacks, as the reeds' median, and every ff at -18 dB, as the flute's.
+const fn reed_fit(levels: [f32; 3], breath: [f32; 3], rise: [f32; 3], air: [f32; 3]) -> Fit {
+    Fit { gains: [[0.0; 8]; 3], levels, breath, rise, air }
 }
-const CLARINET: Fit = reed_fit([-29.7, -19.4, -16.8]);
-const OBOE: Fit = reed_fit([-31.5, -18.2, -17.6]);
-const BASSOON: Fit = reed_fit([-27.0, -17.0, -14.5]);
-const TENOR_SAX: Fit = reed_fit([-27.4, -17.2, -14.7]);
-const TRUMPET: Fit = reed_fit([-27.4, -18.2, -18.1]);
-const TROMBONE: Fit = reed_fit([-43.2, -29.4, -20.9]);
-const HORN: Fit = reed_fit([-25.1, -19.9, -14.4]);
-const TUBA: Fit = reed_fit([-31.1, -23.7, -14.4]);
+const CLARINET: Fit = reed_fit([-21.0, -14.3, -11.5], [0.435, 0.5, 0.5], [0.137, 0.158, 0.24], [-18.0, -26.0, -26.0]);
+const OBOE: Fit = reed_fit([-25.5, -12.2, -11.5], [0.429, 0.429, 0.429], [0.031, 0.031, 0.031], [-36.0, -40.0, -40.0]);
+const BASSOON: Fit = reed_fit([-27.2, -16.9, -14.1], [0.463, 0.463, 0.463], [0.07, 0.07, 0.07], [-20.0, -28.0, -28.0]);
+const TENOR_SAX: Fit = reed_fit([-27.3, -16.8, -14.0], [0.463, 0.463, 0.463], [0.07, 0.07, 0.081], [-28.0, -28.0, -28.0]);
+const TRUMPET: Fit = reed_fit([-33.9, -25.1, -25.0], [0.47, 0.54, 0.54], [0.031, 0.036, 0.031], [-20.0, -20.0, -20.0]);
+const TROMBONE: Fit = reed_fit([-49.3, -35.5, -27.1], [0.46, 0.46, 0.493], [0.085, 0.085, 0.074], [-20.0, -20.0, -20.0]);
+const HORN: Fit = reed_fit([-25.8, -20.4, -15.5], [0.463, 0.463, 0.532], [0.044, 0.044, 0.05], [-20.0, -28.0, -20.0]);
+const TUBA: Fit = reed_fit([-34.3, -26.7, -17.1], [0.671, 0.671, 0.671], [0.041, 0.031, 0.031], [-20.0, -20.0, -20.0]);
 
 fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Synth {
     wind_options(name, 0.0, "The vibrato's depth in semitones, reached as the note holds.").build(move |o, ctx| {
-        let mut reed = Reed::new(bore.conical, bore.corner, bore.keep, bore.radiate);
+        let mut reed = Reed::new(bore.conical, bore.corner, bore.keep, bore.radiate, bore.bell);
         reed.tongue_part = bore.tongue;
         let model = (pitch(o, o.number("vibrato"), rate) | breath(o, fit) | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
         Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
