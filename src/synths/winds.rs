@@ -513,6 +513,11 @@ pub(crate) fn wind_bands(sound: Net, vel: Net, gains: &[f64], levels: &[f64]) ->
 /// The part of the square of the jet's sound in the flute's output, at pp, mf and ff: VSCO 2's flute has its 2nd harmonic 23 dB under the fundamental played soft and 12 played loud.
 const FLUTE_EVEN: [f32; 3] = [0.3, 1.0, 2.0];
 
+/// The cents the flute's model plays sharp at `note`, which the player takes back: measured from B3 to Db7, 4.6 at A4 and less by 0.093 a semitone up, as the jet's path leads the bore's more at low notes.
+fn flute_sharp(note: f64) -> f64 {
+    4.6 - 0.093 * (note - 69.0)
+}
+
 const FLUTE: Fit = Fit { gains: [[0.0; 8]; 3], levels: [-12.0, -12.0, -12.0], breath: [0.38, 0.45, 0.56], rise: [0.05, 0.05, 0.05], air: [-90.0, -90.0, -90.0] };
 
 fn flute() -> Synth {
@@ -529,7 +534,7 @@ fn flute() -> Synth {
         .build(|o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
-            let pitch = o.follow("note") >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32)));
+            let pitch = o.follow("note") >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
             let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed() ^ 0x76) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
             let jet = played_jet(pitch, breath(o, &FLUTE) * throb, ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(3000.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64), o.number("lift"));
             // The breath hisses above 3 kHz where the jet strikes the edge, pulsing as it crosses, after the bands, so they do not colour it.
