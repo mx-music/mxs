@@ -41,6 +41,7 @@ pub fn all() -> Vec<Synth> {
         surdo(),
         cuica(),
         tamborim(),
+        caxixi(),
         bongo("high_bongo", &HIGH_BONGO),
         tabla("tabla", None),
     ];
@@ -1002,6 +1003,41 @@ fn tamborim() -> Synth {
             let crack = (noise(ctx) >> hpf(3000.0) >> lpf(12000.0)) * hit(0.0005, 0.03, -4.0) * db(TAMBORIM_CRACK) as f32;
             let level = 0.02 * (vel / 0.6).powf(1.4);
             Note::rings((head + crack >> high_shelf(2000.0, (vel - 0.6) * 6.0)) * level as f32, 1.4)
+        })
+}
+
+/// The caxixi's bands from 400 Hz: their lowest edges, levels in dB, and each shake's envelope, a fast fall over its first tens of milliseconds plus a quieter tail, as gain in dB and the two time constants.
+const CAXIXI: [[f64; 8]; 5] = [
+    [400.0, 630.0, 1000.0, 1600.0, 2500.0, 4000.0, 6300.0, 10000.0],
+    [-36.0, -28.0, -14.5, -5.8, -5.4, -3.6, 1.5, -4.0],
+    [0.027, 0.027, 0.027, 0.026, 0.036, 0.034, 0.022, 0.019],
+    [-15.0, -15.0, -15.0, -16.7, -23.5, -28.0, -26.2, -28.5],
+    [0.9, 0.9, 0.9, 0.42, 0.44, 0.41, 0.21, 0.33],
+];
+const CAXIXI_PEAK: f64 = 8.0;
+
+fn caxixi() -> Synth {
+    let shakes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    Synth::new("caxixi")
+        .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard it is shaken."))
+        .build(move |o, ctx| {
+            let vel = vel(o, 0.0);
+            // Each shake throws the seeds differently, so its strongest peak moves, as the recording's does from 1.7 to 9.6 kHz.
+            let shake = shakes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let seed = ctx.seed() ^ shake.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+            let mut draws = Draws::new(seed);
+            let top = 1734.0 * (9556.0f64 / 1734.0).powf(draws.draw().powf(1.6));
+            let mut seeds = Net::wrap(Box::new(zero()));
+            for band in 0..8 {
+                let low = CAXIXI[0][band];
+                let high = if band == 7 { 16000.0 } else { CAXIXI[0][band + 1] };
+                let centre = (low * high).sqrt();
+                let (fast, tail, slow) = (CAXIXI[2][band], db(CAXIXI[3][band]), CAXIXI[4][band]);
+                let envelope = shape(move |t| (t / 0.002).min(1.0) * ((-t / fast).exp() + tail * (-t / slow).exp()));
+                seeds = seeds + (white_noise(seed.wrapping_add(band as u64)) >> bpf(centre, (high - low) / centre)) * envelope * db(CAXIXI[1][band]) as f32;
+            }
+            let level = 0.3 * (vel / 0.6).powf(1.2);
+            Note::rings((seeds >> hpf(700.0) >> hpf(700.0) >> peak(top, 0.25, CAXIXI_PEAK)) * level as f32, 3.0)
         })
 }
 

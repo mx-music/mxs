@@ -78,3 +78,15 @@ fn a_hundred_tamborim_strokes_leave_nothing_sounding_once_they_end() {
     engine.render(1.5).unwrap();
     assert!(!engine.sounding(), "a stroke still sounds after the last one's ring ends");
 }
+
+#[test]
+fn a_hundred_caxixi_shakes_leave_nothing_sounding_once_they_end() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let shakes: Vec<_> = (0..100).map(|i| (i as f64 * 0.02, Event::note(None, "caxixi", &[]))).collect();
+    engine.play(&shakes).unwrap();
+    engine.render(4.0).unwrap();
+    assert!(engine.sounding());
+    engine.render(1.5).unwrap();
+    assert!(!engine.sounding(), "a shake still sounds after the last one's ring ends");
+}
