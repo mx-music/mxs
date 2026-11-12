@@ -1,9 +1,11 @@
 //! The bowed string of mx's violin, viola, cello and double bass: a waveguide after the bowed-string model of McIntyre, Schumacher and Woodhouse, "On the oscillations of musical instruments", JASA 74, 1983, and Julius O. Smith III's digital waveguides, https://ccrma.stanford.edu/~jos/pasp/Bowed_Strings.html.
 //! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, and the swell in.
 
+use super::common::{harmonics, net, silent_after};
+use crate::nodes::modes;
 use crate::nodes::{db, hz, pink_noise, shape, shape_node};
 use crate::synth::SynthDecl;
-use crate::{Context, Options, Spec};
+use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
 
@@ -204,4 +206,197 @@ fn string(note: Net, bow: Bow) -> Net {
     let string = (pass() | dc((0.0, 0.0))) >> waveguide >> (sink() | sink() | pass());
     let pitch = note >> map(|n: &Frame<f32, U1>| hz(n[0] as f64) as f32);
     pitch >> Net::wrap(Box::new(oversample(string)))
+}
+
+/// Every bowed instrument mx ships.
+pub fn all() -> Vec<Synth> {
+    vec![
+        bowed(
+            "violin",
+            Bowed {
+                peak: 333.0,
+                rise: 18.0,
+                soft_rise: 6.0,
+                fall: 12.0,
+                soft_fall: 3.0,
+                fade: 2.1,
+                fade_slope: -0.55,
+                pluck: 0.13,
+                gain: 0.6,
+                count: 32,
+                level: 0.0,
+            },
+            Fit {
+                body: 384.3,
+                gains: [
+                    [0.0, 0.0, 12.2, -3.9, 5.1, -11.6, 4.5, 5.0],
+                    [0.0, 0.0, 7.2, 2.1, 1.4, -1.5, 8.0, 6.1],
+                    [0.0, 0.0, 3.8, 2.0, 3.4, -3.2, 3.5, 11.5],
+                ],
+                levels: [-25.05, -28.90, -30.45],
+                swell: [0.875, 0.65, 0.35],
+                rosin: [0.6, 0.23, 0.35],
+                hiss: [-35.5, -35.5, -30.5],
+            },
+        ),
+        bowed(
+            "viola",
+            Bowed {
+                peak: 350.0,
+                rise: 17.0,
+                soft_rise: 3.0,
+                fall: 14.0,
+                soft_fall: 4.5,
+                fade: 3.7,
+                fade_slope: -0.7,
+                pluck: 0.13,
+                gain: 0.3,
+                count: 32,
+                level: -15.0,
+            },
+            Fit {
+                body: 367.1,
+                gains: [
+                    [0.0, 9.3, 8.8, -6.2, 7.6, -0.8, 10.4, 3.7],
+                    [0.0, 13.2, 6.4, -4.6, 10.4, -0.7, 15.3, 0.5],
+                    [0.0, 12.7, 11.2, -6.2, 8.0, 2.4, 17.0, 1.7],
+                ],
+                levels: [-21.45, -29.20, -35.05],
+                swell: [0.815, 0.68, 0.5],
+                rosin: [0.1, 0.1, 0.1],
+                hiss: [-35.5, -35.5, -30.5],
+            },
+        ),
+        bowed(
+            "cello",
+            Bowed {
+                peak: 144.0,
+                rise: 14.0,
+                soft_rise: 3.0,
+                fall: 10.0,
+                soft_fall: 6.5,
+                fade: 4.0,
+                fade_slope: -0.15,
+                pluck: 0.13,
+                gain: 0.6,
+                count: 32,
+                level: 0.0,
+            },
+            Fit {
+                body: 133.1,
+                gains: [
+                    [-2.7, 2.1, 2.8, -7.2, 6.4, -8.3, 5.6, -5.3],
+                    [-1.5, 1.1, 2.8, -6.1, 7.8, -2.1, 11.7, -6.2],
+                    [-5.5, 1.4, -2.3, -3.8, 3.7, -1.5, 12.3, -4.9],
+                ],
+                levels: [-18.75, -22.40, -20.35],
+                swell: [0.86, 0.77, 0.65],
+                rosin: [0.0879, 0.0371, 0.1479],
+                hiss: [-26.5, -28.0, -21.5],
+            },
+        ),
+        bowed(
+            "double_bass",
+            Bowed {
+                peak: 84.0,
+                rise: 24.0,
+                soft_rise: 5.0,
+                fall: 19.5,
+                soft_fall: 2.0,
+                fade: 3.9,
+                fade_slope: 0.0,
+                pluck: 0.13,
+                gain: 0.6,
+                count: 64,
+                level: 0.0,
+            },
+            Fit {
+                body: 67.5,
+                gains: [
+                    [8.4, 4.1, -5.9, -6.8, -8.7, -3.0, -8.3, -3.0],
+                    [11.2, 5.1, -2.6, -3.4, -7.2, -0.0, -3.7, -9.4],
+                    [17.3, 8.1, -0.1, 1.2, -1.4, 3.5, 0.9, -0.7],
+                ],
+                levels: [-19.05, -24.20, -31.55],
+                swell: [0.396, 0.342, 0.22],
+                rosin: [0.3, 0.53, 0.1],
+                hiss: [-35.5, -35.5, -30.5],
+            },
+        ),
+    ]
+}
+
+/// The figures a plucked string is measured by: its harmonics' peak, slopes and fades.
+struct Bowed {
+    peak: f64,
+    rise: f64,
+    soft_rise: f64,
+    fall: f64,
+    soft_fall: f64,
+    fade: f64,
+    fade_slope: f64,
+    pluck: f64,
+    gain: f64,
+    count: usize,
+    level: f64,
+}
+
+/// A bowed string, which pizz: 1 plucks instead.
+fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
+    let synth = Synth::new(name)
+        .option(Spec::note("note").default(52.0).doc("The pitch."))
+        .option(
+            Spec::float("vel")
+                .default(0.6)
+                .range(0.0, 1.0)
+                .doc("How hard the string is bowed or plucked."),
+        )
+        .option(
+            Spec::float("pizz")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 plucks the string instead of bowing it."),
+        )
+        .option(
+            Spec::float("vibrato")
+                .default(0.25)
+                .range(0.0, 2.0)
+                .doc("The vibrato's depth in semitones, reached as the note holds."),
+        )
+        .options(Spec::envelope(1.0, 0.3));
+    bow_options(synth).build(move |o, ctx| {
+        let vel = o.number("vel").clamp(0.0, 1.0);
+        let pizz = o.number("pizz").clamp(0.0, 1.0);
+        let freq = hz(o.number("note"));
+        let soft = ((1.0 - vel) / 0.7).max(0.0);
+        let mut sound = net(zero());
+        if pizz < 1.0 {
+            sound = sound + held(o, ctx, &fit) * (1.0 - pizz) as f32;
+        }
+        let mut end = f64::INFINITY;
+        if pizz > 0.0 {
+            let hz_: Vec<f64> = harmonics(s.count).iter().map(|n| freq * n).collect();
+            let octaves: Vec<f64> = hz_.iter().map(|f| (f / s.peak).log2()).collect();
+            let levels: Vec<f64> = (0..s.count)
+                .map(|i| {
+                    let p = octaves[i];
+                    let level = p.min(0.0) * (s.rise + s.soft_rise * soft.powi(3))
+                        - p.max(0.0) * (s.fall + s.soft_fall * soft);
+                    if hz_[i] < 16_000.0 { db(level) } else { 0.0 }
+                })
+                .collect();
+            let fades: Vec<f64> = octaves
+                .iter()
+                .map(|p| s.fade * 2f64.powf(p * s.fade_slope))
+                .collect();
+            let gain = vel.powf(s.gain) * db(s.level);
+            sound = sound
+                + modes(net(impulse::<U1>()), &hz_, &levels, &fades)
+                    * (s.pluck * pizz * gain) as f32;
+            if pizz >= 1.0 {
+                end = silent_after(&levels, &fades, s.pluck);
+            }
+        }
+        Note::envelope(sound, o).within(end)
+    })
 }

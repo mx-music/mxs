@@ -20,6 +20,7 @@ pub fn all() -> Vec<crate::Synth> {
     let mut synths = vec![piano(), berimbau()];
     synths.extend(basic::all());
     synths.extend(drums::all());
+    synths.extend(bowed::all());
     synths.extend(instruments::all());
     synths.extend(winds::all());
     synths
