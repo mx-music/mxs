@@ -953,35 +953,45 @@ fn surdo() -> Synth {
 
 const SURDO_MUTED_LEVEL: f64 = -6.0;
 
-/// One stroke of the cuíca: the stick rubbed inside it drives the head through an arch, its pitch rising about 8 semitones and falling back in 0.2 seconds.
-/// The note is the arch's top, 145 Hz in the Commons recordings, where the strongest partial, the second harmonic, reaches 290 Hz.
-const CUICA_LEVELS: [f64; 28] = [-8.0, 0.0, -3.0, -12.0, -12.0, -14.0, -18.0, -20.0, -22.0, -24.0, -26.0, -27.0, -29.0, -31.0, -33.0, -35.0, -36.0, -38.0, -38.5, -39.0, -39.5, -40.0, -40.5, -41.0, -41.5, -42.0, -42.5, -43.0];
-const CUICA_ARCH: f64 = 0.17;
-const CUICA_GRIP: f64 = 0.03;
-const CUICA_LOW: f64 = 0.638;
+/// One stroke of the cuíca, as reinsamba's pack "Cuica" on Freesound has them: the low strokes, with the head free, at note 65, and the high ones, with it pressed, at note 79, between which every figure moves with the note.
+/// The membrane leaves nearly a pure tone of the stick's saw-toothed rub, its harmonics in dB against the fundamental.
+const CUICA_NOTES: [f64; 2] = [65.0, 79.0];
+const CUICA_HARMONICS: [[f64; 8]; 2] = [[0.0, -15.0, -30.0, -35.0, -51.0, -49.0, -58.0, -58.0], [0.0, -25.0, -28.0, -41.0, -48.0, -56.0, -64.0, -71.0]];
+/// The cents under the note the stroke starts at, and the seconds it scoops up into it.
+const CUICA_SCOOPS: [[f64; 2]; 2] = [[198.0, 0.11], [140.0, 0.065]];
+/// The stroke's level and the seconds between, a 30 ms rise and a hold that the low strokes keep longer than the high ones.
+const CUICA_LEVELS: [[f64; 6]; 2] = [[0.14, 0.9, 1.0, 0.56, 0.18, 0.0], [0.16, 0.8, 1.0, 0.4, 0.25, 0.0]];
+const CUICA_TIMES: [[f64; 5]; 2] = [[0.03, 0.06, 0.06, 0.05, 0.015], [0.03, 0.02, 0.06, 0.055, 0.015]];
 
 fn cuica() -> Synth {
     Synth::new("cuica")
-        .options(strike_options(49.79))
-        .build(move |o, ctx| {
+        .options(strike_options(CUICA_NOTES[0]))
+        .build(move |o, _ctx| {
             let vel = vel(o, 0.0);
-            let top = hz(o.number("note"));
-            // The stick grips for 30 ms before the head moves; then the arch is a half sine, raised to a power so the pitch lingers near its top as the recordings' strokes do.
+            let note = o.number("note");
+            let high = ((note - CUICA_NOTES[0]) / (CUICA_NOTES[1] - CUICA_NOTES[0])).clamp(0.0, 1.0);
+            let mix = |pair: [f64; 2]| pair[0] + (pair[1] - pair[0]) * high;
+            let [under, scoop] = [0, 1].map(|i| mix([CUICA_SCOOPS[0][i], CUICA_SCOOPS[1][i]]));
+            let settled = hz(note);
             let pitch = shape(move |t| {
-                let along = ((t - CUICA_GRIP) / CUICA_ARCH).clamp(0.0, 1.0);
-                top * (CUICA_LOW + (1.0 - CUICA_LOW) * (std::f64::consts::PI * along).sin().powf(0.7))
+                let along = (t / scoop).clamp(0.0, 1.0);
+                let risen = along * along * (3.0 - 2.0 * along);
+                settled * 2f64.powf(-under * (1.0 - risen) / 1200.0)
             });
-            let ratios: Vec<f64> = (1..=28).map(|n| n as f64).collect();
-            let levels: Vec<f64> = CUICA_LEVELS.iter().zip(&ratios).map(|(l, n)| if top * n < 16_000.0 { db(l + (vel - 0.6) * 4.0 * n.log2()) } else { 0.0 }).collect();
-            let tone = partials(pitch, &ratios, &levels, &spread_phases(28));
-            let rub = (white_noise(ctx.seed()) >> bpf(top * 4.0, 1.0)) * db(CUICA_RUB) as f32;
-            let envelope = segments(&[0.0, 1.0, 0.8, 0.0], &[0.012, CUICA_GRIP + CUICA_ARCH - 0.012, 0.04], &[-2.0, 0.0, -3.0]);
-            let level = 0.03 * (vel / 0.6).powf(1.5);
-            Note::rings((tone + rub) * envelope * level as f32, CUICA_GRIP + CUICA_ARCH + 0.05)
+            let ratios: Vec<f64> = (1..=8).map(|n| n as f64).collect();
+            let levels: Vec<f64> = (0..8).map(|i| db(mix([CUICA_HARMONICS[0][i], CUICA_HARMONICS[1][i]]) + (vel - 0.6) * 4.0 * (i as f64)).min(1.0)).collect();
+            let tone = partials(pitch, &ratios, &levels, &spread_phases(8));
+            let stroke: Vec<f64> = (0..6).map(|i| mix([CUICA_LEVELS[0][i], CUICA_LEVELS[1][i]])).collect();
+            let times: Vec<f64> = (0..5).map(|i| mix([CUICA_TIMES[0][i], CUICA_TIMES[1][i]])).collect();
+            let length: f64 = times.iter().sum();
+            let envelope = segments(&stroke, &times, &[0.0; 5]);
+            let level = CUICA_LEVEL * (vel / 0.6).powf(1.5);
+            Note::rings(tone * envelope * level as f32, length + 0.01)
         })
 }
 
-const CUICA_RUB: f64 = -24.0;
+/// The stroke's level, as loud as the first design's.
+const CUICA_LEVEL: f64 = 0.05;
 
 /// One stroke of the stick on the tamborim: its head rings on its lowest mode, 524 Hz in the Commons recording, with strong modes near 1.8 and 2.5 times it, the second outlasting the first; two quiet modes below it and higher modes with the stick's crack fill the bands from 160 Hz to 10 kHz.
 /// Each mode is a ratio to the lowest, a level in dB and the seconds it fades 60 dB in.
