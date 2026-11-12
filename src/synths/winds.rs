@@ -21,8 +21,8 @@ pub fn all() -> Vec<Synth> {
         reed_wind("oboe", 5.0, Bore { conical: true, radiate: 0, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 4.0 }, &OBOE),
         reed_wind("bassoon", 5.5, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25, sharp: 5.0 }, &BASSOON),
         reed_wind("tenor_sax", 4.94, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25, sharp: 5.0 }, &TENOR_SAX),
-        reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 2, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 5.0 }, &TRUMPET),
-        reed_wind("trombone", 4.95, Bore { conical: true, radiate: 2, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0, sharp: 4.5 }, &TROMBONE),
+        reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 1, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 5.0 }, &TRUMPET),
+        reed_wind("trombone", 4.95, Bore { conical: true, radiate: 1, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0, sharp: 4.5 }, &TROMBONE),
         reed_wind("horn", 5.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2, sharp: 5.0 }, &HORN),
         reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6, sharp: 2.5 }, &TUBA),
     ]
@@ -574,12 +574,12 @@ const BASSOON: Fit = Fit {
 };
 const TENOR_SAX: Fit = reed_fit([-26.3, -15.8, -13.4], [0.44, 0.44, 0.46], [0.015, 0.015, 0.005], [-22.0, -22.0, -22.0]);
 const TRUMPET: Fit = Fit {
-    gains: [[0.0, 6.0, 7.0, 10.0, 13.0, 26.0, 15.0, -1.0], [0.0, 9.0, 5.0, 14.0, 16.0, 24.0, 21.0, 20.0], [0.0, 8.0, 13.0, 14.0, 17.0, 23.0, 24.0, 26.0]],
-    ..reed_fit([-57.2, -57.0, -60.9], [0.41, 0.48, 0.48], [0.149, 0.174, 0.088], [-20.0, -20.0, -20.0])
+    gains: [[0.0, 8.0, 7.0, 9.0, 12.0, 31.0, 20.0, 7.0], [0.0, 12.0, 10.0, 13.0, 14.0, 27.0, 24.0, 36.0], [0.0, 9.0, 16.0, 13.0, 11.0, 27.0, 26.0, 40.0]],
+    ..reed_fit([-56.6, -60.1, -62.4], [0.41, 0.48, 0.48], [0.115, 0.174, 0.068], [-20.0, -22.0, -20.0])
 };
 const TROMBONE: Fit = Fit {
-    gains: [[3.0, 9.0, 19.0, 16.0, 12.0, 3.0, -10.0, -15.0], [7.0, 17.0, 13.0, 16.0, 20.0, 16.0, 14.0, 7.0], [10.0, 20.0, 16.0, 11.0, 12.0, 14.0, 27.0, 30.0]],
-    ..reed_fit([-66.7, -59.9, -58.9], [0.42, 0.42, 0.433], [0.085, 0.111, 0.057], [-20.0, -20.0, -20.0])
+    gains: [[7.0, 14.0, 18.0, 16.0, 15.0, 15.0, 6.0, 3.0], [8.0, 20.0, 17.0, 18.0, 17.0, 18.0, 23.0, 23.0], [11.0, 21.0, 16.0, 15.0, 13.0, 11.0, 33.0, 40.0]],
+    ..reed_fit([-65.9, -60.2, -54.9], [0.42, 0.42, 0.433], [0.111, 0.066, 0.026], [-20.0, -20.0, -20.0])
 };
 const HORN: Fit = Fit {
     gains: [[13.0, 20.0, 30.0, 34.0, 23.0, 24.0, 14.0, 12.0], [6.0, 7.0, 24.0, 28.0, 13.0, 11.0, 3.0, 7.0], [6.0, 11.0, 22.0, 30.0, 24.0, 23.0, 18.0, 8.0]],
