@@ -21,3 +21,7 @@ required-features = ["keys"]
 [[example]]
 name = "virtual_keyboard"
 required-features = ["keys"]
+
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
