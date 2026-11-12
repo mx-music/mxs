@@ -1063,6 +1063,7 @@ fn sample_specs() -> Vec<Spec> {
         Spec::float("attack_level").default(1.0).range(0.0, f64::INFINITY).doc("The level the attack rises to."),
         Spec::float("decay_level").default(-1.0).doc("The level the decay falls to; sustain_level when below 0."),
         Spec::float("sustain_level").default(1.0).range(0.0, f64::INFINITY).doc("The level it holds at."),
+        Spec::boolean("normalize").default(0.0).doc("Whether it is scaled so its file's loudest moment reaches full scale, before amp, in both channels at the centre for a mono file."),
     ]
 }
 
@@ -1072,7 +1073,10 @@ fn sample_note(data: Arc<SampleData>, options: &Options) -> Note {
     let span = (to - from).abs() * data.frames() as f64 / data.rate;
     let length = span / rate.abs().max(0.001);
     let mono = data.channels.len() == 1;
-    let player = options.follow("rate") >> Net::wrap(Box::new(An(Player::new(data, from, to, rate))));
+    // A mono sample is placed at equal power, so it is raised by as much again as its pan lowers it at the centre.
+    let centre = if mono { std::f32::consts::SQRT_2 } else { 1.0 };
+    let gain = if options.number("normalize") > 0.5 && data.peak > 0.0 { centre / data.peak } else { 1.0 };
+    let player = (options.follow("rate") >> Net::wrap(Box::new(An(Player::new(data, from, to, rate))))) * gain;
     let player = if mono { player >> Net::wrap(Box::new(pass() | sink())) } else { player };
     let sustain = options.number("sustain");
     let (attack, decay, release) = (options.number("attack"), options.number("decay"), options.number("release"));

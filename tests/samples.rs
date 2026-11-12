@@ -121,3 +121,19 @@ fn a_file_that_is_not_audio_is_refused_by_its_contents_whatever_its_name() {
     assert!(engine.load_sample(&path).is_err());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn normalize_raises_a_sample_so_its_loudest_moment_reaches_full_scale_in_both_channels() {
+    let dir = dir("normalize");
+    let path = written(&dir, "quiet.wav", &riff(&fmt(3, 4, 16), &ramp(|x| ((x * 0.02) as f32).to_le_bytes().to_vec())));
+    let mut engine = Engine::offline(RATE);
+    let sample = engine.load_sample(&path).unwrap();
+    let options = vec![("normalize".to_string(), mxs::Value::from(1.0))];
+    engine.play(&[(0.0, Event::Sample { id: None, sample, options, chain: None })]).unwrap();
+    let (left, right) = engine.render(0.1).unwrap();
+    for channel in [left, right] {
+        let peak = channel.iter().fold(0.0f32, |peak, x| peak.max(x.abs()));
+        assert!((peak - 1.0).abs() < 1e-3, "peaks at {peak}");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}

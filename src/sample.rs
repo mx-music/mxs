@@ -7,6 +7,8 @@ use std::sync::Arc;
 pub(crate) struct SampleData {
     pub channels: Vec<Vec<f32>>,
     pub rate: f64,
+    /// The loudest sample in any channel, as a level from 0.
+    pub peak: f32,
 }
 
 impl SampleData {
@@ -19,7 +21,9 @@ impl SampleData {
             Some(Format::Aiff) => aiff(&bytes).and_then(|pcm| pcm.decode(&bytes)),
             None => Err("it is not a FLAC, WAV or AIFF file".to_string()),
         };
-        data.map_err(|e| if e.starts_with(&shown.to_string()) { e } else { format!("{shown}: {e}") })
+        let data = data.map_err(|e| if e.starts_with(&shown.to_string()) { e } else { format!("{shown}: {e}") })?;
+        let peak = data.channels.iter().flatten().fold(0.0f32, |peak, x| peak.max(x.abs()));
+        Ok(SampleData { peak, ..data })
     }
 
     pub fn frames(&self) -> usize {
@@ -39,6 +43,11 @@ pub fn check(path: &Path) -> Result<f64, String> {
         Some(Format::Aiff) => aiff(&bytes).map(|pcm| pcm.seconds()),
         None => Err("it is not a FLAC, WAV or AIFF file".to_string()),
     }
+}
+
+/// The loudest sample of the file at `path`, as a level from 0, read from all of it.
+pub fn peak(path: &Path) -> Result<f32, String> {
+    SampleData::load(path).map(|data| data.peak)
 }
 
 enum Format {
@@ -68,7 +77,7 @@ fn load_flac(path: &Path) -> Result<SampleData, String> {
         let sample = sample.map_err(|e| format!("{}: {e}", path.display()))?;
         channels[i % count].push(sample as f32 * scale);
     }
-    Ok(SampleData { channels, rate: info.sample_rate as f64 })
+    Ok(SampleData { channels, rate: info.sample_rate as f64, peak: 0.0 })
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -106,7 +115,7 @@ impl Pcm {
         for (i, chunk) in bytes[self.start..self.start + frames * width * self.channels].chunks_exact(width).enumerate() {
             channels[i % self.channels].push(self.value(chunk));
         }
-        Ok(SampleData { channels, rate: self.rate })
+        Ok(SampleData { channels, rate: self.rate, peak: 0.0 })
     }
 
     fn value(&self, chunk: &[u8]) -> f32 {

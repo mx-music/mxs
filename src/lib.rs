@@ -19,6 +19,7 @@ pub mod synths;
 
 pub use device::{Device, Settings, devices};
 pub use sample::check as check_sample;
+pub use sample::peak as sample_peak;
 pub use engine::{Engine, Error, Event, Source, Target, VOICES};
 pub use options::{Context, Options};
 pub use spec::{Kind, Spec, Value};
