@@ -26,8 +26,8 @@ const CHORDS: [[f64; 4]; 4] = [
 const ROOTS: [f64; 4] = [38.0, 43.0, 36.0, 45.0];
 /// The piano's montuno, a pattern of two bars: (eighth note in the bar, which of the chord's four notes) for each.
 const MONTUNO: [&[(usize, usize)]; 2] = [
-    &[(0, 0), (1, 2), (3, 1), (4, 3), (6, 2)],
-    &[(0, 1), (2, 3), (3, 2), (5, 1), (7, 0)],
+    &[(1, 2), (3, 1), (4, 3), (6, 2)],
+    &[(0, 1), (3, 2), (5, 1), (7, 0)],
 ];
 /// The 3-2 son clave over two bars of sixteen eighth notes, which the other parts are played against.
 const CLAVE: [usize; 5] = [0, 3, 6, 10, 12];
@@ -67,27 +67,33 @@ fn seconds(beats: f64) -> f64 {
     beats * 60.0 / BPM
 }
 
+/// A repeatable wobble between -0.5 and 0.5 for an eighth note of a bar, so the parts are played less evenly than a machine would.
+fn feel(bar: usize, step: usize) -> f64 {
+    ((bar * 31 + step * 17) % 11) as f64 / 10.0 - 0.5
+}
+
 /// Every note of the song as (beat, synth, options); options are numbers by name, and a synth keeps its defaults for those left out.
 fn song() -> Vec<(f64, &'static str, Vec<(&'static str, f64)>)> {
     let mut notes = Vec::new();
     for bar in 0..BARS {
         let chord = CHORDS[bar % 4];
         let root = ROOTS[bar % 4];
-        // The beat an eighth note of this bar falls on.
+        let next_root = ROOTS[(bar + 1) % 4];
+        // The beat an eighth note of this bar falls on, and the same a little early or late for the parts that play loosely.
         let at = |step: usize| bar as f64 * 4.0 + step as f64 * 0.5;
+        let loose = |step: usize| at(step) + 0.03 * feel(bar, step);
+        // A velocity pushed a little up or down, never past 1.
+        let touch = |vel: f64, step: usize| (vel * (1.0 + 0.3 * feel(bar, step))).clamp(0.0, 1.0);
 
         for step in 0..8 {
-            // The clave runs through the whole song, over two bars at a time.
+            // The clave runs through the whole song, over two bars at a time, and keeps exact time.
             if CLAVE.contains(&((bar % 2) * 8 + step)) {
                 notes.push((at(step), "clave", vec![("vel", 0.7)]));
             }
             // The shaker plays every eighth note, alternating its stroke up and down.
             let up = (step % 2) as f64;
-            notes.push((
-                at(step),
-                "shaker",
-                vec![("vel", 0.3 + 0.1 * up), ("up", up)],
-            ));
+            let vel = touch(0.3 + 0.1 * up, step);
+            notes.push((loose(step), "shaker", vec![("vel", vel), ("up", up)]));
         }
 
         // A simple conga tumbao: muted and open tones on the low and high drums, and a slap on the last eighth.
@@ -99,39 +105,43 @@ fn song() -> Vec<(f64, &'static str, Vec<(&'static str, f64)>)> {
             (6, "low_conga", 0.7, 0.0, 0.0),
             (7, "high_conga", 0.7, 0.0, 1.0),
         ] {
-            let options = vec![("vel", vel), ("mute", mute), ("slap", slap)];
-            notes.push((at(step), synth, options));
+            let options = vec![("vel", touch(vel, step)), ("mute", mute), ("slap", slap)];
+            notes.push((loose(step), synth, options));
         }
 
-        // The piano and bass come in after four bars of percussion.
-        if bar >= 4 {
-            // The bass skips the downbeat: its root on the "and" of 2, and the fifth above it on beat 4.
+        // The bass comes in after two bars of percussion, and keeps exact time.
+        if bar >= 2 {
+            // It skips the downbeat: its root on the "and" of 2, the fifth above it on beat 4,
+            // and the next bar's root on the "and" of 4, early, as bass players push into a new chord.
             // Its amp lifts it, as the plucked string is quiet.
-            for (step, note) in [(3, root), (6, root + 7.0)] {
+            for (step, note, beats) in [(3, root, 1.2), (6, root + 7.0, 0.4), (7, next_root, 0.9)] {
                 let options = vec![
                     ("note", note),
-                    ("vel", 1.0),
+                    ("vel", touch(0.9, step)),
                     ("pizz", 1.0),
-                    ("sustain", seconds(0.5)),
-                    ("amp", 2.0),
+                    ("sustain", seconds(beats)),
+                    ("amp", 3.0),
                 ];
                 notes.push((at(step), "double_bass", options));
             }
-            // The piano plays the chord's notes in the montuno's rhythm, each cut short.
+        }
+
+        // The piano joins at bar 8, and plays the chord's notes in the montuno's rhythm, softly.
+        if bar >= 8 {
             for &(step, tone) in MONTUNO[bar % 2] {
                 let options = vec![
                     ("note", chord[tone]),
-                    ("vel", 0.65),
-                    ("sustain", seconds(0.4)),
+                    ("vel", touch(0.5, step)),
+                    ("sustain", seconds(0.5)),
                 ];
-                notes.push((at(step), "piano", options));
+                notes.push((loose(step), "piano", options));
             }
         }
 
         // The cowbell keeps the beat from bar 12, and each phrase ends with a timbale fill.
         if bar >= 12 {
             for step in [0, 2, 4, 6] {
-                notes.push((at(step), "cowbell", vec![("vel", 0.5)]));
+                notes.push((loose(step), "cowbell", vec![("vel", touch(0.5, step))]));
             }
             if bar % 4 == 3 {
                 for step in 4..8 {
@@ -140,7 +150,7 @@ fn song() -> Vec<(f64, &'static str, Vec<(&'static str, f64)>)> {
                     } else {
                         "high_timbale"
                     };
-                    notes.push((at(step), synth, Vec::new()));
+                    notes.push((loose(step), synth, Vec::new()));
                 }
             }
         }
@@ -152,7 +162,7 @@ fn song() -> Vec<(f64, &'static str, Vec<(&'static str, f64)>)> {
         notes.push((
             finale,
             "piano",
-            vec![("note", note), ("vel", 0.7), ("sustain", seconds(3.0))],
+            vec![("note", note), ("vel", 0.6), ("sustain", seconds(3.0))],
         ));
     }
     notes.push((
@@ -163,7 +173,7 @@ fn song() -> Vec<(f64, &'static str, Vec<(&'static str, f64)>)> {
             ("vel", 1.0),
             ("pizz", 1.0),
             ("sustain", seconds(2.0)),
-            ("amp", 2.0),
+            ("amp", 3.0),
         ],
     ));
     notes.push((finale, "low_conga", vec![("vel", 0.8)]));
