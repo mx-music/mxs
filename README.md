@@ -68,4 +68,3 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --release --all-features
 ```
 
-The cello's body response and onsets in `src/synths/cello/` are measured from the University of Iowa's cello recordings by the scripts in `measure/`.
