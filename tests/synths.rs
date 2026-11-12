@@ -54,3 +54,15 @@ fn a_hundred_surdo_strokes_open_and_muted_leave_nothing_sounding_once_they_end()
     engine.render(3.0).unwrap();
     assert!(!engine.sounding(), "a stroke still sounds after the last one's ring ends");
 }
+
+#[test]
+fn a_hundred_cuica_strokes_leave_nothing_sounding_once_they_end() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let strokes: Vec<_> = (0..100).map(|i| (i as f64 * 0.02, Event::note(None, "cuica", &[("vel", 0.3 + 0.7 * (i % 3) as f64 / 2.0)]))).collect();
+    engine.play(&strokes).unwrap();
+    engine.render(2.0).unwrap();
+    assert!(engine.sounding());
+    engine.render(1.0).unwrap();
+    assert!(!engine.sounding(), "a stroke still sounds after the last one's arch ends");
+}

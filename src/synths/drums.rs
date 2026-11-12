@@ -1,7 +1,8 @@
 //! mx's drums and hand percussion, after their designs in mx's priv/synthdefs/mx-drums.scd.
 //! Their seeded modes are drawn from mxs's own generator, so they sit at other frequencies than scsynth's draws, with the same levels and rings at each band.
 
-use crate::nodes::{Draws, between, db, decay2, dust, exp_segments, hit, hz, modes, segments, struck_gliding, white_noise};
+use crate::nodes::{Draws, between, db, decay2, dust, exp_segments, hit, hz, modes, segments, shape, struck_gliding, white_noise};
+use super::instruments::{partials, spread_phases};
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 
@@ -38,6 +39,7 @@ pub fn all() -> Vec<Synth> {
         cajon(),
         bongo("low_bongo", &LOW_BONGO),
         surdo(),
+        cuica(),
         bongo("high_bongo", &HIGH_BONGO),
         tabla("tabla", None),
     ];
@@ -948,6 +950,36 @@ fn surdo() -> Synth {
 }
 
 const SURDO_MUTED_LEVEL: f64 = -6.0;
+
+/// One stroke of the cuíca: the stick rubbed inside it drives the head through an arch, its pitch rising about 8 semitones and falling back in 0.2 seconds.
+/// The note is the arch's top, 145 Hz in the Commons recordings, where the strongest partial, the second harmonic, reaches 290 Hz.
+const CUICA_LEVELS: [f64; 28] = [-8.0, 0.0, -3.0, -12.0, -12.0, -14.0, -18.0, -20.0, -22.0, -24.0, -26.0, -27.0, -29.0, -31.0, -33.0, -35.0, -36.0, -38.0, -38.5, -39.0, -39.5, -40.0, -40.5, -41.0, -41.5, -42.0, -42.5, -43.0];
+const CUICA_ARCH: f64 = 0.17;
+const CUICA_GRIP: f64 = 0.03;
+const CUICA_LOW: f64 = 0.638;
+
+fn cuica() -> Synth {
+    Synth::new("cuica")
+        .options(strike_options(49.79))
+        .build(move |o, ctx| {
+            let vel = vel(o, 0.0);
+            let top = hz(o.number("note"));
+            // The stick grips for 30 ms before the head moves; then the arch is a half sine, raised to a power so the pitch lingers near its top as the recordings' strokes do.
+            let pitch = shape(move |t| {
+                let along = ((t - CUICA_GRIP) / CUICA_ARCH).clamp(0.0, 1.0);
+                top * (CUICA_LOW + (1.0 - CUICA_LOW) * (std::f64::consts::PI * along).sin().powf(0.7))
+            });
+            let ratios: Vec<f64> = (1..=28).map(|n| n as f64).collect();
+            let levels: Vec<f64> = CUICA_LEVELS.iter().zip(&ratios).map(|(l, n)| if top * n < 16_000.0 { db(l + (vel - 0.6) * 4.0 * n.log2()) } else { 0.0 }).collect();
+            let tone = partials(pitch, &ratios, &levels, &spread_phases(28));
+            let rub = (white_noise(ctx.seed()) >> bpf(top * 4.0, 1.0)) * db(CUICA_RUB) as f32;
+            let envelope = segments(&[0.0, 1.0, 0.8, 0.0], &[0.012, CUICA_GRIP + CUICA_ARCH - 0.012, 0.04], &[-2.0, 0.0, -3.0]);
+            let level = 0.03 * (vel / 0.6).powf(1.5);
+            Note::rings((tone + rub) * envelope * level as f32, CUICA_GRIP + CUICA_ARCH + 0.05)
+        })
+}
+
+const CUICA_RUB: f64 = -24.0;
 
 struct Bol {
     name: &'static str,
