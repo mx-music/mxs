@@ -65,7 +65,7 @@ Those that use BlackHole to record what plays need the BlackHole 2ch virtual dev
 ```
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
+cargo test --release --all-features
 ```
 
 The cello's body response and onsets in `src/synths/cello/` are measured from the University of Iowa's cello recordings by the scripts in `measure/`.
