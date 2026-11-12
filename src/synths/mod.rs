@@ -3,6 +3,7 @@
 mod basic;
 mod berimbau;
 mod bowed;
+mod common;
 mod drums;
 mod instruments;
 mod piano;
@@ -10,7 +11,7 @@ mod winds;
 
 pub use berimbau::berimbau;
 pub(crate) use bowed::bowed_string;
-pub(crate) use instruments::partials;
+pub(crate) use common::partials;
 pub use piano::piano;
 pub(crate) use winds::{air_jet, wind_bands};
 

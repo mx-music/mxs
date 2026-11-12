@@ -1,0 +1,113 @@
+//! What the synths share: sines, band-passes, additive partials and the swell of a held note.
+
+use crate::Options;
+use crate::nodes::segments;
+use fundsp::prelude::*;
+use std::f64::consts::PI;
+
+/// A sine at `hz`, starting `phase` radians in.
+pub(crate) fn sine_from(hz: f64, phase: f64) -> Net {
+    net(dc(hz as f32))
+        >> net(An(Sine::<f32>::with_phase(
+            (phase / (2.0 * PI)).rem_euclid(1.0) as f32,
+        )))
+}
+
+/// The seconds until resonators of `levels`, fading 60 dB over `rings`, all fall below 80 dB under full scale once scaled by `gain`, as scsynth would free them.
+pub(crate) fn silent_after(levels: &[f64], rings: &[f64], gain: f64) -> f64 {
+    levels
+        .iter()
+        .zip(rings)
+        .filter(|(l, _)| l.abs() * gain > 1e-4)
+        .map(|(l, r)| r * 20.0 * (l.abs() * gain / 1e-4).log10() / 60.0)
+        .fold(0.1, f64::max)
+}
+
+pub(crate) fn net(unit: impl AudioUnit + 'static) -> Net {
+    Net::wrap(Box::new(unit))
+}
+
+/// A band-pass with a peak of 1, whose width is `rq` times its centre.
+pub(crate) fn bpf(f: f64, rq: f64) -> Net {
+    net(bandpass_hz(
+        f.clamp(20.0, 20_000.0) as f32,
+        (1.0 / rq) as f32,
+    )) * rq as f32
+}
+
+/// Sines at `ratios` times the pitch its input gives, each at its level and starting phase in radians, as one sound.
+pub(crate) fn partials(pitch: Net, ratios: &[f64], levels: &[f64], phases: &[f64]) -> Net {
+    let kept: Vec<(f32, f32, f32)> = ratios
+        .iter()
+        .zip(levels)
+        .zip(phases)
+        .filter(|((_, l), _)| **l != 0.0)
+        .map(|((r, l), p)| {
+            (
+                *r as f32,
+                *l as f32,
+                (*p / (2.0 * PI)).rem_euclid(1.0) as f32,
+            )
+        })
+        .collect();
+    pitch
+        >> net(An(Partials {
+            start: kept.iter().map(|k| k.2).collect(),
+            ratios: kept.iter().map(|k| (k.0, k.1)).collect(),
+            phases: kept.iter().map(|k| k.2).collect(),
+            rate: DEFAULT_SR as f32,
+        }))
+}
+
+/// The phases mx's additive designs start their harmonics at, so they do not all peak together.
+pub(crate) fn spread_phases(count: usize) -> Vec<f64> {
+    (1..=count)
+        .map(|n| PI * n as f64 * (n as f64 - 1.0) / 24.0)
+        .collect()
+}
+
+pub(super) fn harmonics(count: usize) -> Vec<f64> {
+    (1..=count).map(|n| n as f64).collect()
+}
+
+/// A rise to full over `seconds`, though never over more than part of the note's sustain.
+pub(super) fn swell(o: &Options, seconds: f64) -> Net {
+    segments(
+        &[0.0, 1.0],
+        &[seconds.min(o.number("sustain") * 0.4).max(1e-4)],
+        &[-2.0],
+    )
+}
+
+/// Sines summed, each at a ratio of the pitch its input gives.
+#[derive(Clone)]
+struct Partials {
+    start: Vec<f32>,
+    ratios: Vec<(f32, f32)>,
+    phases: Vec<f32>,
+    rate: f32,
+}
+
+impl AudioNode for Partials {
+    const ID: u64 = 0x6d78_0040;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+    }
+
+    fn reset(&mut self) {
+        self.phases.clone_from(&self.start);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let step = input[0] / self.rate;
+        let mut sum = 0.0;
+        for ((ratio, level), phase) in self.ratios.iter().zip(self.phases.iter_mut()) {
+            sum += level * (std::f32::consts::TAU * *phase).sin();
+            *phase = (*phase + step * ratio).fract();
+        }
+        [sum].into()
+    }
+}
