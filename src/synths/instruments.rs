@@ -27,6 +27,10 @@ pub fn all() -> Vec<Synth> {
             levels: [-25.05, -28.90, -30.45],
             swell: [0.875, 0.65, 0.35],
             rosin: [0.6, 0.23, 0.35],
+            hiss: [-35.5, -35.5, -30.5],
+            response: None,
+            onsets: None,
+            onset: [0.0; 3],
         }),
         bowed("viola", Bowed { peak: 350.0, rise: 17.0, soft_rise: 3.0, fall: 14.0, soft_fall: 4.5, fade: 3.7, fade_slope: -0.7, pluck: 0.13, gain: 0.3, count: 32, level: -15.0 }, Fit {
             body: 367.1,
@@ -34,13 +38,21 @@ pub fn all() -> Vec<Synth> {
             levels: [-21.45, -29.20, -35.05],
             swell: [0.815, 0.68, 0.5],
             rosin: [0.1, 0.1, 0.1],
+            hiss: [-35.5, -35.5, -30.5],
+            response: None,
+            onsets: None,
+            onset: [0.0; 3],
         }),
         bowed("cello", Bowed { peak: 144.0, rise: 14.0, soft_rise: 3.0, fall: 10.0, soft_fall: 6.5, fade: 4.0, fade_slope: -0.15, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit {
             body: 133.1,
             gains: [[-2.7, 2.1, 2.8, -7.2, 6.4, -8.3, 5.6, -5.3], [-1.5, 1.1, 2.8, -6.1, 7.8, -2.1, 11.7, -6.2], [-5.5, 1.4, -2.3, -3.8, 3.7, -1.5, 12.3, -4.9]],
             levels: [-18.75, -22.40, -20.35],
             swell: [0.86, 0.77, 0.65],
-            rosin: [0.53, 0.16, 0.35],
+            rosin: [0.0879, 0.0371, 0.1479],
+            hiss: [-26.5, -28.0, -21.5],
+            response: Some(cello_body),
+            onsets: Some(cello_onsets),
+            onset: [0.667, 0.0, 0.296],
         }),
         bowed("double_bass", Bowed { peak: 84.0, rise: 24.0, soft_rise: 5.0, fall: 19.5, soft_fall: 2.0, fade: 3.9, fade_slope: 0.0, pluck: 0.13, gain: 0.6, count: 64, level: 0.0 }, Fit {
             body: 67.5,
@@ -48,8 +60,38 @@ pub fn all() -> Vec<Synth> {
             levels: [-19.05, -24.20, -31.55],
             swell: [0.396, 0.342, 0.22],
             rosin: [0.3, 0.53, 0.1],
+            hiss: [-35.5, -35.5, -30.5],
+            response: None,
+            onsets: Some(cello_onsets),
+            onset: [0.0; 3],
         }),
     ]
+}
+
+/// The cello body's impulse response, from the noise the University of Iowa's bowed cello holds between its harmonics at mf.
+fn cello_body() -> &'static Wave {
+    static BODY: std::sync::LazyLock<Wave> = std::sync::LazyLock::new(|| {
+        let data = crate::sample::SampleData::wav(include_bytes!("cello/body.wav")).expect("the cello's body response is a WAV file");
+        Wave::from_samples(data.rate, &data.channels[0])
+    });
+    &BODY
+}
+
+/// The first quarter second of a bowed note on each of the cello's strings at pp, mf and ff, from the University of Iowa's cello.
+fn cello_onsets() -> &'static [bowed::Onset] {
+    macro_rules! onset {
+        ($dynamic:expr, $note:expr, $file:literal) => {
+            bowed::Onset { dynamic: $dynamic, note: $note, data: std::sync::Arc::new(crate::sample::SampleData::wav(include_bytes!(concat!("cello/onset_", $file, ".wav"))).expect("a cello onset is a WAV file")) }
+        };
+    }
+    static ONSETS: std::sync::LazyLock<Vec<bowed::Onset>> = std::sync::LazyLock::new(|| {
+        vec![
+            onset!(0, 36.0, "pp_C2"), onset!(0, 43.0, "pp_G2"), onset!(0, 50.0, "pp_D3"), onset!(0, 57.0, "pp_A3"), onset!(0, 60.0, "pp_C4"), onset!(0, 71.0, "pp_B4"),
+            onset!(1, 36.0, "mf_C2"), onset!(1, 43.0, "mf_G2"), onset!(1, 50.0, "mf_D3"), onset!(1, 57.0, "mf_A3"), onset!(1, 60.0, "mf_C4"), onset!(1, 72.0, "mf_C5"),
+            onset!(2, 36.0, "ff_C2"), onset!(2, 43.0, "ff_G2"), onset!(2, 50.0, "ff_D3"), onset!(2, 57.0, "ff_A3"), onset!(2, 60.0, "ff_C4"), onset!(2, 72.0, "ff_C5"),
+        ]
+    });
+    &ONSETS
 }
 
 /// A sine at `hz`, starting `phase` radians in.
