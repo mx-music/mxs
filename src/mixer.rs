@@ -400,13 +400,6 @@ impl Mixer {
         }
     }
 
-    /// The voices sent so far, taken out of the mixer, for measuring them alone.
-    #[cfg(test)]
-    pub(crate) fn take_voices(&mut self) -> Vec<Box<Voice>> {
-        self.receive();
-        std::mem::take(&mut self.voices)
-    }
-
     /// The frames every running recording has room for before its ring is full.
     pub fn recording_room(&self) -> usize {
         let room = |r: &Option<Box<Recorder>>| r.as_ref().map_or(usize::MAX, |r| r.out.slots() / 2);
