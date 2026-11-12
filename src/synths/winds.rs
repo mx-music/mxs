@@ -17,14 +17,14 @@ const EQ: [&str; 8] = ["eq0", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7"];
 pub fn all() -> Vec<Synth> {
     vec![
         flute(),
-        reed_wind("clarinet", 5.0, Bore { conical: false, radiate: 1, bell: 2570.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &CLARINET),
-        reed_wind("oboe", 5.0, Bore { conical: true, radiate: 0, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &OBOE),
-        reed_wind("bassoon", 5.5, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25 }, &BASSOON),
-        reed_wind("tenor_sax", 4.94, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25 }, &TENOR_SAX),
-        reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 2, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &TRUMPET),
-        reed_wind("trombone", 4.95, Bore { conical: true, radiate: 2, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0 }, &TROMBONE),
-        reed_wind("horn", 5.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2 }, &HORN),
-        reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6 }, &TUBA),
+        reed_wind("clarinet", 5.0, Bore { conical: false, radiate: 1, bell: 2570.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 4.4 }, &CLARINET),
+        reed_wind("oboe", 5.0, Bore { conical: true, radiate: 0, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 4.0 }, &OBOE),
+        reed_wind("bassoon", 5.5, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25, sharp: 5.0 }, &BASSOON),
+        reed_wind("tenor_sax", 4.94, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25, sharp: 5.0 }, &TENOR_SAX),
+        reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 2, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 5.0 }, &TRUMPET),
+        reed_wind("trombone", 4.95, Bore { conical: true, radiate: 2, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0, sharp: 4.5 }, &TROMBONE),
+        reed_wind("horn", 5.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2, sharp: 5.0 }, &HORN),
+        reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6, sharp: 6.0 }, &TUBA),
     ]
 }
 
@@ -247,13 +247,15 @@ pub(crate) struct Reed {
     /// The part of the mouth's pressure the tongue's release sends into the bore, and the samples left of it, which the breath's first arrival starts.
     pub(crate) tongue_part: f32,
     tongue: i32,
+    /// The ratio its pitch is played at, below 1 where the loss filter, delaying the higher harmonics less than the pitch, pulls the note sharp.
+    pub(crate) tune: f32,
     pulse: f32,
     rate: f32,
 }
 
 impl Reed {
     pub(crate) fn new(conical: bool, corner: f32, keep: f32, radiate: usize, bell: f32) -> Reed {
-        Reed { bore: Line::new(8192), loss: Loss::default(), apex: Line::new(4096), apex_loss: Loss::default(), apex_part: 0.15, out: DcBlock::default(), conical, zeta: 0.4, corner, keep, turbulence: 0.005, radiate, bell, radiated: [[0.0; 2]; 2], delay: 0.0, from: 0.0, short: 1.0, short_from: 1.0, fade: 1.0, tongue_part: 0.0, tongue: -1, pulse: 1.0, rate: DEFAULT_SR as f32 }
+        Reed { bore: Line::new(8192), loss: Loss::default(), apex: Line::new(4096), apex_loss: Loss::default(), apex_part: 0.15, out: DcBlock::default(), conical, zeta: 0.4, corner, keep, turbulence: 0.005, radiate, bell, radiated: [[0.0; 2]; 2], delay: 0.0, from: 0.0, short: 1.0, short_from: 1.0, fade: 1.0, tongue_part: 0.0, tongue: -1, tune: 1.0, pulse: 1.0, rate: DEFAULT_SR as f32 }
     }
 }
 
@@ -279,7 +281,7 @@ impl AudioNode for Reed {
     }
 
     fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U1> {
-        let freq = input[0].clamp(20.0, 5000.0);
+        let freq = (input[0] * self.tune).clamp(20.0, 5000.0);
         let mouth = input[1].max(0.0) * (1.0 + self.turbulence * input[2]);
         let period = self.rate / freq;
         let w = TAU * freq / self.rate;
@@ -543,7 +545,7 @@ fn flute() -> Synth {
         })
 }
 
-/// A reed or brass wind's bore: whether it is conical, how many high-passes its sound goes through as it radiates and their cutoff in Hz, fitted to its recordings at mf, its corner as a multiple of the pitch, how much it keeps at each round trip, the centre in Hz of the breath's noise, and the part of the mouth's pressure its tongue's release sends in.
+/// A reed or brass wind's bore: whether it is conical, how many high-passes its sound goes through as it radiates and their cutoff in Hz, fitted to its recordings at mf, its corner as a multiple of the pitch, how much it keeps at each round trip, the centre in Hz of the breath's noise, the part of the mouth's pressure its tongue's release sends in, and the cents its model plays sharp, which the player takes back.
 struct Bore {
     conical: bool,
     radiate: usize,
@@ -552,6 +554,7 @@ struct Bore {
     keep: f32,
     air: f32,
     tongue: f32,
+    sharp: f32,
 }
 
 // The breath, its rise and its noise are fitted with mix mx.fit at each dynamic to the University of Iowa's recordings, VSCO 2's for the horn and tuba and VCSL's for the tenor sax, the noise held under -20 dB, where the fit would trade the tone for it, and the horn's pp and tuba's ff breath held at their mf one, where the fit's jumps the pitch.
@@ -576,6 +579,7 @@ fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Sy
     wind_options(name, 0.0, "The vibrato's depth in semitones, reached as the note holds.").build(move |o, ctx| {
         let mut reed = Reed::new(bore.conical, bore.corner, bore.keep, bore.radiate, bore.bell);
         reed.tongue_part = bore.tongue;
+        reed.tune = 2f32.powf(-bore.sharp / 1200.0);
         let model = (pitch(o, o.number("vibrato"), rate) | breath(o, fit) | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
         Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
     })
