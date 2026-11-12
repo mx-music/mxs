@@ -12,8 +12,6 @@ pub mod nodes;
 mod options;
 mod sample;
 mod spec;
-#[cfg(test)]
-mod spike_parallel;
 mod synth;
 pub mod synths;
 
