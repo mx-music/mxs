@@ -36,17 +36,6 @@ impl SampleData {
         Ok(SampleData { peak, ..data })
     }
 
-    /// A WAV file's samples, from its bytes, for recordings built into mxs.
-    pub fn wav(bytes: &[u8]) -> Result<SampleData, String> {
-        let data = wav(bytes).and_then(|pcm| pcm.decode(bytes))?;
-        let peak = data
-            .channels
-            .iter()
-            .flatten()
-            .fold(0.0f32, |peak, x| peak.max(x.abs()));
-        Ok(SampleData { peak, ..data })
-    }
-
     pub fn frames(&self) -> usize {
         self.channels[0].len()
     }

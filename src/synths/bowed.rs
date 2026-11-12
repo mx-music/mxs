@@ -1,13 +1,11 @@
 //! The bowed string of mx's violin, viola, cello and double bass: a waveguide after the bowed-string model of McIntyre, Schumacher and Woodhouse, "On the oscillations of musical instruments", JASA 74, 1983, and Julius O. Smith III's digital waveguides, https://ccrma.stanford.edu/~jos/pasp/Bowed_Strings.html.
-//! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, through the body's impulse response where the instrument has one, and the swell in, with a recorded onset under it where the instrument has them.
+//! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, and the swell in.
 
-use crate::nodes::{db, hz, pink_noise, shape, shape_node, white_noise};
-use crate::sample::{Player, SampleData};
+use crate::nodes::{db, hz, pink_noise, shape, shape_node};
 use crate::synth::SynthDecl;
 use crate::{Context, Options, Spec};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
-use std::sync::Arc;
 
 /// The centres of the bands mx measures, from 80 Hz to 4 kHz.
 const BANDS: [f64; 8] = [113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, 3162.0];
@@ -31,19 +29,6 @@ pub(crate) struct Fit {
     pub rosin: [f64; 3],
     /// The bow's hiss in dB at pp, mf and ff.
     pub hiss: [f64; 3],
-    /// The body's impulse response, which the hiss passes through in place of a high-pass, when the instrument has one.
-    pub response: Option<fn() -> &'static Wave>,
-    /// Recorded onsets, played under the string's swell at the note's pitch, when the instrument has them.
-    pub onsets: Option<fn() -> &'static [Onset]>,
-    /// How loud the onsets are at pp, mf and ff, against the level each recorded note holds.
-    pub onset: [f64; 3],
-}
-
-/// The start of a recorded note, at pp, mf or ff, scaled so the note's level while it holds is 1.
-pub(crate) struct Onset {
-    pub dynamic: usize,
-    pub note: f64,
-    pub data: Arc<SampleData>,
 }
 
 /// The bow's options, and for fitting, each band's gain in place of the one fitted for the note's vel.
@@ -55,8 +40,6 @@ pub(crate) fn bow_options(mut synth: SynthDecl) -> SynthDecl {
         .option(Spec::hz("body_hz").range(20.0, 2000.0).doc("The corner below which the body radiates little, in place of the one fitted; for fitting."))
         .option(Spec::float("rosin").range(0.0, 2.0).doc("How much the rosin's noise sways the bow's speed, in place of the one fitted; for fitting."))
         .option(Spec::db("hiss").range(-90.0, 0.0).doc("The bow's hiss in dB, in place of the one fitted for the note's vel; for fitting."))
-        .option(Spec::float("response").default(1.0).range(0.0, 1.0).doc("1 passes the bow's hiss through the body's response measured from recordings, where the instrument has one; 0 through a high-pass, as the others do."))
-        .option(Spec::float("onset").range(0.0, 8.0).doc("How loud the recorded onset is against the level its note holds, in place of the one fitted for the note's vel; 0 leaves it out."))
         .option(Spec::float("bow_position").default(0.12).range(0.05, 0.5).doc("Where the bow meets the string, as a fraction of its length from the bridge."));
     for (name, hz) in EQ.iter().zip(BANDS) {
         let doc = format!(
@@ -115,15 +98,8 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
         .given("hiss")
         .unwrap_or_else(|| by_vel(fit.hiss[0], fit.hiss[1], fit.hiss[2])))
         as f32;
-    let hiss = match fit.response {
-        Some(response) if options.number("response") >= 0.5 => {
-            (white_noise(ctx.seed()) >> convolve(response(), 0)) * hiss_level
-        }
-        _ => {
-            (pink_noise(ctx.seed()) >> highpass_hz((1800.0 - vel * 400.0) as f32, 0.707))
-                * hiss_level
-        }
-    };
+    let hiss =
+        (pink_noise(ctx.seed()) >> highpass_hz((1800.0 - vel * 400.0) as f32, 0.707)) * hiss_level;
     sound = (sound + hiss) >> dcblock::<f32>();
 
     // The string swells in as the recordings do at each dynamic, though never over more than part of its sustain; on a bow change it speaks within 60 ms.
@@ -131,41 +107,7 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let swell = (from_silence + (0.06f64.min(from_silence) - from_silence) * legato).max(1e-3);
     let rising = shape(move |t| 1.0 - (1.0 - (t / swell).min(1.0)).powi(2));
     let level = (vel.powf(0.6) * db(by_vel(fit.levels[0], fit.levels[1], fit.levels[2]))) as f32;
-    let gain = options
-        .given("onset")
-        .unwrap_or_else(|| by_vel(fit.onset[0], fit.onset[1], fit.onset[2]))
-        * (1.0 - legato);
-    match fit.onsets {
-        Some(onsets) if gain > 0.0 => {
-            (sound * rising + onset(onsets(), vel, options.number("note")) * gain as f32) * level
-        }
-        _ => sound * rising * level,
-    }
-}
-
-/// The onset recorded at the dynamic nearest vel, from the nearest note, played faster or slower to sound at `note`.
-fn onset(onsets: &[Onset], vel: f64, note: f64) -> Net {
-    let dynamic = if vel < 0.45 {
-        0
-    } else if vel < 0.8 {
-        1
-    } else {
-        2
-    };
-    let nearest = onsets
-        .iter()
-        .filter(|o| o.dynamic == dynamic)
-        .min_by(|a, b| (a.note - note).abs().total_cmp(&(b.note - note).abs()))
-        .expect("each dynamic has onsets");
-    let rate = 2f64.powf((note - nearest.note) / 12.0);
-    Net::wrap(Box::new(dc(rate as f32)))
-        >> Net::wrap(Box::new(An(Player::new(
-            nearest.data.clone(),
-            0.0,
-            1.0,
-            rate,
-        ))))
-        >> (pass() | sink())
+    sound * rising * level
 }
 
 /// The seconds each half of the string delays its wave, at a pitch: its share of the period, less the feedback's sample and its loss filter's delay.
