@@ -376,11 +376,11 @@ pub(crate) struct Fit {
 }
 
 /// A wind's options: those every wind takes, then for fitting each band's gain, the level, the breath and its rise, in place of those fitted for the note's vel.
-fn wind_options(name: &str, vibrato: f64) -> SynthDecl {
+fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
     let mut synth = Synth::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch; a change while the note holds slurs to the new one."))
         .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard it is blown; a change while the note holds swells or fades it."))
-        .option(Spec::float("vibrato").default(vibrato).range(0.0, 2.0).doc("The vibrato's depth in semitones, reached as the note holds."))
+        .option(Spec::float("vibrato").default(vibrato).range(0.0, 2.0).doc(vibrato_doc))
         .options(Spec::envelope(0.5, 0.2))
         .option(Spec::float("breath").range(0.0, 3.0).doc("The breath's pressure, in place of the one fitted for the note's vel; for fitting."))
         .option(Spec::seconds("rise").range(0.001, 2.0).doc("The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting."))
@@ -466,8 +466,7 @@ const FLUTE_EVEN: [f32; 3] = [0.3, 1.0, 2.0];
 const FLUTE: Fit = Fit { gains: [[0.0; 8]; 3], levels: [-12.0, -12.0, -12.0], breath: [0.38, 0.45, 0.56], rise: [0.05, 0.05, 0.05], air: [-90.0, -90.0, -90.0] };
 
 fn flute() -> Synth {
-    wind_options("flute", 0.0)
-        .option(Spec::float("throb").default(0.1).range(0.0, 1.0).doc("How far the breath swells and eases at the vibrato's rate, as a part of it at full vel; a flute's vibrato is in the breath, and the default swings a held note's level 1.6 to 2.3 dB, as a played Syrinx's 2 and under VSCO 2's 2 to 4."))
+    wind_options("flute", 0.17, "The vibrato's depth, reached as the note holds: a flute's vibrato is in the breath, which swells and eases by 0.6 of it, so 0.17 swings a held note's level 1.6 to 2.3 dB, as a played Syrinx's 2 and under VSCO 2's 2 to 4, and its pitch follows.")
         .option(Spec::float("lift").default(0.5).range(0.0, 1.0).doc("How much louder a higher note sounds, as a player blows it harder, as the power of its pitch over middle C; 0 sounds every note alike."))
         .option(Spec::float("wander").default(0.2).range(0.0, 4.0).doc("How much the breath drifts while a note holds, as a player's does; 0 holds it still."))
         .option(Spec::float("catch").default(0.15).range(0.0, 1.0).doc("How far the breath falls while a slur moves the pitch; 0 glides smoothly."))
@@ -480,9 +479,8 @@ fn flute() -> Synth {
         .build(|o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
-            let swing = drifting_swing(o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed() ^ 0x76);
-            let pitch = (o.follow("note") | swing) >> Net::wrap(Box::new(map(|x: &Frame<f32, U2>| hz(x[0] as f64 + x[1] as f64) as f32)));
-            let throb = drifting_swing(o.number("throb") * vel.powf(0.65), 5.3, ctx.seed() ^ 0x76) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
+            let pitch = o.follow("note") >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32)));
+            let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed() ^ 0x76) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
             let jet = played_jet(pitch, breath(o, &FLUTE) * throb, ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(3000.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64), o.number("lift"));
             // The breath hisses above 3 kHz where the jet strikes the edge, pulsing as it crosses, after the bands, so they do not colour it.
             let pulse = o.given("pulse").unwrap_or(1.0) as f32;
@@ -491,7 +489,9 @@ fn flute() -> Synth {
             // mx's bands stop at 4 kHz, and above them the jet is brighter than the Philharmonia's flute and a played Syrinx, by 10 dB from 4 to 10 kHz, which a shelf takes away.
             let bright = Net::wrap(Box::new(highshelf_hz(4000.0, 0.707, db(o.given("shelf").unwrap_or(-8.0)) as f32)));
             let tone = voiced(o, ctx, Net::wrap(Box::new(pass())), &FLUTE, 2000.0) >> bright;
-            Note::envelope(jet >> (tone | hiss) >> Net::wrap(Box::new(join::<U2>())), o)
+            // Under pp the breath would stop the note, so a player fading in from nothing, as the Philharmonia's flute swells from 27 dB under its peak, only plays it quieter.
+            let quiet = o.follow("vel") >> Net::wrap(Box::new(map(|v: &Frame<f32, U1>| (v[0] / 0.3).clamp(0.0, 1.0).powf(1.5))));
+            Note::envelope((jet >> (tone | hiss) >> Net::wrap(Box::new(join::<U2>()))) * quiet, o)
         })
 }
 
@@ -515,7 +515,7 @@ const HORN: Fit = UNFITTED;
 const TUBA: Fit = UNFITTED;
 
 fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Synth {
-    wind_options(name, 0.0).build(move |o, ctx| {
+    wind_options(name, 0.0, "The vibrato's depth in semitones, reached as the note holds.").build(move |o, ctx| {
         let reed = Reed::new(bore.conical, bore.corner, bore.keep, bore.radiate);
         let model = (pitch(o, o.number("vibrato"), rate) | breath(o, fit) | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
         Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
