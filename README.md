@@ -56,6 +56,7 @@ You can write your own synth against the same public API that `synths` uses, and
 ## Examples
 
 `cargo run --release --example NAME` runs one of the programs in `examples/`.
+`ode_to_joy` plays Beethoven's theme in three statements, from the cello and double bass alone to the full band with organ, timpani and drums, through the default output or into the WAV file you give it.
 `devices` lists the output and input devices.
 The others check timing, such as `drift` and `clock_check`, or cost, such as `cost`.
 Those that use BlackHole to record what plays need the BlackHole 2ch virtual device installed.
