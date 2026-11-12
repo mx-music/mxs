@@ -24,7 +24,7 @@ pub fn all() -> Vec<Synth> {
         reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 2, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 5.0 }, &TRUMPET),
         reed_wind("trombone", 4.95, Bore { conical: true, radiate: 2, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0, sharp: 4.5 }, &TROMBONE),
         reed_wind("horn", 5.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2, sharp: 5.0 }, &HORN),
-        reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6, sharp: 6.0 }, &TUBA),
+        reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6, sharp: 2.5 }, &TUBA),
     ]
 }
 
@@ -255,7 +255,7 @@ pub(crate) struct Reed {
 
 impl Reed {
     pub(crate) fn new(conical: bool, corner: f32, keep: f32, radiate: usize, bell: f32) -> Reed {
-        Reed { bore: Line::new(8192), loss: Loss::default(), apex: Line::new(4096), apex_loss: Loss::default(), apex_part: 0.15, out: DcBlock::default(), conical, zeta: 0.4, corner, keep, turbulence: 0.005, radiate, bell, radiated: [[0.0; 2]; 2], delay: 0.0, from: 0.0, short: 1.0, short_from: 1.0, fade: 1.0, tongue_part: 0.0, tongue: -1, tune: 1.0, pulse: 1.0, rate: DEFAULT_SR as f32 }
+        Reed { bore: Line::new(8192), loss: Loss::default(), apex: Line::new(4096), apex_loss: Loss::default(), apex_part: 0.3, out: DcBlock::default(), conical, zeta: 0.4, corner, keep, turbulence: 0.005, radiate, bell, radiated: [[0.0; 2]; 2], delay: 0.0, from: 0.0, short: 1.0, short_from: 1.0, fade: 1.0, tongue_part: 0.0, tongue: -1, tune: 1.0, pulse: 1.0, rate: DEFAULT_SR as f32 }
     }
 }
 
@@ -569,7 +569,7 @@ const OBOE: Fit = Fit {
     ..reed_fit([-5.0, 0.1, 1.8], [0.429, 0.429, 0.429], [0.031, 0.031, 0.031], [-36.0, -40.0, -40.0])
 };
 const BASSOON: Fit = reed_fit([-27.2, -16.9, -14.1], [0.463, 0.463, 0.463], [0.07, 0.07, 0.07], [-20.0, -28.0, -28.0]);
-const TENOR_SAX: Fit = reed_fit([-27.3, -16.8, -14.0], [0.463, 0.463, 0.463], [0.07, 0.07, 0.081], [-28.0, -28.0, -28.0]);
+const TENOR_SAX: Fit = reed_fit([-27.3, -16.8, -14.0], [0.44, 0.44, 0.46], [0.015, 0.015, 0.005], [-22.0, -22.0, -22.0]);
 const TRUMPET: Fit = reed_fit([-33.9, -25.1, -25.0], [0.47, 0.54, 0.54], [0.031, 0.036, 0.031], [-20.0, -20.0, -20.0]);
 const TROMBONE: Fit = reed_fit([-49.3, -35.5, -27.1], [0.46, 0.46, 0.493], [0.085, 0.085, 0.074], [-20.0, -20.0, -20.0]);
 const HORN: Fit = reed_fit([-25.8, -20.4, -15.5], [0.463, 0.463, 0.532], [0.044, 0.044, 0.05], [-20.0, -28.0, -20.0]);
@@ -584,3 +584,4 @@ fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Sy
         Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
     })
 }
+
