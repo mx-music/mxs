@@ -2,7 +2,7 @@
 
 use crate::nodes::{between, db, decay2, hit, hz, modes, pink_noise, segment_at, segments, shape, struck_gliding, white_noise};
 use super::bowed::{self, Fit};
-use crate::{Context, Note, Options, Spec, Synth};
+use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
 
@@ -119,22 +119,6 @@ pub(crate) fn bpf(f: f64, rq: f64) -> Net {
     net(bandpass_hz(f.clamp(20.0, 20_000.0) as f32, (1.0 / rq) as f32)) * rq as f32
 }
 
-/// The level in dB at each of `hz` of a curve given every half octave up from `lowest`, then falling by `top` over one more octave.
-pub(crate) fn shaped(hz: &[f64], lowest: f64, body: &[f64], top: f64) -> Vec<f64> {
-    let mut slopes: Vec<f64> = body.windows(2).map(|w| (w[1] - w[0]) * 2.0).collect();
-    slopes.push(top);
-    let bends: Vec<f64> = slopes.windows(2).map(|w| w[1] - w[0]).collect();
-    let most = (body.len() - 1) as f64 * 0.5 + 1.0;
-    hz.iter()
-        .map(|&f| {
-            let octaves = (f / lowest).log2().clamp(0.0, most);
-            body[0]
-                + octaves * slopes[0]
-                + bends.iter().enumerate().map(|(i, bend)| bend * (octaves - (i + 1) as f64 * 0.5).max(0.0)).sum::<f64>()
-        })
-        .collect()
-}
-
 /// Sines at `ratios` times the pitch its input gives, each at its level and starting phase in radians, as one sound.
 pub(crate) fn partials(pitch: Net, ratios: &[f64], levels: &[f64], phases: &[f64]) -> Net {
     let kept: Vec<(f32, f32, f32)> = ratios
@@ -147,17 +131,6 @@ pub(crate) fn partials(pitch: Net, ratios: &[f64], levels: &[f64], phases: &[f64
     pitch >> net(An(Partials { start: kept.iter().map(|k| k.2).collect(), ratios: kept.iter().map(|k| (k.0, k.1)).collect(), phases: kept.iter().map(|k| k.2).collect(), rate: DEFAULT_SR as f32 }))
 }
 
-/// Partials as `partials` plays them, each raised by its `raised` dB times the level of `by`, a second input from 0 to 1.
-pub(crate) fn raised_partials(pitch: Net, by: Net, ratios: &[f64], levels: &[f64], raised: &[f64], phases: &[f64]) -> Net {
-    let kept: Vec<(f32, f32, f32, f32)> = (0..ratios.len())
-        .filter(|&i| levels[i] != 0.0)
-        .map(|i| (ratios[i] as f32, levels[i] as f32, (raised[i] * std::f64::consts::LN_10 / 20.0) as f32, (phases[i] / (2.0 * PI)).rem_euclid(1.0) as f32))
-        .collect();
-    let start: Vec<f32> = kept.iter().map(|k| k.3).collect();
-    let harmonics = kept.iter().map(|k| (k.0, k.1, k.2)).collect();
-    (pitch | by) >> net(An(RaisedPartials { phases: start.clone(), start, harmonics, rate: DEFAULT_SR as f32 }))
-}
-
 /// The phases mx's additive designs start their harmonics at, so they do not all peak together.
 pub(crate) fn spread_phases(count: usize) -> Vec<f64> {
     (1..=count).map(|n| PI * n as f64 * (n as f64 - 1.0) / 24.0).collect()
@@ -167,37 +140,9 @@ fn harmonics(count: usize) -> Vec<f64> {
     (1..=count).map(|n| n as f64).collect()
 }
 
-/// The note's frequency, gliding with its note option, swung by a vibrato `depth` semitones deep at `rate` that grows in as the note holds.
-fn vibrato(o: &Options, depth: f64, rate: f64) -> Net {
-    vibrato_after(o, depth, rate, 0.25, 1.2)
-}
-
-/// A vibrato that waits `wait` seconds, then grows in over `grow`.
-fn vibrato_after(o: &Options, depth: f64, rate: f64, wait: f64, grow: f64) -> Net {
-    let grows = segments(&[0.0, 0.0, 1.0], &[wait, grow], &[2.0, 2.0]);
-    let swing = sine_from(rate, 0.0) * grows * depth as f32;
-    (o.follow("note") | swing) >> net(map(|x: &Frame<f32, U2>| (hz(x[0] as f64) * 2f64.powf(x[1] as f64 / 12.0)) as f32))
-}
-
 /// A rise to full over `seconds`, though never over more than part of the note's sustain.
 fn swell(o: &Options, seconds: f64) -> Net {
     segments(&[0.0, 1.0], &[seconds.min(o.number("sustain") * 0.4).max(1e-4)], &[-2.0])
-}
-
-fn breath(ctx: &mut Context, centre: f64, level: f64, vel: f64) -> Net {
-    (white_noise(ctx.seed()) >> bpf(centre, 1.0)) * (db(level) * vel * vel) as f32
-}
-
-fn audible(levels: Vec<f64>, freq: f64, ratios: &[f64], below: f64) -> Vec<f64> {
-    levels.iter().zip(ratios).map(|(l, r)| if freq * r < below { db(*l) } else { 0.0 }).collect()
-}
-
-fn wind_options(name: &str, vibrato: f64) -> crate::SynthDecl {
-    Synth::new(name)
-        .option(Spec::note("note").default(52.0).doc("The pitch."))
-        .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard it is blown."))
-        .option(Spec::float("vibrato").default(vibrato).range(0.0, 2.0).doc("The vibrato's depth in semitones, reached as the note holds."))
-        .options(Spec::envelope(0.5, 0.2))
 }
 
 fn guitar() -> Synth {
@@ -286,179 +231,6 @@ fn plucked(name: &'static str, pick: f64, ring: f64, bright: f64, body: &'static
             }
             Note::envelope((sound >> bodies) * ((0.3 + vel * 0.7) * 0.3) as f32, o)
         })
-}
-
-fn flute() -> Synth {
-    wind_options("flute", 0.25).build(|o, ctx| {
-        let vel = o.number("vel").clamp(0.0, 1.0);
-        let note = o.number("note");
-        let freq = hz(note);
-        let soft = ((1.0 - vel) / 0.7).max(0.0);
-        let ratios = harmonics(16);
-        let register = (note - 59.0).clamp(0.0, 30.0);
-        let fundamental = register * (0.25 + 0.75 * vel);
-        let levels: Vec<f64> = ratios
-            .iter()
-            .map(|&n| {
-                let overtone = if n == 1.0 { 0.0 } else { [1.0, 0.0, -8.0][Ord::min((n - 2.0) as usize, 2)] - 12.0 * (n / 4.0).log2().max(0.0) };
-                fundamental + overtone + 0.05 * register * n.log2() - soft.powf(3.5) * 11.0 * n.log2()
-            })
-            .collect();
-        let depth = o.number("vibrato") * vel.powf(0.65);
-        let tone = partials(vibrato(o, depth, 5.0), &ratios, &audible(levels, freq, &ratios, 16_000.0), &spread_phases(16));
-        let sound = (tone * 0.0106 + breath(ctx, 2000.0, -43.5, vel)) * swell(o, 0.25);
-        Note::envelope(sound, o)
-    })
-}
-
-fn clarinet() -> Synth {
-    wind_options("clarinet", 0.0).build(|o, ctx| {
-        let vel = o.number("vel").clamp(0.0, 1.0);
-        let note = o.number("note");
-        let freq = hz(note);
-        let soft = ((1.0 - vel) / 0.7).max(0.0);
-        let ratios = harmonics(24);
-        let upper = ((note - 68.0) / 3.0).clamp(0.0, 1.0);
-        let top = ((note - 88.0) / 3.0).clamp(0.0, 1.0);
-        let fundamental = (note - 50.0).clamp(0.0, 18.0) * (0.1 + 0.35 * soft) + upper * 12.0 - (note - 88.0).max(0.0) * 1.3;
-        let levels: Vec<f64> = ratios
-            .iter()
-            .map(|&n| {
-                let odd = (n as usize) % 2 == 1;
-                let low = if n == 1.0 {
-                    0.0
-                } else if odd {
-                    -3.0 - 3.0 * (n / 3.0).log2() - 15.0 * (n / 5.0).log2().max(0.0)
-                } else {
-                    -28.0 + (n / 4.0).log2().max(0.0)
-                };
-                let high = if n == 1.0 { 0.0 } else { -17.0 - 10.0 * (n / 2.0).log2() + if n == 2.0 { top * 12.0 } else { 0.0 } };
-                fundamental + low * (1.0 - upper) + high * upper - soft.powi(3) * 8.0 * n.log2()
-            })
-            .collect();
-        let tone = partials(vibrato(o, o.number("vibrato"), 5.0), &ratios, &audible(levels, freq, &ratios, 16_000.0), &spread_phases(24));
-        let sound = (tone * 0.1 + breath(ctx, 1500.0, -30.0, vel)) * swell(o, 0.155 + 0.185 * vel.powi(3)) * vel.powf(1.4) as f32;
-        Note::envelope(sound, o)
-    })
-}
-
-/// A reed whose harmonics follow a curve of the body, darker above `dark_from` the softer it is played.
-#[allow(clippy::too_many_arguments)]
-fn reed(
-    o: &Options,
-    count: usize,
-    rate: f64,
-    lowest: f64,
-    body: &[f64],
-    top: f64,
-    extra: impl Fn(f64, f64) -> f64,
-) -> (Net, f64, f64) {
-    let vel = o.number("vel").clamp(0.0, 1.0);
-    let note = o.number("note");
-    let freq = hz(note);
-    let ratios = harmonics(count);
-    let hz_: Vec<f64> = ratios.iter().map(|n| n * freq).collect();
-    let curve = shaped(&hz_, lowest, body, top);
-    let levels: Vec<f64> = curve.iter().zip(&hz_).map(|(c, f)| c + extra(*f, note)).collect();
-    let tone = partials(vibrato(o, o.number("vibrato"), rate), &ratios, &audible(levels, freq, &ratios, 16_000.0), &spread_phases(count));
-    (tone, vel, note)
-}
-
-fn oboe() -> Synth {
-    wind_options("oboe", 0.0).build(|o, ctx| {
-        let vel = o.number("vel").clamp(0.0, 1.0);
-        let soft = ((1.0 - vel) / 0.7).max(0.0);
-        let body = [2.0, 0.0, 2.0, 2.0, 4.0, 14.0, -6.0, -10.0, -12.0, -33.0, -40.0];
-        let (tone, vel, _) = reed(o, 24, 5.0, 233.1, &body, -20.0, |f, note| (note - 58.0) * 0.2 - soft.powf(2.5) * 8.0 * (f / 833.0).log2().max(0.0));
-        let sound = (tone * 0.05 + breath(ctx, 1500.0, -36.0, vel)) * swell(o, 0.253 - 0.12 * vel.powi(3)) * vel as f32;
-        Note::envelope(sound, o)
-    })
-}
-
-fn bassoon() -> Synth {
-    wind_options("bassoon", 0.0).build(|o, ctx| {
-        let vel = o.number("vel").clamp(0.0, 1.0);
-        let soft = ((1.0 - vel) / 0.7).max(0.0);
-        let body = [0.0, -4.0, 2.0, -1.0, 6.0, 9.0, 18.0, 6.0, -8.0, -10.0, -18.0, -28.0, -34.0, -43.0, -48.0];
-        let (tone, vel, _) = reed(o, 32, 5.5, 58.27, &body, -10.0, |f, _| -(soft * soft * 6.0 * (f / 500.0).log2().max(0.0)));
-        let speaks = (vel * (1.12 - 0.88 * vel) - 0.16).max(0.03);
-        let sound = (tone * 0.025 + breath(ctx, 800.0, -42.0, vel)) * swell(o, speaks) * vel.powf(1.2) as f32;
-        Note::envelope(sound, o)
-    })
-}
-
-fn tenor_sax() -> Synth {
-    wind_options("tenor_sax", 0.0).build(|o, ctx| {
-        let vel = o.number("vel").clamp(0.0, 1.0);
-        let note = o.number("note");
-        let freq = hz(note);
-        let soft = ((1.0 - vel) / 0.7).max(0.0);
-        let ratios = harmonics(32);
-        let hz_: Vec<f64> = ratios.iter().map(|n| n * freq).collect();
-        let body = [0.0, -6.0, -6.0, 4.0, 6.0, 0.0, -16.0, -16.0, -18.0, -22.0, -30.0, -40.0, -50.0];
-        let curve = shaped(&hz_, 103.8, &body, -7.0);
-        let short = (1.0 - (o.number("sustain") - 0.15) / 0.35).clamp(0.0, 1.0);
-        let darkness: Vec<f64> = hz_.iter().map(|f| soft * 6.0 * (f / 600.0).log2().max(0.0)).collect();
-        let held: Vec<f64> = (0..32).map(|i| curve[i] + (note - 44.0) * 0.1 - darkness[i]).collect();
-        let onset: Vec<f64> = (0..32).map(|i| short * (20.0 * (hz_[i] / 400.0).log2().clamp(0.0, 1.0) + 0.5 * darkness[i])).collect();
-        let depth = o.number("vibrato") * 0.146;
-        let levels = audible(held, freq, &ratios, 16_000.0);
-        let tone = if short > 0.0 {
-            raised_partials(vibrato(o, depth, 4.94), segments(&[1.0, 0.0], &[0.4], &[-4.0]), &ratios, &levels, &onset, &spread_phases(32))
-        } else {
-            partials(vibrato(o, depth, 4.94), &ratios, &levels, &spread_phases(32))
-        };
-        let sound = (tone * 0.07 + breath(ctx, 1500.0, -33.0, vel)) * swell(o, 0.15 - 0.1 * vel) * vel.powf(1.25) as f32;
-        Note::envelope(sound, o)
-    })
-}
-
-#[derive(Clone, Copy)]
-enum Brass {
-    Trumpet,
-    Trombone,
-    Horn,
-    Tuba,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn brass_wind(name: &'static str, rate: f64, count: usize, lowest: f64, body: &'static [f64], top: f64, kind: Brass) -> Synth {
-    wind_options(name, 0.0).build(move |o, ctx| {
-        let vel = o.number("vel").clamp(0.0, 1.0);
-        let note = o.number("note");
-        let freq = hz(note);
-        let soft = ((0.6 - vel) / 0.3).max(0.0);
-        let loud = ((vel - 0.6) / 0.4).max(0.0);
-        let ratios = harmonics(count);
-        let hz_: Vec<f64> = ratios.iter().map(|n| n * freq).collect();
-        let curve = shaped(&hz_, lowest, body, top);
-        let tilt = |f: f64| match kind {
-            Brass::Trumpet => -soft * 20.0 * (f / 1200.0).log2().max(0.0) + loud * 4.0 * (f / 2000.0).log2().max(0.0),
-            Brass::Trombone => -soft.powf(0.77) * 7.0 * (f / 278.0).log2().max(0.0) + loud * 16.0 * (f / 1000.0).log2().max(0.0),
-            Brass::Horn => -soft.powf(0.77) * 4.0 * (f / 600.0).log2().max(0.0) + loud * 6.0 * (f / 600.0).log2().clamp(0.0, 1.5),
-            Brass::Tuba => -soft * 6.0 * (f / 231.0).log2().max(0.0) + loud * 10.0 * (f / 360.0).log2().clamp(0.0, 3.5),
-        };
-        let mut levels = audible(curve.iter().zip(&hz_).map(|(c, f)| c + tilt(*f)).collect(), freq, &ratios, 16_000.0);
-        // The horn's and the tuba's notes are levelled to their whole, then raised with the note as Iowa's are.
-        let even = match kind {
-            Brass::Horn => Some(db((note - 60.0).clamp(0.0, 12.0) * 0.6)),
-            Brass::Tuba => Some(db((note - 48.0).clamp(0.0, 12.0) * 0.5)),
-            _ => None,
-        };
-        if let Some(raise) = even {
-            let whole = levels.iter().map(|l| l * l).sum::<f64>().sqrt().max(1e-12);
-            levels.iter_mut().for_each(|l| *l *= raise / whole);
-        }
-        let tone = partials(vibrato(o, o.number("vibrato"), rate), &ratios, &levels, &spread_phases(count));
-        let (gain, centre, air, speaks, power) = match kind {
-            Brass::Trumpet => (0.004, 1500.0, -48.0, 0.3 - 0.156 * vel, 0.6),
-            Brass::Trombone => (0.0017, 1000.0, -57.0, 0.37 - 0.13 * vel, 0.6),
-            Brass::Horn => (0.3, 800.0, -50.0, 0.09 + 0.06 * vel, 1.25),
-            Brass::Tuba => (0.21, 300.0, -53.0, 0.02 + 0.2 * vel, 2.1),
-        };
-        let sound = (tone * gain + breath(ctx, centre, air, vel)) * swell(o, speaks) * vel.powf(power) as f32;
-        Note::envelope(sound, o)
-    })
 }
 
 fn organ() -> Synth {
@@ -924,39 +696,6 @@ struct Partials {
     ratios: Vec<(f32, f32)>,
     phases: Vec<f32>,
     rate: f32,
-}
-
-#[derive(Clone)]
-struct RaisedPartials {
-    start: Vec<f32>,
-    /// Each harmonic's ratio, level, and natural log of its raise.
-    harmonics: Vec<(f32, f32, f32)>,
-    phases: Vec<f32>,
-    rate: f32,
-}
-
-impl AudioNode for RaisedPartials {
-    const ID: u64 = 0x6d78_0042;
-    type Inputs = U2;
-    type Outputs = U1;
-
-    fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.rate = sample_rate as f32;
-    }
-
-    fn reset(&mut self) {
-        self.phases.clone_from(&self.start);
-    }
-
-    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
-        let step = input[0] / self.rate;
-        let mut sum = 0.0;
-        for ((ratio, level, raise), phase) in self.harmonics.iter().zip(self.phases.iter_mut()) {
-            sum += level * (raise * input[1]).exp() * (std::f32::consts::TAU * *phase).sin();
-            *phase = (*phase + step * ratio).fract();
-        }
-        [sum].into()
-    }
 }
 
 impl AudioNode for Partials {
