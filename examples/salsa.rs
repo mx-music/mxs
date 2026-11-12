@@ -24,10 +24,10 @@ const CHORDS: [[f64; 4]; 4] = [
 ];
 /// The bass's root for each bar of the turnaround.
 const ROOTS: [f64; 4] = [38.0, 43.0, 36.0, 45.0];
-/// The piano's montuno, a pattern of two bars: (eighth note in the bar, which of the chord's four notes) for each.
+/// The piano's montuno, a syncopated pattern of two bars: (eighth note in the bar, which of the chord's four notes) for each.
 const MONTUNO: [&[(usize, usize)]; 2] = [
-    &[(1, 2), (3, 1), (4, 3), (6, 2)],
-    &[(0, 1), (3, 2), (5, 1), (7, 0)],
+    &[(0, 1), (1, 2), (3, 1), (4, 3), (5, 2), (7, 1)],
+    &[(0, 2), (2, 1), (3, 3), (5, 1), (6, 2), (7, 0)],
 ];
 /// The 3-2 son clave over two bars of sixteen eighth notes, which the other parts are played against.
 const CLAVE: [usize; 5] = [0, 3, 6, 10, 12];
@@ -126,15 +126,18 @@ fn song() -> Vec<(f64, &'static str, Vec<(&'static str, f64)>)> {
             }
         }
 
-        // The piano joins at bar 8, and plays the chord's notes in the montuno's rhythm, softly.
-        if bar >= 8 {
+        // The piano joins at bar 4 and plays the montuno low, each note doubled an octave down as salsa pianists do.
+        if bar >= 4 {
             for &(step, tone) in MONTUNO[bar % 2] {
-                let options = vec![
-                    ("note", chord[tone]),
-                    ("vel", touch(0.5, step)),
-                    ("sustain", seconds(0.5)),
-                ];
-                notes.push((loose(step), "piano", options));
+                for octave in [12.0, 24.0] {
+                    let options = vec![
+                        ("note", chord[tone] - octave),
+                        ("vel", touch(0.85, step)),
+                        ("sustain", seconds(0.45)),
+                        ("amp", 0.4),
+                    ];
+                    notes.push((loose(step), "piano", options));
+                }
             }
         }
 
