@@ -363,7 +363,7 @@ impl Engine {
         blending_specs()
     }
 
-    /// Loads a FLAC or WAV file, and returns the number events name it by.
+    /// Loads a FLAC, WAV or AIFF file, and returns the number events name it by.
     pub fn load_sample(&mut self, path: impl AsRef<Path>) -> Result<u64, Error> {
         let data = SampleData::load(path.as_ref()).map_err(Error::Sample)?;
         self.next += 1;
