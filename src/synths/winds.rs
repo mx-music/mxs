@@ -17,14 +17,14 @@ const EQ: [&str; 8] = ["eq0", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7"];
 pub fn all() -> Vec<Synth> {
     vec![
         flute(),
-        reed_wind("clarinet", 5.0, Bore { conical: false, radiate: 1, bell: 2570.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 4.4 }, &CLARINET),
-        reed_wind("oboe", 5.0, Bore { conical: true, radiate: 0, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 4.0 }, &OBOE),
-        reed_wind("bassoon", 5.5, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25, sharp: 5.0 }, &BASSOON),
-        reed_wind("tenor_sax", 4.94, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25, sharp: 5.0 }, &TENOR_SAX),
-        reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 1, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 5.0 }, &TRUMPET),
-        reed_wind("trombone", 4.95, Bore { conical: true, radiate: 1, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0, sharp: 4.5 }, &TROMBONE),
-        reed_wind("horn", 5.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2, sharp: 5.0 }, &HORN),
-        reed_wind("tuba", 5.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6, sharp: 2.5 }, &TUBA),
+        reed_wind("clarinet", 5.0, 1.0, Bore { conical: false, radiate: 1, bell: 2570.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 4.4 }, &CLARINET),
+        reed_wind("oboe", 5.0, 1.0, Bore { conical: true, radiate: 0, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 4.0 }, &OBOE),
+        reed_wind("bassoon", 5.5, 1.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25, sharp: 5.0 }, &BASSOON),
+        reed_wind("tenor_sax", 4.94, TENOR_SAX_VIBRATO, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25, sharp: 5.0 }, &TENOR_SAX),
+        reed_wind("trumpet", 4.9, 1.0, Bore { conical: true, radiate: 1, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, sharp: 5.0 }, &TRUMPET),
+        reed_wind("trombone", 4.95, 1.0, Bore { conical: true, radiate: 1, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.0, sharp: 4.5 }, &TROMBONE),
+        reed_wind("horn", 5.0, 1.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2, sharp: 5.0 }, &HORN),
+        reed_wind("tuba", 5.0, 1.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6, sharp: 2.5 }, &TUBA),
     ]
 }
 
@@ -577,6 +577,8 @@ const BASSOON: Fit = Fit {
     gains: [[7.0, 2.0, 12.0, 21.0, 6.0, 10.0, 5.0, 7.0], [5.0, -4.0, 4.0, 20.0, 7.0, 15.0, 7.0, 6.0], [3.0, -5.0, 7.0, 17.0, 6.0, 15.0, 12.0, 10.0]],
     ..reed_fit([-47.0, -33.5, -29.0], [0.463, 0.463, 0.463], [0.054, 0.054, 0.041], [-24.0, -30.0, -34.0])
 };
+/// The semitones the tenor sax's vibrato at 1 swings, which measures 10.8 cents deep, as VCSL's tenor saxophone played with vibrato.
+const TENOR_SAX_VIBRATO: f64 = 0.145;
 const TENOR_SAX: Fit = reed_fit([-26.3, -15.8, -13.4], [0.44, 0.44, 0.46], [0.015, 0.015, 0.005], [-22.0, -22.0, -22.0]);
 const TRUMPET: Fit = Fit {
     gains: [[0.0, 8.0, 7.0, 9.0, 12.0, 31.0, 20.0, 7.0], [0.0, 12.0, 10.0, 13.0, 14.0, 27.0, 24.0, 36.0], [0.0, 9.0, 16.0, 13.0, 11.0, 27.0, 26.0, 40.0]],
@@ -595,12 +597,14 @@ const TUBA: Fit = Fit {
     ..reed_fit([-67.5, -58.9, -57.2], [0.651, 0.671, 0.731], [0.024, 0.024, 0.023], [-20.0, -20.0, -20.0])
 };
 
-fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Synth {
-    wind_options(name, 0.0, "The vibrato's depth in semitones, reached as the note holds.").build(move |o, ctx| {
+/// A reed or brass wind whose vibrato option swings `unit` semitones at 1.
+fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static Fit) -> Synth {
+    let doc = if unit == 1.0 { "The vibrato's depth in semitones, reached as the note holds." } else { "The vibrato's depth, reached as the note holds, where 1 is the depth of the recordings played with vibrato." };
+    wind_options(name, 0.0, doc).build(move |o, ctx| {
         let mut reed = Reed::new(bore.conical, bore.corner, bore.keep, bore.radiate, bore.bell);
         reed.tongue_part = bore.tongue;
         reed.tune = 2f32.powf(-bore.sharp / 1200.0);
-        let model = (pitch(o, o.number("vibrato"), rate) | breath(o, fit) | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
+        let model = (pitch(o, o.number("vibrato") * unit, rate) | breath(o, fit) | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
         Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
     })
 }
