@@ -18,7 +18,7 @@ pub fn all() -> Vec<Synth> {
     vec![
         flute(),
         reed_wind("clarinet", 5.0, Bore { conical: false, radiate: 1, bell: 2570.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &CLARINET),
-        reed_wind("oboe", 5.0, Bore { conical: true, radiate: 2, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &OBOE),
+        reed_wind("oboe", 5.0, Bore { conical: true, radiate: 0, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &OBOE),
         reed_wind("bassoon", 5.5, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25 }, &BASSOON),
         reed_wind("tenor_sax", 4.94, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25 }, &TENOR_SAX),
         reed_wind("trumpet", 4.9, Bore { conical: true, radiate: 2, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0 }, &TRUMPET),
@@ -560,7 +560,11 @@ const fn reed_fit(levels: [f32; 3], breath: [f32; 3], rise: [f32; 3], air: [f32;
     Fit { gains: [[0.0; 8]; 3], levels, breath, rise, air }
 }
 const CLARINET: Fit = reed_fit([-21.0, -14.3, -11.5], [0.435, 0.5, 0.5], [0.137, 0.158, 0.24], [-18.0, -26.0, -26.0]);
-const OBOE: Fit = reed_fit([-25.5, -12.2, -11.5], [0.429, 0.429, 0.429], [0.031, 0.031, 0.031], [-36.0, -40.0, -40.0]);
+// The oboe's bands are fitted too, as its model alone reads 7 to 19 dB loud from 250 Hz to 4 kHz against Iowa's.
+const OBOE: Fit = Fit {
+    gains: [[0.0, -7.0, -13.0, -9.0, -14.0, 0.0, -14.0, -17.0], [0.0, -1.0, -13.0, -9.0, -8.0, 1.0, -10.0, -1.0], [0.0, -1.0, -13.0, -12.0, -10.0, 5.0, -12.0, -3.0]],
+    ..reed_fit([-5.0, 0.1, 1.8], [0.429, 0.429, 0.429], [0.031, 0.031, 0.031], [-36.0, -40.0, -40.0])
+};
 const BASSOON: Fit = reed_fit([-27.2, -16.9, -14.1], [0.463, 0.463, 0.463], [0.07, 0.07, 0.07], [-20.0, -28.0, -28.0]);
 const TENOR_SAX: Fit = reed_fit([-27.3, -16.8, -14.0], [0.463, 0.463, 0.463], [0.07, 0.07, 0.081], [-28.0, -28.0, -28.0]);
 const TRUMPET: Fit = reed_fit([-33.9, -25.1, -25.0], [0.47, 0.54, 0.54], [0.031, 0.036, 0.031], [-20.0, -20.0, -20.0]);
