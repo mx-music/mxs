@@ -1,7 +1,7 @@
 //! What the synths share: sines, band-passes, additive partials and the swell of a held note.
 
-use crate::Options;
 use crate::nodes::segments;
+use crate::{Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
 
@@ -110,4 +110,43 @@ impl AudioNode for Partials {
         }
         [sum].into()
     }
+}
+
+pub(super) fn struck(name: &str, release: f64) -> crate::SynthDecl {
+    Synth::new(name)
+        .option(Spec::note("note").default(52.0).doc("The pitch."))
+        .option(
+            Spec::float("vel")
+                .default(0.6)
+                .range(0.0, 1.0)
+                .doc("How hard it is struck."),
+        )
+        .options(Spec::envelope(1000.0, release))
+}
+
+pub(super) fn lpf(f: f64) -> Net {
+    net(butterpass_hz(f as f32))
+}
+
+pub(super) fn hpf(f: f64) -> Net {
+    net(highpass_hz(f as f32, std::f32::consts::FRAC_1_SQRT_2))
+}
+
+pub(super) fn above(f: f64, corner: f64) -> f64 {
+    (f / corner).log2().max(0.0)
+}
+
+/// A value read at `f` from `values` at the bands' `centres`, along straight lines in octaves, carried on below the lowest for up to two bands' widths.
+pub(super) fn along(centres: &[f64], values: &[f64], f: f64) -> f64 {
+    let x = f.log2();
+    values[0]
+        + values
+            .windows(2)
+            .enumerate()
+            .map(|(i, w)| {
+                let (low, high) = (centres[i].log2(), centres[i + 1].log2());
+                (w[1] - w[0])
+                    * ((x - low) / (high - low)).clamp(if i == 0 { -2.0 } else { 0.0 }, 1.0)
+            })
+            .sum::<f64>()
 }
