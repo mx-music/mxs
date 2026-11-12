@@ -74,7 +74,7 @@ fn main() {
     let start = Instant::now();
     let mut stamps: Vec<SystemTime> = Vec::new();
     let mut offsets: Vec<f64> = Vec::new();
-    for minute in 1..=minutes {
+    for _minute in 1..=minutes {
         for _ in 0..12 {
             let at = SystemTime::now() + Duration::from_millis(500);
             let note = Event::note(

@@ -1697,7 +1697,7 @@ fn tamborim() -> Synth {
                 * db(TAMBORIM_CRACK) as f32;
             let level = 0.02 * (vel / 0.6).powf(1.4);
             Note::rings(
-                (head + crack >> high_shelf(2000.0, (vel - 0.6) * 6.0)) * level as f32,
+                ((head + crack) >> high_shelf(2000.0, (vel - 0.6) * 6.0)) * level as f32,
                 1.4,
             )
         })

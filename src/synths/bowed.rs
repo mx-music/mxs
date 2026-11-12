@@ -236,8 +236,8 @@ fn string(note: Net, bow: Bow) -> Net {
     let (neck_loss, bridge_loss) = (0.995f32, 0.97f32);
 
     // The bow reaches its speed and force together and quickly, so the string takes up Helmholtz motion at once, after Guettler's attacks; the rosin's noise sways its speed, which the string shapes around each harmonic.
-    let bow = shape_node(move |t| speed * (0.05 + 0.95 * (t / takes).min(1.0)))
-        * (1.0 + pink::<f32>().seed(seed) * rosin)
+    let bow = (shape_node(move |t| speed * (0.05 + 0.95 * (t / takes).min(1.0)))
+        * (1.0 + pink::<f32>().seed(seed) * rosin))
         | shape_node(move |t| force * (0.05 + 0.95 * (t / takes).min(1.0)));
     // The string sticks to the bow while their speeds are close, and slips once they part; the pitch rides along to each half.
     let junction = map(move |i: &Frame<f32, U5>| -> Frame<f32, U4> {
@@ -251,12 +251,12 @@ fn string(note: Net, bow: Bow) -> Net {
         | (map(move |f: &Frame<f32, U1>| delays(f[0], position).0)
             ^ map(|f: &Frame<f32, U1>| cuts(f[0]).0)))
         >> (tap(0.0, 0.1) | pass())
-        >> lowpole::<f32>() * -neck_loss;
+        >> (lowpole::<f32>() * -neck_loss);
     let bridge = (pass()
         | (map(move |f: &Frame<f32, U1>| delays(f[0], position).1)
             ^ map(|f: &Frame<f32, U1>| cuts(f[0]).1)))
         >> (tap(0.0, 0.1) | pass())
-        >> lowpole::<f32>() * -bridge_loss;
+        >> (lowpole::<f32>() * -bridge_loss);
     // The pitch's channel feeds back nothing, so it holds the pitch alone.
     let waveguide = feedback((bow | multipass::<U3>()) >> junction >> (dc(0.0) | neck | bridge));
     let string = (pass() | dc((0.0, 0.0))) >> waveguide >> (sink() | sink() | pass());

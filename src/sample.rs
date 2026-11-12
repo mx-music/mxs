@@ -226,7 +226,7 @@ fn wav(bytes: &[u8]) -> Result<Pcm, String> {
     let channels = u16_at(2) as usize;
     let rate = u32::from_le_bytes(bytes[fmt + 4..fmt + 8].try_into().unwrap()) as f64;
     let align = u16_at(12) as usize;
-    if channels == 0 || align == 0 || align % channels != 0 {
+    if channels == 0 || align == 0 || !align.is_multiple_of(channels) {
         return Err(format!(
             "it has {channels} channels in frames of {align} bytes"
         ));

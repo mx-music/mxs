@@ -772,7 +772,7 @@ fn voiced(o: &Options, ctx: &mut Context, model: Net, fit: &Fit, centre: f32) ->
             db(by_vel(v[0].clamp(0.0, 1.0), airs) as f64) as f32
         })));
     let noise = (white_noise(ctx.seed()) >> Net::wrap(Box::new(bandpass_hz(centre, 1.0)))) * air;
-    (model + noise | o.follow("vel"))
+    ((model + noise) | o.follow("vel"))
         >> Net::wrap(Box::new(An(Bands::new(fit.gains, given, levels))))
 }
 
