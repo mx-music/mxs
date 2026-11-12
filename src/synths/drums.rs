@@ -40,6 +40,7 @@ pub fn all() -> Vec<Synth> {
         bongo("low_bongo", &LOW_BONGO),
         surdo(),
         cuica(),
+        tamborim(),
         bongo("high_bongo", &HIGH_BONGO),
         tabla("tabla", None),
     ];
@@ -980,6 +981,29 @@ fn cuica() -> Synth {
 }
 
 const CUICA_RUB: f64 = -24.0;
+
+/// One stroke of the stick on the tamborim: its head rings on its lowest mode, 524 Hz in the Commons recording, with strong modes near 1.8 and 2.5 times it, the second outlasting the first; two quiet modes below it and higher modes with the stick's crack fill the bands from 160 Hz to 10 kHz.
+/// Each mode is a ratio to the lowest, a level in dB and the seconds it fades 60 dB in.
+const TAMBORIM: [[f64; 13]; 3] = [
+    [0.38, 0.55, 1.0, 1.8, 2.5, 3.2, 4.0, 5.0, 6.3, 8.0, 10.0, 13.0, 17.0],
+    [-26.0, -17.0, 0.0, -2.0, -3.5, -8.0, -9.0, -10.0, -11.0, -15.0, -18.0, -18.0, -22.0],
+    [0.68, 0.58, 0.45, 0.85, 0.9, 0.85, 0.75, 0.7, 0.7, 0.6, 0.5, 0.45, 0.4],
+];
+const TAMBORIM_CRACK: f64 = -12.0;
+
+fn tamborim() -> Synth {
+    Synth::new("tamborim")
+        .options(strike_options(72.03))
+        .build(move |o, ctx| {
+            let vel = vel(o, 0.0);
+            let freq = hz(o.number("note"));
+            let stick = impulse_net() + (noise(ctx) >> hpf(2000.0)) * hit(0.0003, 0.004, -4.0) * 0.3;
+            let head = modes(stick, &scaled(&TAMBORIM[0], freq), &amps(&TAMBORIM[1]), &TAMBORIM[2]);
+            let crack = (noise(ctx) >> hpf(3000.0) >> lpf(12000.0)) * hit(0.0005, 0.03, -4.0) * db(TAMBORIM_CRACK) as f32;
+            let level = 0.02 * (vel / 0.6).powf(1.4);
+            Note::rings((head + crack >> high_shelf(2000.0, (vel - 0.6) * 6.0)) * level as f32, 1.4)
+        })
+}
 
 struct Bol {
     name: &'static str,
