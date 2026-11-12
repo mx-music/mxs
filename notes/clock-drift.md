@@ -10,3 +10,7 @@ I'm not sure what caused those steps.
 
 So a live engine that took its origin once at start would play an event stamped in system time about 21 ms off after two hours here.
 The engine instead lines its clock up with the system's at every output callback, so the drift and the steps are followed as they happen.
+
+cargo run --release --example clock_check -- 120 plays a piano note into BlackHole every 5 seconds for two hours, each stamped half a second ahead in system time, and finds its first sample in BlackHole's input from the input's capture timestamps.
+On 12 November 2026, at 48 kHz with 2.667 ms of reported latency, all 1440 notes landed 3.997 to 4.222 ms after their stamps, a spread of 0.225 ms, with no trend over the two hours.
+The 1.4 ms over the reported latency is the same for every note, so it does not move an event against the others; I'm not sure whether it is BlackHole's input side, and the latency is checked on a loopback cable in mxs-00020.
