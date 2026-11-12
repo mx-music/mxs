@@ -103,7 +103,7 @@ fn wav_and_aiff_files_of_every_common_layout_play_as_the_same_samples_in_32_bit_
     ];
     for (name, bytes) in files {
         let path = written(&dir, name, &bytes);
-        assert_eq!(check_sample(&path), Ok(()), "{name}");
+        assert_eq!(check_sample(&path), Ok(FRAMES as f64 / RATE), "{name}");
         let tolerance = if name.starts_with("pcm8") { 1e-2 } else { 1e-4 };
         let worst = played(&path).iter().zip(&reference).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
         assert!(worst < tolerance, "{name} is {worst} off");

@@ -27,13 +27,16 @@ impl SampleData {
     }
 }
 
-/// Whether mx can play the file at `path`, reading only its headers, or why not.
-pub fn check(path: &Path) -> Result<(), String> {
+/// The length in seconds of the file at `path`, reading only its headers, or why mx cannot play it.
+pub fn check(path: &Path) -> Result<f64, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     match Format::of(&bytes) {
-        Some(Format::Flac) => claxon::FlacReader::open(path).map(|_| ()).map_err(|e| e.to_string()),
-        Some(Format::Wav) => wav(&bytes).map(|_| ()),
-        Some(Format::Aiff) => aiff(&bytes).map(|_| ()),
+        Some(Format::Flac) => {
+            let info = claxon::FlacReader::open(path).map_err(|e| e.to_string())?.streaminfo();
+            Ok(info.samples.unwrap_or(0) as f64 / info.sample_rate as f64)
+        }
+        Some(Format::Wav) => wav(&bytes).map(|pcm| pcm.seconds()),
+        Some(Format::Aiff) => aiff(&bytes).map(|pcm| pcm.seconds()),
         None => Err("it is not a FLAC, WAV or AIFF file".to_string()),
     }
 }
@@ -86,10 +89,18 @@ struct Pcm {
 }
 
 impl Pcm {
-    fn decode(&self, bytes: &[u8]) -> Result<SampleData, String> {
-        let width = match self.encoding {
+    fn width(&self) -> usize {
+        match self.encoding {
             Encoding::Int { bytes, .. } | Encoding::Float { bytes } => bytes,
-        };
+        }
+    }
+
+    fn seconds(&self) -> f64 {
+        (self.length / (self.width() * self.channels)) as f64 / self.rate
+    }
+
+    fn decode(&self, bytes: &[u8]) -> Result<SampleData, String> {
+        let width = self.width();
         let frames = self.length / (width * self.channels);
         let mut channels = vec![Vec::with_capacity(frames); self.channels];
         for (i, chunk) in bytes[self.start..self.start + frames * width * self.channels].chunks_exact(width).enumerate() {
