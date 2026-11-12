@@ -956,37 +956,55 @@ const SURDO_MUTED_LEVEL: f64 = -6.0;
 /// One stroke of the cuíca, as reinsamba's pack "Cuica" on Freesound has them: the low strokes, with the head free, at note 65, and the high ones, with it pressed, at note 79, between which every figure moves with the note.
 /// The membrane leaves nearly a pure tone of the stick's saw-toothed rub, its harmonics in dB against the fundamental.
 const CUICA_NOTES: [f64; 2] = [65.0, 79.0];
-const CUICA_HARMONICS: [[f64; 8]; 2] = [[0.0, -15.0, -30.0, -35.0, -51.0, -49.0, -58.0, -58.0], [0.0, -25.0, -28.0, -41.0, -48.0, -56.0, -64.0, -71.0]];
+const CUICA_HARMONICS: [[f64; 20]; 2] = [
+    [0.0, -15.0, -30.0, -35.0, -51.0, -49.0, -58.0, -58.0, -65.0, -65.0, -69.0, -70.0, -77.0, -79.0, -80.0, -80.0, -81.0, -81.0, -81.0, -83.0],
+    [0.0, -25.0, -28.0, -41.0, -48.0, -56.0, -64.0, -71.0, -72.0, -75.0, -77.0, -78.0, -78.0, -80.0, -84.0, -86.0, -88.0, -90.0, -96.0, -96.0],
+];
 /// The cents under the note the stroke starts at, and the seconds it scoops up into it.
 const CUICA_SCOOPS: [[f64; 2]; 2] = [[198.0, 0.11], [140.0, 0.065]];
 /// The stroke's level and the seconds between, a 30 ms rise and a hold that the low strokes keep longer than the high ones.
 const CUICA_LEVELS: [[f64; 6]; 2] = [[0.14, 0.9, 1.0, 0.56, 0.18, 0.0], [0.16, 0.8, 1.0, 0.4, 0.25, 0.0]];
 const CUICA_TIMES: [[f64; 5]; 2] = [[0.03, 0.06, 0.06, 0.05, 0.015], [0.03, 0.02, 0.06, 0.055, 0.015]];
+/// No two of a player's strokes match: across the recordings' strokes the scoop varies by about two thirds of itself, the length by a third, the pitch it settles at by 77 cents, of which a stroke here keeps 30, and the level by 2 dB.
+const CUICA_SPREADS: [f64; 4] = [0.65, 0.3, 30.0, 2.0];
+/// The pitch wobbles about 13 cents as the stick grips and slips, and the rub's noise sits about 60 dB under the fundamental between its harmonics.
+const CUICA_WOBBLE: f32 = 1600.0;
+const CUICA_RUB: f64 = -39.0;
 
 fn cuica() -> Synth {
+    let strokes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     Synth::new("cuica")
         .options(strike_options(CUICA_NOTES[0]))
-        .build(move |o, _ctx| {
+        .build(move |o, ctx| {
             let vel = vel(o, 0.0);
             let note = o.number("note");
+            let stroke = strokes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let seed = ctx.seed() ^ stroke.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+            let mut draws = Draws::new(seed);
+            let mut normal = || (-2.0 * draws.draw().max(1.0e-12).ln()).sqrt() * (std::f64::consts::TAU * draws.draw()).cos();
+            let spread: Vec<f64> = CUICA_SPREADS.iter().map(|sd| sd * normal()).collect();
             let high = ((note - CUICA_NOTES[0]) / (CUICA_NOTES[1] - CUICA_NOTES[0])).clamp(0.0, 1.0);
             let mix = |pair: [f64; 2]| pair[0] + (pair[1] - pair[0]) * high;
-            let [under, scoop] = [0, 1].map(|i| mix([CUICA_SCOOPS[0][i], CUICA_SCOOPS[1][i]]));
-            let settled = hz(note);
-            let pitch = shape(move |t| {
+            let under = mix([CUICA_SCOOPS[0][0], CUICA_SCOOPS[1][0]]) * (1.0 + spread[0]).max(0.15);
+            let scoop = mix([CUICA_SCOOPS[0][1], CUICA_SCOOPS[1][1]]);
+            let longer = spread[1].exp().clamp(0.7, 1.5);
+            let settled = hz(note + spread[2] / 100.0);
+            let glide = shape(move |t| {
                 let along = (t / scoop).clamp(0.0, 1.0);
                 let risen = along * along * (3.0 - 2.0 * along);
                 settled * 2f64.powf(-under * (1.0 - risen) / 1200.0)
             });
-            let ratios: Vec<f64> = (1..=8).map(|n| n as f64).collect();
-            let levels: Vec<f64> = (0..8).map(|i| db(mix([CUICA_HARMONICS[0][i], CUICA_HARMONICS[1][i]]) + (vel - 0.6) * 4.0 * (i as f64)).min(1.0)).collect();
-            let tone = partials(pitch, &ratios, &levels, &spread_phases(8));
+            let wobble = white_noise(seed ^ 0x77) >> lpf(6.0) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 2f32.powf(CUICA_WOBBLE * x[0] / 1200.0))));
+            let ratios: Vec<f64> = (1..=20).map(|n| n as f64).collect();
+            let levels: Vec<f64> = (0..20).map(|i| db(mix([CUICA_HARMONICS[0][i], CUICA_HARMONICS[1][i]]) + (vel - 0.6) * 4.0 * (i as f64).min(4.0)).min(1.0)).collect();
+            let tone = partials(glide * wobble, &ratios, &levels, &spread_phases(20));
+            let rub = (white_noise(seed ^ 0x55) >> lpf(4000.0)) * db(CUICA_RUB) as f32;
             let stroke: Vec<f64> = (0..6).map(|i| mix([CUICA_LEVELS[0][i], CUICA_LEVELS[1][i]])).collect();
-            let times: Vec<f64> = (0..5).map(|i| mix([CUICA_TIMES[0][i], CUICA_TIMES[1][i]])).collect();
+            let times: Vec<f64> = (0..5).map(|i| mix([CUICA_TIMES[0][i], CUICA_TIMES[1][i]]) * if i == 0 { 1.0 } else { longer }).collect();
             let length: f64 = times.iter().sum();
             let envelope = segments(&stroke, &times, &[0.0; 5]);
-            let level = CUICA_LEVEL * (vel / 0.6).powf(1.5);
-            Note::rings(tone * envelope * level as f32, length + 0.01)
+            let level = CUICA_LEVEL * (vel / 0.6).powf(1.5) * db(spread[3]);
+            Note::rings((tone + rub) * envelope * level as f32, length + 0.01)
         })
 }
 
