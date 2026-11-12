@@ -236,12 +236,16 @@ pub(crate) struct Reed {
     /// How many times the sound in the bore is differenced as it radiates from the bell, each rising 6 dB an octave.
     radiate: usize,
     radiated: [f32; 2],
+    /// The bore's delay the sample before, the one a jump of note fades from, and how far it has faded, from 0 to 1.
+    delay: f32,
+    from: f32,
+    fade: f32,
     rate: f32,
 }
 
 impl Reed {
     pub(crate) fn new(conical: bool, corner: f32, keep: f32, radiate: usize) -> Reed {
-        Reed { bore: Line::new(8192), loss: Loss::default(), steady: DcBlock::default(), out: DcBlock::default(), conical, offset: 0.7, slope: 0.3, corner, keep, turbulence: 0.005, radiate, radiated: [0.0; 2], rate: DEFAULT_SR as f32 }
+        Reed { bore: Line::new(8192), loss: Loss::default(), steady: DcBlock::default(), out: DcBlock::default(), conical, offset: 0.7, slope: 0.3, corner, keep, turbulence: 0.005, radiate, radiated: [0.0; 2], delay: 0.0, from: 0.0, fade: 1.0, rate: DEFAULT_SR as f32 }
     }
 }
 
@@ -260,6 +264,8 @@ impl AudioNode for Reed {
         self.steady = DcBlock::default();
         self.out = DcBlock::default();
         self.radiated = [0.0; 2];
+        self.delay = 0.0;
+        self.fade = 1.0;
     }
 
     fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U1> {
@@ -273,15 +279,22 @@ impl AudioNode for Reed {
         let reflects = (self.offset + self.slope * across).clamp(-1.0, 1.0);
         let into = mouth / 2.0 - reflects * across;
         self.bore.write(into);
-        let b = if self.conical {
-            // An upright return would hold the mouth's steady pressure, so it is taken out below an eighth of the pitch, and the line lengthened by the lead that gives.
-            let r = Loss::pole(freq / 8.0, self.rate);
+        // An upright return would hold the mouth's steady pressure, so a conical bore's is taken out below an eighth of the pitch, and the line lengthened by the lead that gives.
+        let r = Loss::pole(freq / 8.0, self.rate);
+        let delay = if self.conical {
             let lead = ((std::f32::consts::PI - w) / 2.0 - (r * w.sin()).atan2(1.0 - r * w.cos())) / w;
-            let b = self.bore.read((period - 1.0 - Loss::lag(a, w) + lead).max(2.0));
-            self.steady.tick_at(b, r)
+            (period - 1.0 - Loss::lag(a, w) + lead).max(2.0)
         } else {
-            self.bore.read((period / 2.0 - 1.0 - Loss::lag(a, w)).max(2.0))
+            (period / 2.0 - 1.0 - Loss::lag(a, w)).max(2.0)
         };
+        // A jump of note fades from the old delay to the new over 4 ms, as the flute's does, where switching at once clicks.
+        if self.delay > 0.0 && (delay - self.delay).abs() > 0.01 * delay {
+            (self.from, self.fade) = (self.delay, 0.0);
+        }
+        self.delay = delay;
+        self.fade = (self.fade + 1.0 / (0.004 * self.rate)).min(1.0);
+        let b = self.fade * self.bore.read(delay) + (1.0 - self.fade) * self.bore.read(self.from);
+        let b = if self.conical { self.steady.tick_at(b, r) } else { b };
         self.loss.tick(b * self.keep, a);
         let mut sound = self.out.tick(into + back);
         for last in self.radiated.iter_mut().take(self.radiate) {
