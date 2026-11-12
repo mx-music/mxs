@@ -80,6 +80,7 @@ pub enum Source {
 }
 
 impl Event {
+    /// A note of `synth` with number options and no effect chain; `id` lets a later change reach it.
     pub fn note(id: Option<u64>, synth: &str, options: &[(&str, f64)]) -> Event {
         let options = options
             .iter()
@@ -377,6 +378,7 @@ impl Engine {
         }
     }
 
+    /// The rate the engine plays and renders at, in Hz.
     pub fn rate(&self) -> f64 {
         self.rate
     }
@@ -463,10 +465,12 @@ impl Engine {
         );
     }
 
+    /// The synths registered, in no set order.
     pub fn synths(&self) -> impl Iterator<Item = &Synth> {
         self.synths.values().map(|r| &r.item)
     }
 
+    /// The effects registered, in no set order.
     pub fn effects(&self) -> impl Iterator<Item = &Effect> {
         self.effects.values().map(|r| &r.item)
     }

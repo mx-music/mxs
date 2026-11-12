@@ -178,6 +178,7 @@ pub fn between(x: f64, bands: &[f64], table: &[f64]) -> f64 {
 pub struct Draws(u64);
 
 impl Draws {
+    /// Draws that start from `seed`.
     pub fn new(seed: u64) -> Self {
         Draws(seed)
     }

@@ -5,6 +5,7 @@ use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
 
+/// The piano: `note`, `vel` for how hard the key is struck, and `pedal` for the sustain pedal.
 pub fn piano() -> Synth {
     Synth::new("piano")
         .option(Spec::note("note").default(52.0).doc("The pitch."))

@@ -27,6 +27,7 @@ pub struct Clause {
 }
 
 impl Graph {
+    /// A call of the function `name` with its positional arguments and its named ones.
     pub fn call(name: &str, args: Vec<Graph>, named: Vec<(&str, Graph)>) -> Graph {
         let named = named.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
         Graph::Call {

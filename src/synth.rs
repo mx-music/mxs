@@ -25,6 +25,7 @@ pub struct SynthDecl {
 }
 
 impl Synth {
+    /// Starts declaring a synth that notes play by `name`; declare its options, then `build` it.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(name: &str) -> SynthDecl {
         SynthDecl {
@@ -33,26 +34,31 @@ impl Synth {
         }
     }
 
+    /// The name notes play the synth by.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The options the synth takes.
     pub fn specs(&self) -> &[Spec] {
         &self.specs
     }
 }
 
 impl SynthDecl {
+    /// Declares one option.
     pub fn option(mut self, spec: Spec) -> Self {
         self.specs.push(spec);
         self
     }
 
+    /// Declares several options.
     pub fn options(mut self, specs: impl IntoIterator<Item = Spec>) -> Self {
         self.specs.extend(specs);
         self
     }
 
+    /// Gives the synth its sound: `build` returns the sound of a note from the options it was played with.
     pub fn build<F>(self, build: F) -> Synth
     where
         F: Fn(&Options, &mut Context) -> Note + Send + Sync + 'static,
@@ -135,6 +141,7 @@ pub struct EffectDecl {
 }
 
 impl Effect {
+    /// Starts declaring an effect that chains use by `name`; declare its options, then `build` it.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(name: &str) -> EffectDecl {
         EffectDecl {
@@ -144,16 +151,19 @@ impl Effect {
         }
     }
 
+    /// The name chains use the effect by.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The options the effect takes.
     pub fn specs(&self) -> &[Spec] {
         &self.specs
     }
 }
 
 impl EffectDecl {
+    /// Declares one option.
     pub fn option(mut self, spec: Spec) -> Self {
         self.specs.push(spec);
         self
@@ -174,6 +184,7 @@ impl EffectDecl {
         self
     }
 
+    /// Gives the effect its sound: `build` returns the net that processes the sound, from the options the effect was started with.
     pub fn build<F>(self, build: F) -> Effect
     where
         F: Fn(&Options, &mut Context) -> Net + Send + Sync + 'static,

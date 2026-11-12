@@ -36,6 +36,7 @@ const SEED: u64 = 7000;
 /// What the wire's levels take off at each band to sound as loud as scsynth's render: its modes are drawn from another generator than scsynth's.
 const WIRE_FIT: [f64; 7] = [-10.0, -15.8, -12.9, -14.3, -7.0, -6.6, -12.8];
 
+/// The berimbau: `note` is the open string's pitch and `vel` how hard the stick strikes; `coin` presses the wire, `buzz` loosens it and `gourd` swings the gourd.
 pub fn berimbau() -> Synth {
     Synth::new("berimbau")
         .option(

@@ -24,6 +24,7 @@ pub struct Keyboard {
 }
 
 impl Keyboard {
+    /// A keyboard that plays notes of `synth`.
     pub fn new(synth: &Synth) -> Keyboard {
         let options = synth.specs().iter().map(|s| s.name.clone()).collect();
         Keyboard {

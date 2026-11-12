@@ -48,6 +48,7 @@ pub struct Spec {
 }
 
 impl Spec {
+    /// An option called `name` of the kind given, with no default, range or documentation yet.
     pub fn new(name: &str, kind: Kind) -> Self {
         Spec {
             name: name.to_string(),
@@ -59,38 +60,47 @@ impl Spec {
         }
     }
 
+    /// A MIDI note option, fractions allowed.
     pub fn note(name: &str) -> Self {
         Self::new(name, Kind::Note)
     }
 
+    /// An option in hertz.
     pub fn hz(name: &str) -> Self {
         Self::new(name, Kind::Hz)
     }
 
+    /// An option in decibels.
     pub fn db(name: &str) -> Self {
         Self::new(name, Kind::Db)
     }
 
+    /// An option in seconds.
     pub fn seconds(name: &str) -> Self {
         Self::new(name, Kind::Seconds)
     }
 
+    /// An option a song writes in beats, which mx turns into seconds before it reaches the engine.
     pub fn beats(name: &str) -> Self {
         Self::new(name, Kind::Beats)
     }
 
+    /// An option that is any number.
     pub fn float(name: &str) -> Self {
         Self::new(name, Kind::Float)
     }
 
+    /// An option that is a whole number.
     pub fn integer(name: &str) -> Self {
         Self::new(name, Kind::Integer)
     }
 
+    /// An option that is 0 or 1.
     pub fn boolean(name: &str) -> Self {
         Self::new(name, Kind::Boolean).range(0.0, 1.0)
     }
 
+    /// An option that takes one of `values`, given by its name.
     pub fn name(name: &str, values: &[&str]) -> Self {
         Self::new(
             name,
@@ -98,21 +108,25 @@ impl Spec {
         )
     }
 
+    /// The value the option takes when a note does not give one.
     pub fn default(mut self, value: impl Into<Value>) -> Self {
         self.default = Some(value.into());
         self
     }
 
+    /// The lowest and highest number the option accepts.
     pub fn range(mut self, low: f64, high: f64) -> Self {
         self.range = Some((low, high));
         self
     }
 
+    /// Makes the option one every note must give.
     pub fn required(mut self) -> Self {
         self.required = true;
         self
     }
 
+    /// What the option means, for whoever writes a note.
     pub fn doc(mut self, doc: &str) -> Self {
         self.doc = doc.to_string();
         self
