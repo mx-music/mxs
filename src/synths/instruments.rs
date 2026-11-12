@@ -1,4 +1,4 @@
-//! mx's instruments measured from recordings, after their designs in mx's priv/synthdefs/mx-instruments.scd: plucked strings, winds and the organ.
+//! mx's instruments measured from recordings: plucked strings, winds and the organ.
 
 use super::bowed::{self, Fit};
 use crate::nodes::{

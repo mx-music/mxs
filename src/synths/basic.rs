@@ -1,4 +1,4 @@
-//! mx's plain synths, after their designs in mx's priv/synthdefs/mx-instruments.scd: waves under a resonant low-pass, FM, a plucked string, a supersaw, an acid bass and a brass.
+//! mx's plain synths: waves under a resonant low-pass, FM, a plucked string, a supersaw, an acid bass and a brass.
 
 use crate::nodes::{db, hz, segments, white_noise};
 use crate::{Note, Options, Spec, Synth};

@@ -1,4 +1,4 @@
-//! mx's drums and hand percussion, after their designs in mx's priv/synthdefs/mx-drums.scd.
+//! mx's drums and hand percussion.
 //! Their seeded modes are drawn from mxs's own generator, so they sit at other frequencies than scsynth's draws, with the same levels and rings at each band.
 
 use crate::nodes::{

@@ -1,4 +1,4 @@
-//! mx's piano, after its design in mx's priv/synthdefs/mx-instruments.scd: each harmonic a resonator struck once, with a thump of noise.
+//! mx's piano: each harmonic a resonator struck once, with a thump of noise.
 
 use crate::nodes::{db, hz, perc, shape, struck, white_noise};
 use crate::{Note, Options, Spec, Synth};

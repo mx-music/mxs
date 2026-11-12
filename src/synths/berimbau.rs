@@ -1,4 +1,4 @@
-//! mx's berimbau, after its design in mx's priv/synthdefs/mx-drums.scd: the string's partials struck by the stick, swung by the gourd, over the wire's close modes and the stick's thud.
+//! mx's berimbau: the string's partials struck by the stick, swung by the gourd, over the wire's close modes and the stick's thud.
 
 use crate::nodes::{db, hz, perc, shape, struck, white_noise};
 use crate::{Note, Spec, Synth};
