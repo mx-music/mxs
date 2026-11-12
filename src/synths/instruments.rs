@@ -20,6 +20,7 @@ pub fn all() -> Vec<Synth> {
         timpani(),
         sitar(),
         harmonium(),
+        accordion(),
         tanpura(),
         bowed("violin", Bowed { peak: 333.0, rise: 18.0, soft_rise: 6.0, fall: 12.0, soft_fall: 3.0, fade: 2.1, fade_slope: -0.55, pluck: 0.13, gain: 0.6, count: 32, level: 0.0 }, Fit {
             body: 384.3,
@@ -740,6 +741,42 @@ fn harmonium() -> Synth {
             Note::envelope(sound, o)
         })
 }
+
+/// An accordion's right hand: two reeds a few Hz apart, beating, with the harmonium's bands of harmonics and noise refitted to hammondman's "Accordeon master".
+fn accordion() -> Synth {
+    Synth::new("accordion")
+        .option(Spec::note("note").default(60.0).doc("The pitch."))
+        .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard the bellows are pressed."))
+        .option(Spec::float("detune").default(ACCORDION_DETUNE).range(0.0, 20.0).doc("How many Hz the second reed sounds above the first, which beat that many times a second; 0 sounds one reed."))
+        .options(Spec::envelope(0.5, 0.15))
+        .build(|o, ctx| {
+            let vel = o.number("vel").clamp(0.0, 1.0);
+            let freq = hz(o.number("note"));
+            let detune = o.number("detune");
+            let centres = [65.4, 113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, 3162.0, 5019.0, 7937.0, 12649.0];
+            let table = [0.0, -1.3, 1.8, 9.2, 7.7, 2.4, 0.5, -1.5, -4.8, -8.3, -23.0, -41.5];
+            let ratios = harmonics(48);
+            let levels: Vec<f64> = ratios.iter().map(|n| if freq * n < 16_000.0 { db(along(&centres, &table, freq * n) + (vel - 0.6) * 3.0 * n.log2()) } else { 0.0 }).collect();
+            // The louder reed sounds the note and the softer one above it, as the pitch heard follows the louder.
+            let pitch = o.follow("note") >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32));
+            let mut tone = partials(pitch.clone(), &ratios, &levels, &spread_phases(48));
+            if detune > 0.0 {
+                let above = pitch >> net(map(move |x: &Frame<f32, U1>| x[0] + detune as f32));
+                tone = (tone + partials(above, &ratios, &levels, &spread_phases(48)) * ACCORDION_SECOND as f32) * (1.0 / (1.0 + ACCORDION_SECOND)) as f32;
+            }
+            let mut noise = net(zero());
+            for (centre, level) in centres[1..].iter().zip([-8.2, -8.2, -13.6, -16.3, -14.7, -9.9, -10.1, -8.4, -13.1, 1.4, -27.8]) {
+                noise = noise + (white_noise(ctx.seed()) >> bpf(*centre, 0.3) >> bpf(*centre, 0.3)) * db(level) as f32;
+            }
+            // It holds about as loud as the cello and the clarinet, which a melody instrument sits beside.
+            let sound = (tone + noise) * swell(o, ACCORDION_ATTACK) * (0.036 * (vel / 0.6).powf(1.2)) as f32;
+            Note::envelope(sound, o)
+        })
+}
+
+const ACCORDION_DETUNE: f64 = 4.0;
+const ACCORDION_SECOND: f64 = 0.5;
+const ACCORDION_ATTACK: f64 = 0.065;
 
 fn tanpura() -> Synth {
     Synth::new("tanpura")

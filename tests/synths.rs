@@ -30,3 +30,15 @@ fn the_tabla_ghe_glides_to_a_new_note_over_its_slide() {
     let ratio = crossings(0.45, 0.65) / crossings(0.0, 0.2);
     assert!((ratio - 2.0).abs() < 0.15, "the pitch rose by a ratio of {ratio}");
 }
+
+#[test]
+fn a_hundred_accordion_notes_leave_nothing_sounding_once_they_end() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let notes: Vec<_> = (0..100).map(|i| (i as f64 * 0.02, Event::note(None, "accordion", &[("note", 48.0 + (i % 27) as f64), ("sustain", 0.3)]))).collect();
+    engine.play(&notes).unwrap();
+    engine.render(2.0).unwrap();
+    assert!(engine.sounding());
+    engine.render(1.0).unwrap();
+    assert!(!engine.sounding(), "a note still sounds half a second after the last one's release ends");
+}
