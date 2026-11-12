@@ -37,6 +37,7 @@ pub fn all() -> Vec<Synth> {
         cabasa(),
         cajon(),
         bongo("low_bongo", &LOW_BONGO),
+        surdo(),
         bongo("high_bongo", &HIGH_BONGO),
         tabla("tabla", None),
     ];
@@ -899,6 +900,54 @@ fn bongo(name: &'static str, b: &'static Bongo) -> Synth {
             Note::rings((head >> high_shelf(1500.0, (vel - 0.6) * 5.0)) * level as f32, 1.18)
         })
 }
+
+/// The surdo de primeira's open stroke rings on its lowest mode, 66.6 Hz in plotzki's loops, with the mode at twice it 10 dB down; the muted stroke, the hand on the head, loses that mode and rings higher and shorter.
+/// Each set is ratios to the open stroke's lowest mode, levels in dB and seconds to fade 60 dB; above them, modes in each band from 250 Hz to 4 kHz fill the felt mallet's thud.
+const SURDO_OPEN: [[f64; 8]; 3] = [
+    [1.0, 1.69, 2.0, 2.38, 2.61, 3.0, 3.32, 4.12],
+    [0.0, -26.0, -15.5, -16.0, -12.5, -18.5, -21.5, -24.5],
+    [1.45, 1.25, 1.25, 1.1, 1.1, 1.0, 1.0, 1.2],
+];
+const SURDO_MUTED: [[f64; 8]; 3] = [
+    [1.82, 2.03, 2.36, 2.57, 2.76, 3.11, 5.01, 5.71],
+    [0.0, -6.6, -7.2, -8.3, -0.4, -3.7, 0.0, -6.5],
+    [0.52, 0.68, 0.64, 0.64, 0.67, 0.69, 0.44, 0.48],
+];
+/// The higher modes' ratios, their levels in dB as struck and the seconds they fade 60 dB in, at each band from 250 Hz to 4 kHz; each leaves a tail 20 dB down that fades as slowly as the recordings' bands.
+const SURDO_HIGH: [[f64; 6]; 4] = [
+    [4.9, 7.6, 12.0, 19.0, 30.0, 47.5],
+    [-24.0, -12.3, -5.5, -23.0, -37.0, -34.0],
+    [0.5, 0.25, 0.25, 0.2, 0.2, 0.2],
+    [1.2, 2.4, 2.4, 2.4, 2.5, 3.4],
+];
+
+fn surdo() -> Synth {
+    Synth::new("surdo")
+        .options(strike_options(36.31))
+        .option(Spec::float("muted").default(0.0).range(0.0, 1.0).doc("1 mutes the head with the hand, so it rings higher and shorter."))
+        .build(move |o, ctx| {
+            let vel = vel(o, 0.0);
+            let mute = o.number("muted").clamp(0.0, 1.0);
+            let freq = hz(o.number("note"));
+            let mallet = impulse_net() + (noise(ctx) >> lpf(1500.0 + vel * 3000.0)) * hit(0.001, 0.006, -4.0) * 0.2;
+            let set = |modes: &[[f64; 8]; 3], by: f64| -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+                (scaled(&modes[0], freq), modes[1].iter().map(|l| db(*l) * by).collect(), modes[2].to_vec())
+            };
+            let (open_hz, open_levels, open_rings) = set(&SURDO_OPEN, 1.0 - mute);
+            let (muted_hz, muted_levels, muted_rings) = set(&SURDO_MUTED, mute * db(SURDO_MUTED_LEVEL));
+            let high_hz = scaled(&SURDO_HIGH[0], freq);
+            let high_tails: Vec<f64> = SURDO_HIGH[1].iter().map(|l| db(l - 20.0)).collect();
+            let tail_rings: Vec<f64> = SURDO_HIGH[3].iter().map(|r| r * (1.0 - 0.6 * mute)).collect();
+            let head = modes(mallet.clone(), &open_hz, &open_levels, &open_rings)
+                + modes(mallet.clone(), &muted_hz, &muted_levels, &muted_rings)
+                + modes(mallet.clone(), &high_hz, &amps(&SURDO_HIGH[1]), &SURDO_HIGH[2])
+                + modes(mallet, &high_hz, &high_tails, &tail_rings);
+            let level = 0.05 * (vel / 0.6).powf(1.6);
+            Note::rings((head >> high_shelf(800.0, (vel - 0.6) * 6.0)) * level as f32, 3.6)
+        })
+}
+
+const SURDO_MUTED_LEVEL: f64 = -6.0;
 
 struct Bol {
     name: &'static str,

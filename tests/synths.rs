@@ -42,3 +42,15 @@ fn a_hundred_accordion_notes_leave_nothing_sounding_once_they_end() {
     engine.render(1.0).unwrap();
     assert!(!engine.sounding(), "a note still sounds half a second after the last one's release ends");
 }
+
+#[test]
+fn a_hundred_surdo_strokes_open_and_muted_leave_nothing_sounding_once_they_end() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let strokes: Vec<_> = (0..100).map(|i| (i as f64 * 0.02, Event::note(None, "surdo", &[("muted", (i % 2) as f64)]))).collect();
+    engine.play(&strokes).unwrap();
+    engine.render(3.0).unwrap();
+    assert!(engine.sounding());
+    engine.render(3.0).unwrap();
+    assert!(!engine.sounding(), "a stroke still sounds after the last one's ring ends");
+}
