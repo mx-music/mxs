@@ -32,7 +32,12 @@ pub(crate) struct Voices {
 
 impl Voices {
     pub fn new(limit: usize) -> Arc<Voices> {
-        Arc::new(Voices { limit: AtomicUsize::new(limit), stolen: AtomicU64::new(0), late: AtomicU64::new(0), most_late: AtomicU64::new(0) })
+        Arc::new(Voices {
+            limit: AtomicUsize::new(limit),
+            stolen: AtomicU64::new(0),
+            late: AtomicU64::new(0),
+            most_late: AtomicU64::new(0),
+        })
     }
 }
 
@@ -153,7 +158,13 @@ impl Mixer {
         while done < left.len() {
             self.receive();
             let mut n = Ord::min(left.len() - done, BLOCK);
-            if let Some(next) = self.changes.iter().map(|c| c.at).filter(|&at| at > self.now).min() {
+            if let Some(next) = self
+                .changes
+                .iter()
+                .map(|c| c.at)
+                .filter(|&at| at > self.now)
+                .min()
+            {
                 n = Ord::min(n, (next - self.now) as usize);
             }
             self.block(&mut left[done..done + n], &mut right[done..done + n]);
@@ -254,7 +265,11 @@ impl Mixer {
                 continue;
             }
             // Live input starts at the block it falls in, so it reads the input from the block's first frame.
-            let from = if voice.input.is_some() { 0 } else { voice.start.saturating_sub(self.now) as usize };
+            let from = if voice.input.is_some() {
+                0
+            } else {
+                voice.start.saturating_sub(self.now) as usize
+            };
             let to = (Ord::min(voice.end, end) - Ord::min(self.now, voice.end)) as usize;
             let to = Ord::max(to, from);
             if to > from {
@@ -264,7 +279,9 @@ impl Mixer {
                     Some((first, count)) => inputs.subset(first, count),
                     None => BufferRef::empty(),
                 };
-                voice.unit.process(length, &input, &mut self.buffer.buffer_mut());
+                voice
+                    .unit
+                    .process(length, &input, &mut self.buffer.buffer_mut());
                 let target = match voice.out {
                     Out::Chain(key) => self.chains.iter_mut().position(|c| c.key == key).map(Some),
                     Out::Tap => Some(None),
@@ -274,7 +291,11 @@ impl Mixer {
                 for k in 0..length {
                     let at = self.now + (from + k) as u64;
                     let left_to_end = voice.end - at;
-                    let gain = if left_to_end < voice.fade { left_to_end as f32 / voice.fade as f32 } else { 1.0 };
+                    let gain = if left_to_end < voice.fade {
+                        left_to_end as f32 / voice.fade as f32
+                    } else {
+                        1.0
+                    };
                     let l = self.buffer.at_f32(0, k) * gain;
                     let r = self.buffer.at_f32(1, k) * gain;
                     loudest = loudest.max(l.abs()).max(r.abs());
@@ -306,7 +327,9 @@ impl Mixer {
         let mut i = 0;
         while i < self.chains.len() {
             let chain = &mut self.chains[i];
-            chain.unit.process(n, &chain.input.buffer_ref(), &mut self.buffer.buffer_mut());
+            chain
+                .unit
+                .process(n, &chain.input.buffer_ref(), &mut self.buffer.buffer_mut());
             for k in 0..n {
                 left[k] += self.buffer.at_f32(0, k);
                 right[k] += self.buffer.at_f32(1, k);
@@ -349,12 +372,29 @@ impl Mixer {
         let sounding = |v: &Voice| v.input.is_none() && !v.stolen && v.start < end && v.end > now;
         let mut count = self.voices.iter().filter(|v| sounding(v)).count();
         while count > limit {
-            let playing = self.voices.iter().enumerate().filter(|(_, v)| sounding(v) && v.start < now).min_by(|a, b| a.1.level.total_cmp(&b.1.level));
-            let starting = || self.voices.iter().enumerate().filter(|(_, v)| sounding(v)).min_by_key(|(_, v)| v.start);
-            let Some((i, _)) = playing.or_else(starting) else { break };
+            let playing = self
+                .voices
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| sounding(v) && v.start < now)
+                .min_by(|a, b| a.1.level.total_cmp(&b.1.level));
+            let starting = || {
+                self.voices
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| sounding(v))
+                    .min_by_key(|(_, v)| v.start)
+            };
+            let Some((i, _)) = playing.or_else(starting) else {
+                break;
+            };
             let voice = &mut self.voices[i];
             voice.stolen = true;
-            voice.end = if voice.start >= now { voice.start } else { Ord::min(voice.end, now + voice.fade) };
+            voice.end = if voice.start >= now {
+                voice.start
+            } else {
+                Ord::min(voice.end, now + voice.fade)
+            };
             self.limit.stolen.fetch_add(1, Ordering::Relaxed);
             count -= 1;
         }

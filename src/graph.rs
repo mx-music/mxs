@@ -12,7 +12,11 @@ pub enum Graph {
     Name(String),
     Option(String),
     List(Vec<Graph>),
-    Call { name: String, args: Vec<Graph>, named: Vec<(String, Graph)> },
+    Call {
+        name: String,
+        args: Vec<Graph>,
+        named: Vec<(String, Graph)>,
+    },
 }
 
 /// One clause of a synth: the values of options it matches, and the graph it traces to.
@@ -25,16 +29,48 @@ pub struct Clause {
 impl Graph {
     pub fn call(name: &str, args: Vec<Graph>, named: Vec<(&str, Graph)>) -> Graph {
         let named = named.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-        Graph::Call { name: name.to_string(), args, named }
+        Graph::Call {
+            name: name.to_string(),
+            args,
+            named,
+        }
     }
 }
 
 const ARITHMETIC: &[&str] = &[
-    "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
+    "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin",
+    "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
 ];
 const NODES: &[&str] = &[
-    "impulse", "follow", "time", "sine", "partials", "bowed_string", "air_jet", "wind_bands", "saw", "square", "triangle", "pulse", "noise", "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peak", "mode", "delay", "dc_block", "envelope", "perc",
-    "mix", "gain", "note_envelope", "rings", "input",
+    "impulse",
+    "follow",
+    "time",
+    "sine",
+    "partials",
+    "bowed_string",
+    "air_jet",
+    "wind_bands",
+    "saw",
+    "square",
+    "triangle",
+    "pulse",
+    "noise",
+    "lowpass",
+    "highpass",
+    "bandpass",
+    "lowshelf",
+    "highshelf",
+    "peak",
+    "mode",
+    "delay",
+    "dc_block",
+    "envelope",
+    "perc",
+    "mix",
+    "gain",
+    "note_envelope",
+    "rings",
+    "input",
 ];
 
 impl Synth {
@@ -48,10 +84,19 @@ impl Synth {
         }
         let owner = name.to_string();
         Ok(Synth::new(name).options(specs).build(move |options, ctx| {
-            let Some(clause) = clauses.iter().find(|c| c.matches.iter().all(|(k, v)| options.value(k) == v)) else {
+            let Some(clause) = clauses
+                .iter()
+                .find(|c| c.matches.iter().all(|(k, v)| options.value(k) == v))
+            else {
                 return Note::rings(dc(0.0f32), 0.0);
             };
-            match (Build { options, ctx, inputs: None }).eval(&clause.graph) {
+            match (Build {
+                options,
+                ctx,
+                inputs: None,
+            })
+            .eval(&clause.graph)
+            {
                 Ok(V::Note(note)) => note,
                 Ok(_) => panic!("{owner} ends with neither note_envelope nor rings"),
                 Err(reason) => panic!("{owner}: {reason}"),
@@ -65,11 +110,20 @@ impl Effect {
     pub fn graph(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, String> {
         known(&graph).map_err(|reason| format!("{name}: {reason}"))?;
         let owner = name.to_string();
-        let decl = specs.into_iter().fold(Effect::new(name), |decl, spec| decl.option(spec));
+        let decl = specs
+            .into_iter()
+            .fold(Effect::new(name), |decl, spec| decl.option(spec));
         Ok(decl.build(move |options, ctx| {
             let mut channel = || -> Net {
-                let mut build = Build { options, ctx, inputs: Some(0) };
-                let sound = build.eval(&graph).and_then(signal).unwrap_or_else(|reason| panic!("{owner}: {reason}"));
+                let mut build = Build {
+                    options,
+                    ctx,
+                    inputs: Some(0),
+                };
+                let sound = build
+                    .eval(&graph)
+                    .and_then(signal)
+                    .unwrap_or_else(|reason| panic!("{owner}: {reason}"));
                 // Each input in the graph takes the same channel.
                 match build.inputs.unwrap_or(0) {
                     0 => net(sink()) | sound,
@@ -84,7 +138,13 @@ impl Effect {
 fn calls(graph: &Graph, node: &str) -> bool {
     match graph {
         Graph::List(items) => items.iter().any(|g| calls(g, node)),
-        Graph::Call { name, args, named } => name == node || args.iter().chain(named.iter().map(|(_, v)| v)).any(|g| calls(g, node)),
+        Graph::Call { name, args, named } => {
+            name == node
+                || args
+                    .iter()
+                    .chain(named.iter().map(|(_, v)| v))
+                    .any(|g| calls(g, node))
+        }
         _ => false,
     }
 }
@@ -96,7 +156,9 @@ fn known(graph: &Graph) -> Result<(), String> {
             if !ARITHMETIC.contains(&name.as_str()) && !NODES.contains(&name.as_str()) {
                 return Err(format!("{name} is not in the vocabulary"));
             }
-            args.iter().chain(named.iter().map(|(_, v)| v)).try_for_each(known)
+            args.iter()
+                .chain(named.iter().map(|(_, v)| v))
+                .try_for_each(known)
         }
         _ => Ok(()),
     }
@@ -142,14 +204,21 @@ fn numbers(v: V, what: &str) -> Result<Vec<f64>, String> {
 fn binary(a: V, b: V, f: fn(f64, f64) -> f64) -> Result<V, String> {
     match (a, b) {
         (V::Num(a), V::Num(b)) => Ok(V::Num(f(a, b))),
-        (a, b) => Ok(V::Sig((signal(a)? | signal(b)?) >> net(map(move |x: &Frame<f32, U2>| f(x[0] as f64, x[1] as f64) as f32)))),
+        (a, b) => Ok(V::Sig(
+            (signal(a)? | signal(b)?)
+                >> net(map(move |x: &Frame<f32, U2>| {
+                    f(x[0] as f64, x[1] as f64) as f32
+                })),
+        )),
     }
 }
 
 fn unary(a: V, f: fn(f64) -> f64) -> Result<V, String> {
     match a {
         V::Num(a) => Ok(V::Num(f(a))),
-        a => Ok(V::Sig(signal(a)? >> net(map(move |x: &Frame<f32, U1>| f(x[0] as f64) as f32)))),
+        a => Ok(V::Sig(
+            signal(a)? >> net(map(move |x: &Frame<f32, U1>| f(x[0] as f64) as f32)),
+        )),
     }
 }
 
@@ -183,7 +252,12 @@ impl Build<'_> {
             Graph::Number(x) => Ok(V::Num(*x)),
             Graph::Name(name) => Ok(V::Name(name.clone())),
             Graph::Option(name) => Ok(V::Num(self.options.number(name))),
-            Graph::List(items) => Ok(V::List(items.iter().map(|g| self.eval(g)).collect::<Result<_, _>>()?)),
+            Graph::List(items) => Ok(V::List(
+                items
+                    .iter()
+                    .map(|g| self.eval(g))
+                    .collect::<Result<_, _>>()?,
+            )),
             Graph::Call { name, args, named } => self.call(name, args, named),
         }
     }
@@ -200,12 +274,27 @@ impl Build<'_> {
         if let ("follow", [Graph::Option(option)]) = (name, args) {
             return Ok(V::Sig(self.options.follow(option)));
         }
-        let mut args: Vec<V> = args.iter().map(|g| self.eval(g)).collect::<Result<_, _>>()?;
+        let mut args: Vec<V> = args
+            .iter()
+            .map(|g| self.eval(g))
+            .collect::<Result<_, _>>()?;
         let count = args.len();
-        let mut named: Vec<(String, V)> = named.iter().map(|(k, g)| Ok((k.clone(), self.eval(g)?))).collect::<Result<_, String>>()?;
-        let mut take = |key: &str| named.iter().position(|(k, _)| k == key).map(|i| named.swap_remove(i).1);
+        let mut named: Vec<(String, V)> = named
+            .iter()
+            .map(|(k, g)| Ok((k.clone(), self.eval(g)?)))
+            .collect::<Result<_, String>>()?;
+        let mut take = |key: &str| {
+            named
+                .iter()
+                .position(|(k, _)| k == key)
+                .map(|i| named.swap_remove(i).1)
+        };
         let mut arg = |i: usize| -> Result<V, String> {
-            if i < args.len() { Ok(std::mem::replace(&mut args[i], V::Num(0.0))) } else { Err(format!("{name} takes {} arguments", i + 1)) }
+            if i < args.len() {
+                Ok(std::mem::replace(&mut args[i], V::Num(0.0)))
+            } else {
+                Err(format!("{name} takes {} arguments", i + 1))
+            }
         };
         match name {
             "add" => add(arg(0)?, arg(1)?),
@@ -240,15 +329,24 @@ impl Build<'_> {
                 }
                 c => {
                     let picked = (signal(c)? | signal(arg(1)?)? | signal(arg(2)?)?)
-                        >> net(map(|x: &Frame<f32, U3>| if x[0] != 0.0 { x[1] } else { x[2] }));
+                        >> net(map(
+                            |x: &Frame<f32, U3>| if x[0] != 0.0 { x[1] } else { x[2] },
+                        ));
                     Ok(V::Sig(picked))
                 }
             },
             "impulse" => Ok(V::Sig(net(impulse::<U1>()))),
             "sine" => {
                 let freq = signal(take("hz").ok_or("sine needs hz:")?)?;
-                let phase = take("phase").map(|p| number(p, "a sine's phase")).transpose()?.unwrap_or(0.0);
-                Ok(V::Sig(freq >> net(An(Sine::<f32>::with_phase((phase / std::f64::consts::TAU).rem_euclid(1.0) as f32)))))
+                let phase = take("phase")
+                    .map(|p| number(p, "a sine's phase"))
+                    .transpose()?
+                    .unwrap_or(0.0);
+                Ok(V::Sig(
+                    freq >> net(An(Sine::<f32>::with_phase(
+                        (phase / std::f64::consts::TAU).rem_euclid(1.0) as f32,
+                    ))),
+                ))
             }
             "input" => match self.inputs.as_mut() {
                 Some(uses) => {
@@ -260,35 +358,81 @@ impl Build<'_> {
             "time" => Ok(V::Sig(nodes::shape(|t| t))),
             "bowed_string" => {
                 let note = signal(take("note").ok_or("bowed_string needs note:")?)?;
-                let mut figure = |key: &str| number(take(key).ok_or(format!("bowed_string needs {key}:"))?, "a bow's figure");
-                let (speed, force, position, takes, rosin) = (figure("speed")?, figure("force")?, figure("position")?, figure("takes")?, figure("rosin")?);
-                Ok(V::Sig(crate::synths::bowed_string(note, speed, force, position, takes, rosin, self.ctx.seed())))
+                let mut figure = |key: &str| {
+                    number(
+                        take(key).ok_or(format!("bowed_string needs {key}:"))?,
+                        "a bow's figure",
+                    )
+                };
+                let (speed, force, position, takes, rosin) = (
+                    figure("speed")?,
+                    figure("force")?,
+                    figure("position")?,
+                    figure("takes")?,
+                    figure("rosin")?,
+                );
+                Ok(V::Sig(crate::synths::bowed_string(
+                    note,
+                    speed,
+                    force,
+                    position,
+                    takes,
+                    rosin,
+                    self.ctx.seed(),
+                )))
             }
             "air_jet" => {
                 let pitch = signal(take("hz").ok_or("air_jet needs hz:")?)?;
                 let breath = signal(take("breath").ok_or("air_jet needs breath:")?)?;
-                let even = number(take("even").ok_or("air_jet needs even:")?, "a jet's even part")?;
-                Ok(V::Sig(crate::synths::air_jet(pitch, breath, self.ctx.seed(), even)))
+                let even = number(
+                    take("even").ok_or("air_jet needs even:")?,
+                    "a jet's even part",
+                )?;
+                Ok(V::Sig(crate::synths::air_jet(
+                    pitch,
+                    breath,
+                    self.ctx.seed(),
+                    even,
+                )))
             }
             "wind_bands" => {
                 let sound = signal(arg(0)?)?;
                 let vel = signal(take("vel").ok_or("wind_bands needs vel:")?)?;
-                let gains = numbers(take("gains").ok_or("wind_bands needs gains:")?, "a band's gain")?;
+                let gains = numbers(
+                    take("gains").ok_or("wind_bands needs gains:")?,
+                    "a band's gain",
+                )?;
                 let levels = numbers(take("levels").ok_or("wind_bands needs levels:")?, "a level")?;
                 if gains.len() != 24 || levels.len() != 3 {
-                    return Err("wind_bands takes 24 gains, eight at each of pp, mf and ff, and 3 levels".to_string());
+                    return Err(
+                        "wind_bands takes 24 gains, eight at each of pp, mf and ff, and 3 levels"
+                            .to_string(),
+                    );
                 }
-                Ok(V::Sig(crate::synths::wind_bands(sound, vel, &gains, &levels)))
+                Ok(V::Sig(crate::synths::wind_bands(
+                    sound, vel, &gains, &levels,
+                )))
             }
             "partials" => {
                 let pitch = signal(arg(0)?)?;
-                let ratios = numbers(take("ratios").ok_or("partials needs ratios:")?, "a partial's ratio")?;
-                let levels = numbers(take("levels").ok_or("partials needs levels:")?, "a partial's level")?;
-                let phases = take("phases").map(|p| numbers(p, "a partial's phase")).transpose()?.unwrap_or_else(|| vec![0.0; ratios.len()]);
+                let ratios = numbers(
+                    take("ratios").ok_or("partials needs ratios:")?,
+                    "a partial's ratio",
+                )?;
+                let levels = numbers(
+                    take("levels").ok_or("partials needs levels:")?,
+                    "a partial's level",
+                )?;
+                let phases = take("phases")
+                    .map(|p| numbers(p, "a partial's phase"))
+                    .transpose()?
+                    .unwrap_or_else(|| vec![0.0; ratios.len()]);
                 if levels.len() != ratios.len() || phases.len() != ratios.len() {
                     return Err("partials takes as many levels and phases as ratios".to_string());
                 }
-                Ok(V::Sig(crate::synths::partials(pitch, &ratios, &levels, &phases)))
+                Ok(V::Sig(crate::synths::partials(
+                    pitch, &ratios, &levels, &phases,
+                )))
             }
             "saw" | "square" | "triangle" => {
                 let freq = signal(take("hz").ok_or(format!("{name} needs hz:"))?)?;
@@ -310,16 +454,30 @@ impl Build<'_> {
                 Ok(V::Sig((freq | width) >> wave))
             }
             "noise" => match arg(0)? {
-                V::Name(colour) if colour == "white" => Ok(V::Sig(nodes::white_noise(self.ctx.seed()))),
-                V::Name(colour) if colour == "pink" => Ok(V::Sig(nodes::pink_noise(self.ctx.seed()))),
+                V::Name(colour) if colour == "white" => {
+                    Ok(V::Sig(nodes::white_noise(self.ctx.seed())))
+                }
+                V::Name(colour) if colour == "pink" => {
+                    Ok(V::Sig(nodes::pink_noise(self.ctx.seed())))
+                }
                 _ => Err("noise takes :white or :pink".to_string()),
             },
             "lowpass" | "highpass" | "bandpass" => {
                 let mut sound = signal(arg(0)?)?;
                 let freq = take("hz").ok_or(format!("{name} needs hz:"))?;
-                let q = take("q").map(|q| number(q, "a filter's q")).transpose()?.unwrap_or(std::f64::consts::FRAC_1_SQRT_2);
-                let poles = take("poles").map(|p| number(p, "a filter's poles")).transpose()?.unwrap_or(2.0);
-                let freq = binary(binary(freq, V::Num(20.0), f64::max)?, V::Num(20_000.0), f64::min)?;
+                let q = take("q")
+                    .map(|q| number(q, "a filter's q"))
+                    .transpose()?
+                    .unwrap_or(std::f64::consts::FRAC_1_SQRT_2);
+                let poles = take("poles")
+                    .map(|p| number(p, "a filter's poles"))
+                    .transpose()?
+                    .unwrap_or(2.0);
+                let freq = binary(
+                    binary(freq, V::Num(20.0), f64::max)?,
+                    V::Num(20_000.0),
+                    f64::min,
+                )?;
                 let freq = signal(freq)?;
                 for _ in 0..((poles / 2.0).round().max(1.0) as usize) {
                     let filter: Net = match name {
@@ -362,7 +520,11 @@ impl Build<'_> {
             }
             "dc_block" => Ok(V::Sig(signal(arg(0)?)? >> net(dcblock::<f32>()))),
             "envelope" => {
-                let (sound, points) = if count == 2 { (Some(arg(0)?), arg(1)?) } else { (None, arg(0)?) };
+                let (sound, points) = if count == 2 {
+                    (Some(arg(0)?), arg(1)?)
+                } else {
+                    (None, arg(0)?)
+                };
                 let shape = envelope(points)?;
                 match sound {
                     Some(sound) => mul(sound, V::Sig(shape)),
@@ -370,10 +532,20 @@ impl Build<'_> {
                 }
             }
             "perc" => {
-                let attack = number(take("attack").ok_or("perc needs attack:")?, "a perc's attack")?;
-                let release = number(take("release").ok_or("perc needs release:")?, "a perc's release")?;
+                let attack = number(
+                    take("attack").ok_or("perc needs attack:")?,
+                    "a perc's attack",
+                )?;
+                let release = number(
+                    take("release").ok_or("perc needs release:")?,
+                    "a perc's release",
+                )?;
                 let shape = V::Sig(nodes::shape(move |t| nodes::perc(t, attack, release)));
-                if count == 0 { Ok(shape) } else { mul(arg(0)?, shape) }
+                if count == 0 {
+                    Ok(shape)
+                } else {
+                    mul(arg(0)?, shape)
+                }
             }
             "mix" => match arg(0)? {
                 V::List(items) => items.into_iter().try_fold(V::Num(0.0), add),
@@ -382,7 +554,10 @@ impl Build<'_> {
             "gain" => mul(arg(0)?, arg(1)?),
             "note_envelope" => Ok(V::Note(Note::envelope(signal(arg(0)?)?, self.options))),
             "rings" => {
-                let seconds = number(take("seconds").ok_or("rings needs seconds:")?, "how long a note rings")?;
+                let seconds = number(
+                    take("seconds").ok_or("rings needs seconds:")?,
+                    "how long a note rings",
+                )?;
                 match arg(0)? {
                     V::Note(note) => Ok(V::Note(note.within(seconds))),
                     sound => Ok(V::Note(Note::rings(signal(sound)?, seconds))),
@@ -395,15 +570,25 @@ impl Build<'_> {
 
 /// Segments from silence through each of `points`, each `[seconds, level]` straight, `[seconds, level, curve]` bent as `segments` bends them, or `[seconds, level, exp]` exponential.
 fn envelope(points: V) -> Result<Net, String> {
-    let V::List(points) = points else { return Err("an envelope takes a list of points".to_string()) };
+    let V::List(points) = points else {
+        return Err("an envelope takes a list of points".to_string());
+    };
     let mut levels = vec![0.0];
     let mut times = Vec::new();
     let mut curves = Vec::new();
     for point in points {
-        let V::List(parts) = point else { return Err("each point of an envelope is seconds and a level".to_string()) };
+        let V::List(parts) = point else {
+            return Err("each point of an envelope is seconds and a level".to_string());
+        };
         let mut parts = parts.into_iter();
-        times.push(number(parts.next().ok_or("an envelope's point needs seconds")?, "an envelope's seconds")?);
-        levels.push(number(parts.next().ok_or("an envelope's point needs a level")?, "an envelope's level")?);
+        times.push(number(
+            parts.next().ok_or("an envelope's point needs seconds")?,
+            "an envelope's seconds",
+        )?);
+        levels.push(number(
+            parts.next().ok_or("an envelope's point needs a level")?,
+            "an envelope's level",
+        )?);
         curves.push(match parts.next() {
             None => Some(0.0),
             Some(V::Num(curve)) => Some(curve),

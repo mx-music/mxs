@@ -2,16 +2,16 @@
 
 mod basic;
 mod berimbau;
+mod bowed;
 mod drums;
 mod instruments;
-mod bowed;
 mod piano;
 mod winds;
 
 pub use berimbau::berimbau;
-pub use piano::piano;
 pub(crate) use bowed::bowed_string;
 pub(crate) use instruments::partials;
+pub use piano::piano;
 pub(crate) use winds::{air_jet, wind_bands};
 
 /// Every synth mx ships.

@@ -30,13 +30,28 @@ fn main() {
     let midi = MidiOutput::new(SOURCE).unwrap();
     let mut source = midi.create_virtual(SOURCE).unwrap();
 
-    let refused = Command::new(keys).args(["--input", "a keyboard that is not there"]).output().unwrap();
+    let refused = Command::new(keys)
+        .args(["--input", "a keyboard that is not there"])
+        .output()
+        .unwrap();
     let refusal = String::from_utf8_lossy(&refused.stderr);
     println!("asked for an input that does not exist: {}", refusal.trim());
 
     let host = cpal::default_host();
-    let device = host.input_devices().unwrap().find(|d| d.description().map(|d| d.name() == LOOPBACK).unwrap_or(false)).expect("BlackHole 2ch");
-    let config = cpal::StreamConfig { channels: 2, sample_rate: RATE, buffer_size: cpal::BufferSize::Default };
+    let device = host
+        .input_devices()
+        .unwrap()
+        .find(|d| {
+            d.description()
+                .map(|d| d.name() == LOOPBACK)
+                .unwrap_or(false)
+        })
+        .expect("BlackHole 2ch");
+    let config = cpal::StreamConfig {
+        channels: 2,
+        sample_rate: RATE,
+        buffer_size: cpal::BufferSize::Default,
+    };
     let recorded = Arc::new(Mutex::new(Recorded::default()));
     let gathered = recorded.clone();
     let stream = device
@@ -56,7 +71,15 @@ fn main() {
         .unwrap();
     stream.play().unwrap();
 
-    let play = |synth: &str| Command::new(keys).args(["--input", SOURCE, "--device", LOOPBACK, "--synth", synth, "--buffer", buffer]).stdout(Stdio::inherit()).spawn().unwrap();
+    let play = |synth: &str| {
+        Command::new(keys)
+            .args([
+                "--input", SOURCE, "--device", LOOPBACK, "--synth", synth, "--buffer", buffer,
+            ])
+            .stdout(Stdio::inherit())
+            .spawn()
+            .unwrap()
+    };
     let mut player = play("piano");
     std::thread::sleep(Duration::from_secs(2));
 
@@ -103,14 +126,32 @@ fn main() {
     drop(stream);
     let r = recorded.lock().unwrap();
     let frame_of = |when: Instant| {
-        let &(frame, captured) = r.anchors.iter().rev().find(|(_, c)| *c <= when).unwrap_or(&r.anchors[0]);
+        let &(frame, captured) = r
+            .anchors
+            .iter()
+            .rev()
+            .find(|(_, c)| *c <= when)
+            .unwrap_or(&r.anchors[0]);
         frame as f64 + when.duration_since(captured).as_secs_f64() * RATE as f64
     };
-    let lines: Vec<String> = sent.iter().map(|&(when, b, what)| format!("{:.1},{},{},{},{what}", frame_of(when), b[0], b[1], b[2])).collect();
+    let lines: Vec<String> = sent
+        .iter()
+        .map(|&(when, b, what)| format!("{:.1},{},{},{},{what}", frame_of(when), b[0], b[1], b[2]))
+        .collect();
     std::fs::write(out.join("sent.csv"), lines.join("\n") + "\n").unwrap();
-    let spec = hound::WavSpec { channels: 1, sample_rate: RATE, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: RATE,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
     let mut wav = hound::WavWriter::create(out.join("played.wav"), spec).unwrap();
     r.samples.iter().for_each(|&x| wav.write_sample(x).unwrap());
     wav.finalize().unwrap();
-    println!("recorded {:.1} s and {} messages to {}", r.samples.len() as f64 / RATE as f64, sent.len(), out.display());
+    println!(
+        "recorded {:.1} s and {} messages to {}",
+        r.samples.len() as f64 / RATE as f64,
+        sent.len(),
+        out.display()
+    );
 }

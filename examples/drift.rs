@@ -4,11 +4,19 @@ use mxs::Engine;
 use std::time::{Duration, SystemTime};
 
 fn main() {
-    let minutes: u64 = std::env::args().nth(1).and_then(|m| m.parse().ok()).unwrap_or(120);
+    let minutes: u64 = std::env::args()
+        .nth(1)
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(120);
     let engine = Engine::live().unwrap_or_else(|e| panic!("{e}"));
     let offset = || {
         let (seconds, system) = engine.clock();
-        system.unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64() - seconds
+        system
+            .unwrap()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+            - seconds
     };
     std::thread::sleep(Duration::from_secs(5));
     let first = offset();
@@ -18,6 +26,8 @@ fn main() {
         std::thread::sleep(Duration::from_secs(60));
         let drift = (offset() - first) * 1000.0;
         let ppm = drift / 1000.0 / (minute as f64 * 60.0) * 1e6;
-        println!("minute {minute}: the system clock has gained {drift:+.3} ms on the sound card's since the start, {ppm:+.1} parts per million");
+        println!(
+            "minute {minute}: the system clock has gained {drift:+.3} ms on the sound card's since the start, {ppm:+.1} parts per million"
+        );
     }
 }

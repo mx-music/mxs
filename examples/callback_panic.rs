@@ -4,8 +4,13 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 fn main() {
-    let device = cpal::default_host().default_output_device().expect("no output device");
-    let config: cpal::StreamConfig = device.default_output_config().expect("no output config").into();
+    let device = cpal::default_host()
+        .default_output_device()
+        .expect("no output device");
+    let config: cpal::StreamConfig = device
+        .default_output_config()
+        .expect("no output config")
+        .into();
     let caught = std::env::args().nth(1).as_deref() == Some("caught");
     let mut calls = 0;
     let mut dead = false;
@@ -22,7 +27,10 @@ fn main() {
                 };
                 if !caught {
                     fill(data);
-                } else if dead || std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fill(data))).is_err() {
+                } else if dead
+                    || std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fill(data)))
+                        .is_err()
+                {
                     dead = true;
                     data.fill(0.0);
                 }

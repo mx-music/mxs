@@ -5,15 +5,33 @@ use mxs::{Engine, Event, RATE, Value, synths};
 
 // (beat, note, vel, beats held)
 const PHRASE: &[(f64, f64, f64, f64)] = &[
-    (0.0, 48.0, 0.5, 4.0), (0.0, 55.0, 0.4, 4.0), (0.0, 64.0, 0.6, 1.0),
-    (1.0, 67.0, 0.6, 1.0), (2.0, 72.0, 0.7, 1.0), (3.0, 71.0, 0.6, 1.0),
-    (4.0, 45.0, 0.5, 4.0), (4.0, 52.0, 0.4, 4.0), (4.0, 69.0, 0.6, 1.5),
-    (5.5, 67.0, 0.5, 0.5), (6.0, 64.0, 0.6, 2.0),
-    (8.0, 41.0, 0.5, 4.0), (8.0, 60.0, 0.45, 4.0), (8.0, 65.0, 0.5, 4.0), (8.0, 69.0, 0.55, 4.0), (8.0, 76.0, 0.7, 4.0),
-    (12.0, 43.0, 0.5, 4.0), (12.0, 59.0, 0.45, 4.0), (12.0, 62.0, 0.5, 4.0), (12.0, 67.0, 0.55, 4.0), (12.0, 74.0, 0.65, 2.0),
-    (14.0, 36.0, 0.6, 6.0), (14.0, 60.0, 0.5, 6.0), (14.0, 64.0, 0.5, 6.0), (14.0, 67.0, 0.55, 6.0), (14.0, 72.0, 0.7, 6.0),
+    (0.0, 48.0, 0.5, 4.0),
+    (0.0, 55.0, 0.4, 4.0),
+    (0.0, 64.0, 0.6, 1.0),
+    (1.0, 67.0, 0.6, 1.0),
+    (2.0, 72.0, 0.7, 1.0),
+    (3.0, 71.0, 0.6, 1.0),
+    (4.0, 45.0, 0.5, 4.0),
+    (4.0, 52.0, 0.4, 4.0),
+    (4.0, 69.0, 0.6, 1.5),
+    (5.5, 67.0, 0.5, 0.5),
+    (6.0, 64.0, 0.6, 2.0),
+    (8.0, 41.0, 0.5, 4.0),
+    (8.0, 60.0, 0.45, 4.0),
+    (8.0, 65.0, 0.5, 4.0),
+    (8.0, 69.0, 0.55, 4.0),
+    (8.0, 76.0, 0.7, 4.0),
+    (12.0, 43.0, 0.5, 4.0),
+    (12.0, 59.0, 0.45, 4.0),
+    (12.0, 62.0, 0.5, 4.0),
+    (12.0, 67.0, 0.55, 4.0),
+    (12.0, 74.0, 0.65, 2.0),
+    (14.0, 36.0, 0.6, 6.0),
+    (14.0, 60.0, 0.5, 6.0),
+    (14.0, 64.0, 0.5, 6.0),
+    (14.0, 67.0, 0.55, 6.0),
+    (14.0, 72.0, 0.7, 6.0),
 ];
-
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -25,9 +43,33 @@ fn main() {
     };
     // Each note as its beat, its beats held and its options; mx sends every time option in seconds, the synth's default release included.
     let (bpm, notes): (f64, Vec<(f64, f64, Vec<(&str, f64)>)>) = match synth_name.as_str() {
-        "piano" => (84.0, PHRASE.iter().map(|&(beat, note, vel, held)| (beat, held, vec![("note", note), ("vel", vel), ("release", 1.0)])).collect()),
+        "piano" => (
+            84.0,
+            PHRASE
+                .iter()
+                .map(|&(beat, note, vel, held)| {
+                    (
+                        beat,
+                        held,
+                        vec![("note", note), ("vel", vel), ("release", 1.0)],
+                    )
+                })
+                .collect(),
+        ),
         "berimbau" => (119.0, angola()),
-        _ => (84.0, top_line().into_iter().map(|(beat, note, vel, held)| (beat, held, vec![("note", note), ("vel", vel), ("release", 0.3)])).collect()),
+        _ => (
+            84.0,
+            top_line()
+                .into_iter()
+                .map(|(beat, note, vel, held)| {
+                    (
+                        beat,
+                        held,
+                        vec![("note", note), ("vel", vel), ("release", 0.3)],
+                    )
+                })
+                .collect(),
+        ),
     };
     let seconds = |beat: f64| beat * 60.0 / bpm;
     let drum = synth_name == "berimbau";
@@ -45,7 +87,11 @@ fn main() {
             let mut options: Vec<(String, Value)> = options
                 .into_iter()
                 .map(|(name, value)| {
-                    let value = if name == "release" { seconds(value) } else { value };
+                    let value = if name == "release" {
+                        seconds(value)
+                    } else {
+                        value
+                    };
                     (name.to_string(), Value::Number(value))
                 })
                 .collect();
@@ -54,14 +100,27 @@ fn main() {
             }
             let start = lead + seconds(beat);
             end = end.max(start + seconds(held) + 3.0);
-            (start, Event::Note { id: None, synth: synth_name.clone(), options, chain: None })
+            (
+                start,
+                Event::Note {
+                    id: None,
+                    synth: synth_name.clone(),
+                    options,
+                    chain: None,
+                },
+            )
         })
         .collect();
     engine.play(&events).unwrap_or_else(|e| panic!("{e}"));
 
     if let Some(path) = path {
         let (left, right) = engine.render(end).unwrap();
-        let spec = hound::WavSpec { channels: 2, sample_rate: RATE as u32, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: RATE as u32,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
         let mut wav = hound::WavWriter::create(&path, spec).unwrap();
         for (l, r) in left.into_iter().zip(right) {
             wav.write_sample(l).unwrap();

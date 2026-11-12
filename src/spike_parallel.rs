@@ -13,10 +13,18 @@ const BLOCK: usize = 64;
 fn voices(name: &str, note: f64, count: usize) -> Vec<Box<Voice>> {
     let mut engine = Engine::offline(RATE);
     synths::all().into_iter().for_each(|s| engine.register(s));
-    let held: &[(&str, f64)] = if name == "berimbau" { &[] } else { &[("sustain", 60.0)] };
+    let held: &[(&str, f64)] = if name == "berimbau" {
+        &[]
+    } else {
+        &[("sustain", 60.0)]
+    };
     let notes: Vec<_> = (0..count)
         .map(|i| {
-            let options: Vec<(&str, f64)> = [("note", note + (i % 12) as f64)].iter().chain(held).copied().collect();
+            let options: Vec<(&str, f64)> = [("note", note + (i % 12) as f64)]
+                .iter()
+                .chain(held)
+                .copied()
+                .collect();
             (0.0, Event::note(None, name, &options))
         })
         .collect();
@@ -29,7 +37,10 @@ fn voices(name: &str, note: f64, count: usize) -> Vec<Box<Voice>> {
 /// Fills `blocks` blocks of every voice into its own buffer and sums them in voice order, on `threads` threads, returning the seconds taken and the left channel.
 fn fill(voices: &mut [Box<Voice>], threads: usize, blocks: usize) -> (f64, Vec<f32>) {
     let per = voices.len().div_ceil(threads);
-    let outputs: Vec<Mutex<Vec<[f32; 2 * BLOCK]>>> = voices.chunks(per).map(|c| Mutex::new(vec![[0.0; 2 * BLOCK]; c.len()])).collect();
+    let outputs: Vec<Mutex<Vec<[f32; 2 * BLOCK]>>> = voices
+        .chunks(per)
+        .map(|c| Mutex::new(vec![[0.0; 2 * BLOCK]; c.len()]))
+        .collect();
     let mut left = Vec::with_capacity(blocks * BLOCK);
     let started = Instant::now();
     if threads == 1 {
@@ -37,7 +48,9 @@ fn fill(voices: &mut [Box<Voice>], threads: usize, blocks: usize) -> (f64, Vec<f
         for _ in 0..blocks {
             let mut mix = [0.0f32; BLOCK];
             for voice in voices.iter_mut() {
-                voice.unit.process(BLOCK, &BufferRef::empty(), &mut buffer.buffer_mut());
+                voice
+                    .unit
+                    .process(BLOCK, &BufferRef::empty(), &mut buffer.buffer_mut());
                 for (k, x) in mix.iter_mut().enumerate() {
                     *x += buffer.at_f32(0, k);
                 }
@@ -56,7 +69,11 @@ fn fill(voices: &mut [Box<Voice>], threads: usize, blocks: usize) -> (f64, Vec<f
                         start.wait();
                         let mut output = output.lock().unwrap();
                         for (voice, out) in chunk.iter_mut().zip(output.iter_mut()) {
-                            voice.unit.process(BLOCK, &BufferRef::empty(), &mut buffer.buffer_mut());
+                            voice.unit.process(
+                                BLOCK,
+                                &BufferRef::empty(),
+                                &mut buffer.buffer_mut(),
+                            );
                             for k in 0..BLOCK {
                                 out[k] = buffer.at_f32(0, k);
                                 out[BLOCK + k] = buffer.at_f32(1, k);
@@ -97,7 +114,9 @@ fn notes_at_once_on_several_cores() {
             let (took, left) = fill(&mut voices, threads, blocks);
             let at_once = count as f64 * seconds / took;
             let same = reference.get_or_insert_with(|| left.clone()) == &left;
-            println!("{name}: {count} notes on {threads} threads render {seconds} s in {took:.3} s, so {at_once:.0} at once; the same samples as on 1: {same}");
+            println!(
+                "{name}: {count} notes on {threads} threads render {seconds} s in {took:.3} s, so {at_once:.0} at once; the same samples as on 1: {same}"
+            );
         }
     }
     for count in [1, 4, 16] {
@@ -106,7 +125,9 @@ fn notes_at_once_on_several_cores() {
             let (took, _) = fill(&mut voices, threads, blocks);
             let per_block = took / blocks as f64 * 1e6;
             let budget = per_block / (BLOCK as f64 / RATE * 1e6) * 100.0;
-            println!("{count} piano notes on {threads} threads: {per_block:.1} µs a block of 64, {budget:.1} percent of its time");
+            println!(
+                "{count} piano notes on {threads} threads: {per_block:.1} µs a block of 64, {budget:.1} percent of its time"
+            );
         }
     }
 }

@@ -28,12 +28,26 @@ pub fn struck(hz: f64, level: f64, fade: f64) -> Net {
 
 /// `struck`, at the frequency its second input gives at each sample, so it glides as the note does.
 pub fn struck_gliding(level: f64, fade: f64) -> Net {
-    Net::wrap(Box::new(An(Gliding { level, fade, rate: DEFAULT_SR, hz: -1.0, coefficients: (0.0, 0.0, 0.0, 0.0), x1: 0.0, y1: 0.0, y2: 0.0 })))
+    Net::wrap(Box::new(An(Gliding {
+        level,
+        fade,
+        rate: DEFAULT_SR,
+        hz: -1.0,
+        coefficients: (0.0, 0.0, 0.0, 0.0),
+        x1: 0.0,
+        y1: 0.0,
+        y2: 0.0,
+    })))
 }
 
 /// An impulse at each of `clicks`, given as seconds and level in the order they come.
 pub fn clicks(clicks: Vec<(f64, f64)>) -> Net {
-    Net::wrap(Box::new(An(Clicks { clicks, next: 0, t: 0.0, dt: 1.0 / DEFAULT_SR })))
+    Net::wrap(Box::new(An(Clicks {
+        clicks,
+        next: 0,
+        t: 0.0,
+        dt: 1.0 / DEFAULT_SR,
+    })))
 }
 
 /// A level worked out from the seconds since the note started, at every sample.
@@ -41,7 +55,11 @@ pub fn shape<F>(f: F) -> Net
 where
     F: Fn(f64) -> f64 + Clone + Send + Sync + 'static,
 {
-    Net::wrap(Box::new(An(Shape { f, t: 0.0, dt: 1.0 / DEFAULT_SR })))
+    Net::wrap(Box::new(An(Shape {
+        f,
+        t: 0.0,
+        dt: 1.0 / DEFAULT_SR,
+    })))
 }
 
 /// `shape` as a node rather than a `Net`, for inside a `feedback` loop; unlike FunDSP's `envelope`, it does not depend on where it sits in a graph.
@@ -49,12 +67,20 @@ pub fn shape_node<F>(f: F) -> An<impl AudioNode<Inputs = U0, Outputs = U1>>
 where
     F: Fn(f64) -> f64 + Clone + Send + Sync + 'static,
 {
-    An(Shape { f, t: 0.0, dt: 1.0 / DEFAULT_SR })
+    An(Shape {
+        f,
+        t: 0.0,
+        dt: 1.0 / DEFAULT_SR,
+    })
 }
 
 /// A percussive level at `t` seconds: a straight rise over `attack`, then a fall to silence over `release`.
 pub fn perc(t: f64, attack: f64, release: f64) -> f64 {
-    if t < attack { t / attack } else { (1.0 - (t - attack) / release).max(0.0).powi(4) }
+    if t < attack {
+        t / attack
+    } else {
+        (1.0 - (t - attack) / release).max(0.0).powi(4)
+    }
 }
 
 /// A level moving from each of `levels` to the next over each of `times` seconds, holding the last.
@@ -67,7 +93,14 @@ pub fn segments(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
 /// A level moving through `levels` over `times` as `segments` does, until its input falls to 0: from then it falls from where it is to silence over the last of `times`, along the last of `curves`.
 pub fn gated(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
     let (levels, times, curves) = (levels.to_vec(), times.to_vec(), curves.to_vec());
-    Net::wrap(Box::new(An(Gated { levels, times, curves, t: 0.0, dt: 1.0 / DEFAULT_SR, let_go: None })))
+    Net::wrap(Box::new(An(Gated {
+        levels,
+        times,
+        curves,
+        t: 0.0,
+        dt: 1.0 / DEFAULT_SR,
+        let_go: None,
+    })))
 }
 
 /// The level of `segments` at `t` seconds.
@@ -77,7 +110,11 @@ pub fn segment_at(levels: &[f64], times: &[f64], curves: &[f64], t: f64) -> f64 
         if t < start + time {
             let x = (t - start) / time;
             let curve = curves.get(k).copied().unwrap_or(0.0);
-            let bent = if curve.abs() < 1e-3 { x } else { (1.0 - (curve * x).exp()) / (1.0 - curve.exp()) };
+            let bent = if curve.abs() < 1e-3 {
+                x
+            } else {
+                (1.0 - (curve * x).exp()) / (1.0 - curve.exp())
+            };
             return levels[k] + (levels[k + 1] - levels[k]) * bent;
         }
         start += time;
@@ -129,7 +166,10 @@ pub fn modes(exciter: Net, hz: &[f64], levels: &[f64], rings: &[f64]) -> Net {
 /// A level read from a table given at each of `bands`, in a straight line between the two bands around `x`, and held beyond the ends.
 pub fn between(x: f64, bands: &[f64], table: &[f64]) -> f64 {
     let x = x.clamp(bands[0], bands[bands.len() - 1]);
-    let k = bands.windows(2).position(|w| x <= w[1]).unwrap_or(bands.len() - 2);
+    let k = bands
+        .windows(2)
+        .position(|w| x <= w[1])
+        .unwrap_or(bands.len() - 2);
     let along = (x - bands[k]) / (bands[k + 1] - bands[k]);
     table[k] + (table[k + 1] - table[k]) * along
 }
@@ -182,7 +222,17 @@ struct Mode {
 
 impl Mode {
     fn new(hz: f64, phase: f64, level: f64, fade: f64) -> Self {
-        let mut mode = Mode { hz, phase, level, fade, like_scsynth: false, coefficients: (0.0, 0.0, 0.0, 0.0), x1: 0.0, y1: 0.0, y2: 0.0 };
+        let mut mode = Mode {
+            hz,
+            phase,
+            level,
+            fade,
+            like_scsynth: false,
+            coefficients: (0.0, 0.0, 0.0, 0.0),
+            x1: 0.0,
+            y1: 0.0,
+            y2: 0.0,
+        };
         mode.set_sample_rate(DEFAULT_SR);
         mode
     }
@@ -201,12 +251,20 @@ impl AudioNode for Mode {
         let w = 2.0 * std::f64::consts::PI * self.hz / rate;
         let r = 1000f64.powf(-1.0 / (self.fade * rate));
         let (level, phase) = if self.like_scsynth {
-            (self.level * 2.0 * (w / 2.0).cos(), std::f64::consts::FRAC_PI_2 - w / 2.0)
+            (
+                self.level * 2.0 * (w / 2.0).cos(),
+                std::f64::consts::FRAC_PI_2 - w / 2.0,
+            )
         } else {
             (self.level, self.phase)
         };
         // Its impulse response is level * r^n * sin((n + 1) * w + phase).
-        self.coefficients = (-2.0 * r * w.cos(), r * r, level * (w + phase).sin(), -level * r * phase.sin());
+        self.coefficients = (
+            -2.0 * r * w.cos(),
+            r * r,
+            level * (w + phase).sin(),
+            -level * r * phase.sin(),
+        );
     }
 
     fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
@@ -353,7 +411,10 @@ impl AudioNode for Gated {
 
     fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
         if self.let_go.is_none() && input[0] <= 0.0 {
-            self.let_go = Some((self.t, segment_at(&self.levels, &self.times, &self.curves, self.t)));
+            self.let_go = Some((
+                self.t,
+                segment_at(&self.levels, &self.times, &self.curves, self.t),
+            ));
         }
         let level = match self.let_go {
             None => segment_at(&self.levels, &self.times, &self.curves, self.t),
@@ -396,12 +457,21 @@ impl AudioNode for Onset {
 
 /// Impulses at random times, as many a second on average as its input, each of a random level from 0 to 1, drawn from `seed`.
 pub fn dust(seed: u64) -> Net {
-    Net::wrap(Box::new(An(Dust { seed, state: seed, rate: DEFAULT_SR })))
+    Net::wrap(Box::new(An(Dust {
+        seed,
+        state: seed,
+        rate: DEFAULT_SR,
+    })))
 }
 
 /// Each impulse of its input rising over `attack` and falling over `decay` seconds, both 60 dB times.
 pub fn decay2(attack: f64, decay: f64) -> Net {
-    Net::wrap(Box::new(An(Decay2 { attack, decay, keep: (0.0, 0.0), levels: (0.0, 0.0) })))
+    Net::wrap(Box::new(An(Decay2 {
+        attack,
+        decay,
+        keep: (0.0, 0.0),
+        levels: (0.0, 0.0),
+    })))
 }
 
 #[derive(Clone)]
@@ -448,7 +518,13 @@ impl AudioNode for Decay2 {
     type Outputs = U1;
 
     fn set_sample_rate(&mut self, rate: f64) {
-        let keep = |seconds: f64| if seconds > 0.0 { 0.001f64.powf(1.0 / (seconds * rate)) } else { 0.0 };
+        let keep = |seconds: f64| {
+            if seconds > 0.0 {
+                0.001f64.powf(1.0 / (seconds * rate))
+            } else {
+                0.0
+            }
+        };
         self.keep = (keep(self.attack), keep(self.decay));
     }
 
@@ -458,7 +534,10 @@ impl AudioNode for Decay2 {
 
     fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
         let x = input[0] as f64;
-        self.levels = (x + self.levels.0 * self.keep.0, x + self.levels.1 * self.keep.1);
+        self.levels = (
+            x + self.levels.0 * self.keep.0,
+            x + self.levels.1 * self.keep.1,
+        );
         [(self.levels.1 - self.levels.0) as f32].into()
     }
 }

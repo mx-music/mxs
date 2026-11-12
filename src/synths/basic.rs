@@ -5,7 +5,18 @@ use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 
 pub fn all() -> Vec<Synth> {
-    vec![saw(), square(), tri(), pulse(), noise(), fm(), pluck(), supersaw(), acid(), brass()]
+    vec![
+        saw(),
+        square(),
+        tri(),
+        pulse(),
+        noise(),
+        fm(),
+        pluck(),
+        supersaw(),
+        acid(),
+        brass(),
+    ]
 }
 
 fn net(unit: impl AudioUnit + 'static) -> Net {
@@ -35,15 +46,26 @@ fn pitch(options: &Options) -> Net {
 
 /// A resonant low-pass whose cutoff is a MIDI note, with res from 0 to 1.
 fn filtered(options: &Options, sound: Net) -> Net {
-    let cutoff = options.follow("cutoff") >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64).clamp(20.0, 18_000.0) as f32));
-    let q = options.follow("res") >> net(map(|x: &Frame<f32, U1>| 1.0 / (1.0 - x[0].clamp(0.0, 1.0) * 0.93)));
+    let cutoff = options.follow("cutoff")
+        >> net(map(|x: &Frame<f32, U1>| {
+            hz(x[0] as f64).clamp(20.0, 18_000.0) as f32
+        }));
+    let q = options.follow("res")
+        >> net(map(|x: &Frame<f32, U1>| {
+            1.0 / (1.0 - x[0].clamp(0.0, 1.0) * 0.93)
+        }));
     (sound | cutoff | q) >> net(lowpass::<f32>())
 }
 
 fn filter_options(cutoff: f64) -> [Spec; 2] {
     [
-        Spec::note("cutoff").default(cutoff).doc("The MIDI note above which the low-pass cuts."),
-        Spec::float("res").default(0.2).range(0.0, 1.0).doc("How much the low-pass rings at its cutoff."),
+        Spec::note("cutoff")
+            .default(cutoff)
+            .doc("The MIDI note above which the low-pass cuts."),
+        Spec::float("res")
+            .default(0.2)
+            .range(0.0, 1.0)
+            .doc("How much the low-pass rings at its cutoff."),
     ]
 }
 
@@ -55,35 +77,58 @@ fn wave(name: &str, cutoff: f64, release: f64) -> crate::SynthDecl {
 }
 
 fn saw() -> Synth {
-    wave("saw", 100.0, 1.0).build(|o, _| Note::envelope(filtered(o, pitch(o) >> saw_wave()) * 0.5, o))
+    wave("saw", 100.0, 1.0)
+        .build(|o, _| Note::envelope(filtered(o, pitch(o) >> saw_wave()) * 0.5, o))
 }
 
 fn square() -> Synth {
-    wave("square", 100.0, 1.0).build(|o, _| Note::envelope(filtered(o, pitch(o) >> net(fundsp::prelude::square())) * (0.5 * db(-3.8)) as f32, o))
+    wave("square", 100.0, 1.0).build(|o, _| {
+        Note::envelope(
+            filtered(o, pitch(o) >> net(fundsp::prelude::square())) * (0.5 * db(-3.8)) as f32,
+            o,
+        )
+    })
 }
 
 fn tri() -> Synth {
-    wave("tri", 100.0, 1.0).build(|o, _| Note::envelope(filtered(o, pitch(o) >> net(triangle())) * 0.6, o))
+    wave("tri", 100.0, 1.0)
+        .build(|o, _| Note::envelope(filtered(o, pitch(o) >> net(triangle())) * 0.6, o))
 }
 
 fn pulse() -> Synth {
     wave("pulse", 100.0, 1.0)
-        .option(Spec::float("pulse_width").default(0.3).range(0.01, 0.99).doc("The part of each cycle that is up."))
+        .option(
+            Spec::float("pulse_width")
+                .default(0.3)
+                .range(0.01, 0.99)
+                .doc("The part of each cycle that is up."),
+        )
         .build(|o, _| {
-            let width = o.follow("pulse_width") >> net(map(|x: &Frame<f32, U1>| x[0].clamp(0.01, 0.99)));
+            let width =
+                o.follow("pulse_width") >> net(map(|x: &Frame<f32, U1>| x[0].clamp(0.01, 0.99)));
             Note::envelope(filtered(o, (pitch(o) | width) >> pulse_wave()) * 0.5, o)
         })
 }
 
 fn noise() -> Synth {
-    wave("noise", 110.0, 1.0).build(|o, ctx| Note::envelope(filtered(o, white_noise(ctx.seed())) * 0.4, o))
+    wave("noise", 110.0, 1.0)
+        .build(|o, ctx| Note::envelope(filtered(o, white_noise(ctx.seed())) * 0.4, o))
 }
 
 fn fm() -> Synth {
     Synth::new("fm")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
-        .option(Spec::float("divisor").default(2.0).range(0.01, f64::INFINITY).doc("The note's frequency over the modulator's."))
-        .option(Spec::float("depth").default(1.0).doc("How far the modulator swings the frequency, in times the note's."))
+        .option(
+            Spec::float("divisor")
+                .default(2.0)
+                .range(0.01, f64::INFINITY)
+                .doc("The note's frequency over the modulator's."),
+        )
+        .option(
+            Spec::float("depth")
+                .default(1.0)
+                .doc("How far the modulator swings the frequency, in times the note's."),
+        )
         .options(Spec::envelope(0.0, 1.0))
         .build(|o, _| {
             let modulator = (pitch(o) | o.follow("divisor"))
@@ -99,25 +144,47 @@ fn fm() -> Synth {
 fn pluck() -> Synth {
     Synth::new("pluck")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
-        .option(Spec::seconds("ring").default(3.0).range(0.0, f64::INFINITY).doc("How many seconds the string takes to fall 60 dB."))
-        .option(Spec::float("coef").default(0.3).range(-0.99, 0.99).doc("How fast the string loses its brightness."))
+        .option(
+            Spec::seconds("ring")
+                .default(3.0)
+                .range(0.0, f64::INFINITY)
+                .doc("How many seconds the string takes to fall 60 dB."),
+        )
+        .option(
+            Spec::float("coef")
+                .default(0.3)
+                .range(-0.99, 0.99)
+                .doc("How fast the string loses its brightness."),
+        )
         .options(Spec::envelope(0.0, 2.0))
         .build(|o, ctx| {
             let freq = hz(o.number("note"));
-            let burst = white_noise(ctx.seed()) >> net(butterpass_hz((freq * 12.0).min(20_000.0) as f32));
-            let string = burst >> net(An(KarplusStrong::new(freq, o.number("ring"), o.number("coef"))));
+            let burst =
+                white_noise(ctx.seed()) >> net(butterpass_hz((freq * 12.0).min(20_000.0) as f32));
+            let string = burst
+                >> net(An(KarplusStrong::new(
+                    freq,
+                    o.number("ring"),
+                    o.number("coef"),
+                )));
             Note::envelope((string >> net(dcblock_hz(30.0))) * 0.8, o)
         })
 }
 
 fn supersaw() -> Synth {
     wave("supersaw", 110.0, 1.0)
-        .option(Spec::float("detune").default(0.2).doc("How far in semitones the saws spread around the note."))
+        .option(
+            Spec::float("detune")
+                .default(0.2)
+                .doc("How far in semitones the saws spread around the note."),
+        )
         .build(|o, _| {
             let mut saws = Net::wrap(Box::new(zero()));
             for offset in [-1.0f32, -0.62, -0.3, 0.0, 0.3, 0.62, 1.0] {
                 let freq = (o.follow("note") | o.follow("detune"))
-                    >> net(map(move |x: &Frame<f32, U2>| hz((x[0] + offset * x[1]) as f64) as f32));
+                    >> net(map(move |x: &Frame<f32, U2>| {
+                        hz((x[0] + offset * x[1]) as f64) as f32
+                    }));
                 saws = saws + (freq >> saw_wave());
             }
             Note::envelope(filtered(o, saws) * 0.18, o)
@@ -127,14 +194,28 @@ fn supersaw() -> Synth {
 fn acid() -> Synth {
     Synth::new("acid")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
-        .option(Spec::note("cutoff").default(70.0).doc("The MIDI note the filter closes to."))
-        .option(Spec::float("res").default(0.7).range(0.0, 1.0).doc("How much the filter rings at its cutoff."))
+        .option(
+            Spec::note("cutoff")
+                .default(70.0)
+                .doc("The MIDI note the filter closes to."),
+        )
+        .option(
+            Spec::float("res")
+                .default(0.7)
+                .range(0.0, 1.0)
+                .doc("How much the filter rings at its cutoff."),
+        )
         .options(Spec::envelope(0.0, 0.5))
         .build(|o, _| {
             let spring = segments(&[30.0, 0.0], &[0.18], &[-4.0]);
             let cutoff = (o.follow("cutoff") | spring)
-                >> net(map(|x: &Frame<f32, U2>| hz((x[0] + x[1]) as f64).clamp(20.0, 18_000.0) as f32));
-            let q = o.follow("res") >> net(map(|x: &Frame<f32, U1>| 1.0 / (1.0 - x[0].clamp(0.0, 1.0) * 0.93)));
+                >> net(map(|x: &Frame<f32, U2>| {
+                    hz((x[0] + x[1]) as f64).clamp(20.0, 18_000.0) as f32
+                }));
+            let q = o.follow("res")
+                >> net(map(|x: &Frame<f32, U1>| {
+                    1.0 / (1.0 - x[0].clamp(0.0, 1.0) * 0.93)
+                }));
             let half = pitch(o) >> net(map(|x: &Frame<f32, U1>| x[0] * 0.5));
             let sound = (pitch(o) >> saw_wave()) + ((half | net(dc(0.5))) >> pulse_wave()) * 0.25;
             let filtered = (sound | cutoff | q) >> net(lowpass::<f32>());
@@ -146,20 +227,30 @@ fn acid() -> Synth {
 fn brass() -> Synth {
     Synth::new("brass")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
-        .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard it is blown."))
+        .option(
+            Spec::float("vel")
+                .default(0.6)
+                .range(0.0, 1.0)
+                .doc("How hard it is blown."),
+        )
         .options(Spec::envelope(0.0, 0.25))
         .build(|o, ctx| {
             let vel = o.number("vel") as f32;
             let breath = || segments(&[0.0, 1.0, 0.8], &[0.05, 0.25], &[2.0, -2.0]);
             let scoop = segments(&[-0.35, 0.0], &[0.06], &[3.0]);
-            let vibrato = (net(sine_hz::<f32>(5.3)) * 0.12) * segments(&[0.0, 0.0, 1.0], &[0.3, 0.5], &[0.0, 0.0]);
+            let vibrato = (net(sine_hz::<f32>(5.3)) * 0.12)
+                * segments(&[0.0, 0.0, 1.0], &[0.3, 0.5], &[0.0, 0.0]);
             let freq = || {
                 (o.follow("note") | scoop.clone() | vibrato.clone())
-                    >> net(map(|x: &Frame<f32, U3>| hz((x[0] + x[1] + x[2]) as f64) as f32))
+                    >> net(map(|x: &Frame<f32, U3>| {
+                        hz((x[0] + x[1] + x[2]) as f64) as f32
+                    }))
             };
             let reed = (freq() >> saw_wave()) + ((freq() | net(dc(0.38))) >> pulse_wave()) * 0.5;
             let cutoff = (freq() | breath())
-                >> net(map(move |x: &Frame<f32, U2>| (x[0] * (1.5 + x[1] * (2.0 + vel * 9.0))).clamp(20.0, 18_000.0)));
+                >> net(map(move |x: &Frame<f32, U2>| {
+                    (x[0] * (1.5 + x[1] * (2.0 + vel * 9.0))).clamp(20.0, 18_000.0)
+                }));
             let horn = (reed | cutoff | net(dc(1.0 / 0.7))) >> net(lowpass::<f32>());
             let centre = freq() >> net(map(|x: &Frame<f32, U1>| (x[0] * 4.0).min(20_000.0)));
             // FunDSP's band-pass peaks at its Q of 2, so it is halved back to a peak of 1.
@@ -210,7 +301,11 @@ impl AudioNode for KarplusStrong {
         let period = sample_rate / self.freq.max(1.0);
         self.period = period as f32;
         self.buffer = vec![0.0; period.ceil() as usize + 4];
-        self.feedback = if self.ring > 0.0 { 0.001f64.powf(1.0 / (self.freq * self.ring)) as f32 } else { 0.0 };
+        self.feedback = if self.ring > 0.0 {
+            0.001f64.powf(1.0 / (self.freq * self.ring)) as f32
+        } else {
+            0.0
+        };
         (self.at, self.written, self.smoothed) = (0, 0, 0.0);
     }
 
@@ -227,7 +322,11 @@ impl AudioNode for KarplusStrong {
         let b = self.buffer[(self.at + n - whole - 1) % n];
         let delayed = a + (b - a) * fraction;
         self.smoothed = (1.0 - self.coef.abs()) * delayed + self.coef * self.smoothed;
-        let excite = if (self.written as f32) < self.period { input[0] } else { 0.0 };
+        let excite = if (self.written as f32) < self.period {
+            input[0]
+        } else {
+            0.0
+        };
         self.written += 1;
         self.buffer[self.at] = excite + self.feedback * self.smoothed;
         [delayed].into()

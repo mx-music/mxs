@@ -17,14 +17,142 @@ const EQ: [&str; 8] = ["eq0", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7"];
 pub fn all() -> Vec<Synth> {
     vec![
         flute(),
-        reed_wind("clarinet", 5.0, 1.0, Bore { conical: false, radiate: 1, bell: 2570.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, catch: 0.27, sharp: 4.4 }, &CLARINET),
-        reed_wind("oboe", 5.0, 1.0, Bore { conical: true, radiate: 0, bell: 300.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, catch: 0.35, sharp: 4.0 }, &OBOE),
-        reed_wind("bassoon", 5.5, 1.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.25, catch: 0.52, sharp: 5.0 }, &BASSOON),
-        reed_wind("tenor_sax", 4.94, TENOR_SAX_VIBRATO, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.25, catch: 0.5, sharp: 5.0 }, &TENOR_SAX),
-        reed_wind("trumpet", 4.9, 1.0, Bore { conical: true, radiate: 1, bell: 1470.0, corner: 8.0, keep: 0.95, air: 1500.0, tongue: 0.0, catch: 0.58, sharp: 5.0 }, &TRUMPET),
-        reed_wind("trombone", 4.95, 1.0, Bore { conical: true, radiate: 1, bell: 1110.0, corner: 8.0, keep: 0.95, air: 1000.0, tongue: 0.25, catch: 0.62, sharp: 4.5 }, &TROMBONE),
-        reed_wind("horn", 5.0, 1.0, Bore { conical: true, radiate: 1, bell: 400.0, corner: 8.0, keep: 0.95, air: 800.0, tongue: 0.2, catch: 0.65, sharp: 5.0 }, &HORN),
-        reed_wind("tuba", 5.0, 1.0, Bore { conical: true, radiate: 1, bell: 300.0, corner: 8.0, keep: 0.95, air: 300.0, tongue: 0.6, catch: 0.9, sharp: 2.5 }, &TUBA),
+        reed_wind(
+            "clarinet",
+            5.0,
+            1.0,
+            Bore {
+                conical: false,
+                radiate: 1,
+                bell: 2570.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 1500.0,
+                tongue: 0.0,
+                catch: 0.27,
+                sharp: 4.4,
+            },
+            &CLARINET,
+        ),
+        reed_wind(
+            "oboe",
+            5.0,
+            1.0,
+            Bore {
+                conical: true,
+                radiate: 0,
+                bell: 300.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 1500.0,
+                tongue: 0.0,
+                catch: 0.35,
+                sharp: 4.0,
+            },
+            &OBOE,
+        ),
+        reed_wind(
+            "bassoon",
+            5.5,
+            1.0,
+            Bore {
+                conical: true,
+                radiate: 1,
+                bell: 300.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 800.0,
+                tongue: 0.25,
+                catch: 0.52,
+                sharp: 5.0,
+            },
+            &BASSOON,
+        ),
+        reed_wind(
+            "tenor_sax",
+            4.94,
+            TENOR_SAX_VIBRATO,
+            Bore {
+                conical: true,
+                radiate: 1,
+                bell: 400.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 1500.0,
+                tongue: 0.25,
+                catch: 0.5,
+                sharp: 5.0,
+            },
+            &TENOR_SAX,
+        ),
+        reed_wind(
+            "trumpet",
+            4.9,
+            1.0,
+            Bore {
+                conical: true,
+                radiate: 1,
+                bell: 1470.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 1500.0,
+                tongue: 0.0,
+                catch: 0.58,
+                sharp: 5.0,
+            },
+            &TRUMPET,
+        ),
+        reed_wind(
+            "trombone",
+            4.95,
+            1.0,
+            Bore {
+                conical: true,
+                radiate: 1,
+                bell: 1110.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 1000.0,
+                tongue: 0.25,
+                catch: 0.62,
+                sharp: 4.5,
+            },
+            &TROMBONE,
+        ),
+        reed_wind(
+            "horn",
+            5.0,
+            1.0,
+            Bore {
+                conical: true,
+                radiate: 1,
+                bell: 400.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 800.0,
+                tongue: 0.2,
+                catch: 0.65,
+                sharp: 5.0,
+            },
+            &HORN,
+        ),
+        reed_wind(
+            "tuba",
+            5.0,
+            1.0,
+            Bore {
+                conical: true,
+                radiate: 1,
+                bell: 300.0,
+                corner: 8.0,
+                keep: 0.95,
+                air: 300.0,
+                tongue: 0.6,
+                catch: 0.9,
+                sharp: 2.5,
+            },
+            &TUBA,
+        ),
     ]
 }
 
@@ -37,7 +165,10 @@ struct Line {
 
 impl Line {
     fn new(length: usize) -> Line {
-        Line { samples: vec![0.0; length.next_power_of_two()], at: 0 }
+        Line {
+            samples: vec![0.0; length.next_power_of_two()],
+            at: 0,
+        }
     }
 
     fn write(&mut self, x: f32) {
@@ -51,8 +182,15 @@ impl Line {
         let whole = delay.floor();
         let d = delay - whole;
         let back = |k: f32| self.samples[(self.at + self.samples.len() - k as usize) & mask];
-        let (a, b, c, e) = (back(whole - 1.0), back(whole), back(whole + 1.0), back(whole + 2.0));
-        -a * d * (d - 1.0) * (d - 2.0) / 6.0 + b * (d + 1.0) * (d - 1.0) * (d - 2.0) / 2.0 - c * (d + 1.0) * d * (d - 2.0) / 2.0 + e * (d + 1.0) * d * (d - 1.0) / 6.0
+        let (a, b, c, e) = (
+            back(whole - 1.0),
+            back(whole),
+            back(whole + 1.0),
+            back(whole + 2.0),
+        );
+        -a * d * (d - 1.0) * (d - 2.0) / 6.0 + b * (d + 1.0) * (d - 1.0) * (d - 2.0) / 2.0
+            - c * (d + 1.0) * d * (d - 2.0) / 2.0
+            + e * (d + 1.0) * d * (d - 1.0) / 6.0
     }
 
     fn clear(&mut self) {
@@ -143,7 +281,30 @@ pub(crate) struct Jet {
 
 impl Jet {
     pub(crate) fn new(corner: f32, turbulence: f32, even: f32) -> Jet {
-        Jet { bore: Line::new(4096), jet: Line::new(4096), loss: Loss::default(), drive: DcBlock::default(), out: DcBlock::default(), corner, corner_hz: 0.0, reflection: 0.5, turbulence, even, high_even: even, wander: 0.0, drift: [0.0; 2], catch: 0.0, fall: 0.0, last: 0.0, tuned: 0.0, lift: 0.0, delays: [0.0; 2], from: [0.0; 2], fade: 1.0, rate: DEFAULT_SR as f32 }
+        Jet {
+            bore: Line::new(4096),
+            jet: Line::new(4096),
+            loss: Loss::default(),
+            drive: DcBlock::default(),
+            out: DcBlock::default(),
+            corner,
+            corner_hz: 0.0,
+            reflection: 0.5,
+            turbulence,
+            even,
+            high_even: even,
+            wander: 0.0,
+            drift: [0.0; 2],
+            catch: 0.0,
+            fall: 0.0,
+            last: 0.0,
+            tuned: 0.0,
+            lift: 0.0,
+            delays: [0.0; 2],
+            from: [0.0; 2],
+            fade: 1.0,
+            rate: DEFAULT_SR as f32,
+        }
     }
 }
 
@@ -178,38 +339,60 @@ impl AudioNode for Jet {
         let drift = self.drift[1] * 250.0 * self.wander;
         // A slur moving faster than an octave a second, faster than any vibrato, lets the breath fall, and it comes back over about 20 ms.
         let octave = input[0].max(20.0).log2();
-        let moving = if self.last == 0.0 { 0.0 } else { (((octave - self.last).abs() * self.rate - 1.0) / 2.0).clamp(0.0, 1.0) };
+        let moving = if self.last == 0.0 {
+            0.0
+        } else {
+            (((octave - self.last).abs() * self.rate - 1.0) / 2.0).clamp(0.0, 1.0)
+        };
         self.last = octave;
-        self.fall = if moving > self.fall { moving } else { Loss::pole(8.0, self.rate) * self.fall };
+        self.fall = if moving > self.fall {
+            moving
+        } else {
+            Loss::pole(8.0, self.rate) * self.fall
+        };
         let freq = (input[0] * 2f32.powf(drift * 6.0 / 1200.0)).clamp(20.0, 5000.0);
         let breath = input[1].max(0.0) * (1.0 + 0.035 * drift) * (1.0 - self.catch * self.fall);
         let period = self.rate / freq;
         let w = TAU * freq / self.rate;
         // A bore loses its sound by frequency, at its walls and open end, so a corner in Hz dulls the high notes' upper harmonics, which VSCO 2's flute has 10 dB under a corner at a multiple of the pitch.
-        let corner = if self.corner_hz > 0.0 { self.corner_hz.max(3.0 * freq) } else { self.corner * freq };
+        let corner = if self.corner_hz > 0.0 {
+            self.corner_hz.max(3.0 * freq)
+        } else {
+            self.corner * freq
+        };
         let a = Loss::pole(corner, self.rate);
         let u = self.loss.y;
         self.jet.write(self.drive.tick(u) + self.turbulence * noise);
         // A player rolls the flute in or out to stay in tune, taking back most of the change: the Philharmonia's flute rises 15 cents from mf to ff at A4 and 11 at G5, where the square root alone gives 38.
-        let crossing = if self.tuned == 0.0 { 1.0 } else { (self.tuned / breath.max(1.0e-3)).powf(0.17).clamp(0.5, 2.0) };
+        let crossing = if self.tuned == 0.0 {
+            1.0
+        } else {
+            (self.tuned / breath.max(1.0e-3)).powf(0.17).clamp(0.5, 2.0)
+        };
         // A jump of note fades from the old delays to the new over 4 ms, as a tone hole opens, where switching at once clicks.
-        let delays = [(period - 1.0 - Loss::lag(a, w)).max(2.0), 0.5 * period * crossing];
+        let delays = [
+            (period - 1.0 - Loss::lag(a, w)).max(2.0),
+            0.5 * period * crossing,
+        ];
         if self.delays[0] > 0.0 && (delays[0] - self.delays[0]).abs() > 0.01 * delays[0] {
             (self.from, self.fade) = (self.delays, 0.0);
         }
         self.delays = delays;
         self.fade = (self.fade + 1.0 / (0.004 * self.rate)).min(1.0);
-        let swing = self.fade * self.jet.read(delays[1]) + (1.0 - self.fade) * self.jet.read(self.from[1]);
+        let swing =
+            self.fade * self.jet.read(delays[1]) + (1.0 - self.fade) * self.jet.read(self.from[1]);
         let side = (1.5 * swing).tanh();
         let flow = -breath * side;
         self.bore.write(self.reflection * u + flow);
         // The loop delays by the line, the low-pass, and the sample before the low-pass is read again.
-        let b = self.fade * self.bore.read(delays[0]) + (1.0 - self.fade) * self.bore.read(self.from[0]);
+        let b = self.fade * self.bore.read(delays[0])
+            + (1.0 - self.fade) * self.bore.read(self.from[0]);
         self.loss.tick(b, a);
         // A player blows a higher note harder, and the played Syrinx grows 0.3 dB a semitone up its runs, but harder breath here saturates the jet into a square wave, so the note is only made louder.
         let lift = (freq / 261.6).max(1.0).powf(self.lift);
         // VSCO 2's flute keeps its 2nd harmonic about 23 dB under the fundamental from C6 up, played soft or loud, where lower it grows as it is played louder.
-        let even = self.high_even + (self.even - self.high_even) * (1046.5 / freq).log2().clamp(0.0, 1.0);
+        let even =
+            self.high_even + (self.even - self.high_even) * (1046.5 / freq).log2().clamp(0.0, 1.0);
         [self.out.tick(b + even * b * b) * lift, 0.5 + 0.5 * side].into()
     }
 }
@@ -258,7 +441,34 @@ pub(crate) struct Reed {
 
 impl Reed {
     pub(crate) fn new(conical: bool, corner: f32, keep: f32, radiate: usize, bell: f32) -> Reed {
-        Reed { bore: Line::new(8192), loss: Loss::default(), apex: Line::new(4096), apex_loss: Loss::default(), apex_part: 0.3, out: DcBlock::default(), conical, zeta: 0.4, corner, keep, turbulence: 0.005, radiate, bell, radiated: [[0.0; 2]; 2], delay: 0.0, from: 0.0, short: 1.0, short_from: 1.0, fade: 1.0, tongue_part: 0.0, tongue: -1, tune: 1.0, pulse: 1.0, catch: 0.0, fall: 0.0, rate: DEFAULT_SR as f32 }
+        Reed {
+            bore: Line::new(8192),
+            loss: Loss::default(),
+            apex: Line::new(4096),
+            apex_loss: Loss::default(),
+            apex_part: 0.3,
+            out: DcBlock::default(),
+            conical,
+            zeta: 0.4,
+            corner,
+            keep,
+            turbulence: 0.005,
+            radiate,
+            bell,
+            radiated: [[0.0; 2]; 2],
+            delay: 0.0,
+            from: 0.0,
+            short: 1.0,
+            short_from: 1.0,
+            fade: 1.0,
+            tongue_part: 0.0,
+            tongue: -1,
+            tune: 1.0,
+            pulse: 1.0,
+            catch: 0.0,
+            fall: 0.0,
+            rate: DEFAULT_SR as f32,
+        }
     }
 }
 
@@ -287,22 +497,35 @@ impl AudioNode for Reed {
     fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U1> {
         let freq = (input[0] * self.tune).clamp(20.0, 5000.0);
         self.fall *= Loss::pole(8.0, self.rate);
-        let mouth = input[1].max(0.0) * (1.0 + self.turbulence * input[2]) * (1.0 - self.catch * self.fall);
+        let mouth =
+            input[1].max(0.0) * (1.0 + self.turbulence * input[2]) * (1.0 - self.catch * self.fall);
         let period = self.rate / freq;
         let w = TAU * freq / self.rate;
         let a = Loss::pole(self.corner * freq, self.rate);
         // A cone is played as Dalmont, Gilbert and Kergomard's cylindrical saxophone: the bore beside a tube as long as the missing apex, both open, whose resonances fall on every harmonic of their joint length.
-        let back = if self.conical { -0.5 * (self.loss.y + self.apex_loss.y) } else { -self.loss.y };
+        let back = if self.conical {
+            -0.5 * (self.loss.y + self.apex_loss.y)
+        } else {
+            -self.loss.y
+        };
         // The flow through the reed is ζ (1 - γ + p) √(γ - p), the mouth's pressure γ and the mouthpiece's p as parts of the pressure that shuts the reed, as Dalmont, Gilbert and Kergomard's elementary model has it, https://hal.science/hal-00474987, shut from γ - p = 1 and reversed when p passes γ.
         // The bore takes the flow as p less twice the wave coming back, so the pressure solves p - 2 back = flow(p), which has one root while ζ is under 1; two tubes side by side take twice the flow, so back is their mean.
         let flow = |p: f32| {
             let across = mouth - p;
-            if across >= 1.0 { 0.0 } else { self.zeta * (1.0 - across) * across.abs().sqrt() * across.signum() }
+            if across >= 1.0 {
+                0.0
+            } else {
+                self.zeta * (1.0 - across) * across.abs().sqrt() * across.signum()
+            }
         };
         let (mut low, mut high) = (2.0 * back - 2.0, 2.0 * back + 2.0);
         for _ in 0..30 {
             let mid = 0.5 * (low + high);
-            if mid - 2.0 * back - flow(mid) > 0.0 { high = mid } else { low = mid }
+            if mid - 2.0 * back - flow(mid) > 0.0 {
+                high = mid
+            } else {
+                low = mid
+            }
         }
         let pressure = 0.5 * (low + high);
         // The tongue's release sends a pulse of the mouth's pressure into the bore over a period, where the bore's own noise takes a third of a second to grow into a low note and Iowa's bassoon speaks in 0.07 to 0.16; it rises and falls smoothly, as a step would click once differenced at the bell.
@@ -318,7 +541,11 @@ impl AudioNode for Reed {
         let into = pressure + self.loss.y + pulse;
         self.bore.write(into);
         self.apex.write(pressure + self.apex_loss.y);
-        let delay = if self.conical { period * (1.0 - self.apex_part) } else { period / 2.0 };
+        let delay = if self.conical {
+            period * (1.0 - self.apex_part)
+        } else {
+            period / 2.0
+        };
         let delay = (delay - 1.0 - Loss::lag(a, w)).max(2.0);
         let short = (period * self.apex_part - 1.0 - Loss::lag(a, w)).max(1.0);
         // A jump of note fades from the old delays to the new over 4 ms, as the flute's does, where switching at once clicks.
@@ -330,7 +557,8 @@ impl AudioNode for Reed {
         let b = self.fade * self.bore.read(delay) + (1.0 - self.fade) * self.bore.read(self.from);
         self.loss.tick(b * self.keep, a);
         if self.conical {
-            let b = self.fade * self.apex.read(short) + (1.0 - self.fade) * self.apex.read(self.short_from);
+            let b = self.fade * self.apex.read(short)
+                + (1.0 - self.fade) * self.apex.read(self.short_from);
             self.apex_loss.tick(b * self.keep, a);
         }
         let mut sound = self.out.tick(pressure);
@@ -362,12 +590,23 @@ struct Bands {
 
 /// A value at `vel` between its values at pp, mf and ff, played at vel 0.3, 0.6 and 1.
 fn by_vel(vel: f32, at: [f32; 3]) -> f32 {
-    at[0] + (at[1] - at[0]) * ((vel - 0.3) / 0.3).clamp(0.0, 1.0) + (at[2] - at[1]) * ((vel - 0.6) / 0.4).clamp(0.0, 1.0)
+    at[0]
+        + (at[1] - at[0]) * ((vel - 0.3) / 0.3).clamp(0.0, 1.0)
+        + (at[2] - at[1]) * ((vel - 0.6) / 0.4).clamp(0.0, 1.0)
 }
 
 impl Bands {
     fn new(gains: [[f32; 8]; 3], given: [Option<f32>; 8], levels: [f32; 3]) -> Bands {
-        Bands { gains, given, levels, vel: -1.0, level: 0.0, coefficients: [[0.0; 5]; 8], state: [[0.0; 4]; 8], rate: DEFAULT_SR as f32 }
+        Bands {
+            gains,
+            given,
+            levels,
+            vel: -1.0,
+            level: 0.0,
+            coefficients: [[0.0; 5]; 8],
+            state: [[0.0; 4]; 8],
+            rate: DEFAULT_SR as f32,
+        }
     }
 
     fn tune(&mut self, vel: f32) {
@@ -375,13 +614,28 @@ impl Bands {
         // Below pp the breath fades the sound towards silence.
         self.level = db(by_vel(vel, self.levels) as f64) as f32 * (vel / 0.3).min(1.0);
         for (band, centre) in BANDS.into_iter().enumerate() {
-            let gain = self.given[band].unwrap_or_else(|| by_vel(vel, [self.gains[0][band], self.gains[1][band], self.gains[2][band]]));
+            let gain = self.given[band].unwrap_or_else(|| {
+                by_vel(
+                    vel,
+                    [
+                        self.gains[0][band],
+                        self.gains[1][band],
+                        self.gains[2][band],
+                    ],
+                )
+            });
             // A peaking filter after Robert Bristow-Johnson's "Cookbook formulae for audio EQ biquad filter coefficients".
             let a = 10f32.powf(gain / 40.0);
             let w = TAU * centre / self.rate;
             let alpha = w.sin() / (2.0 * 1.4);
             let a0 = 1.0 + alpha / a;
-            self.coefficients[band] = [(1.0 + alpha * a) / a0, -2.0 * w.cos() / a0, (1.0 - alpha * a) / a0, -2.0 * w.cos() / a0, (1.0 - alpha / a) / a0];
+            self.coefficients[band] = [
+                (1.0 + alpha * a) / a0,
+                -2.0 * w.cos() / a0,
+                (1.0 - alpha * a) / a0,
+                -2.0 * w.cos() / a0,
+                (1.0 - alpha / a) / a0,
+            ];
         }
     }
 }
@@ -407,7 +661,9 @@ impl AudioNode for Bands {
             self.tune(vel);
         }
         let mut x = input[0];
-        for ([b0, b1, b2, a1, a2], [x1, x2, y1, y2]) in self.coefficients.iter().zip(self.state.iter_mut()) {
+        for ([b0, b1, b2, a1, a2], [x1, x2, y1, y2]) in
+            self.coefficients.iter().zip(self.state.iter_mut())
+        {
             let y = *b0 * x + *b1 * *x1 + *b2 * *x2 - *a1 * *y1 - *a2 * *y2;
             (*x2, *x1, *y2, *y1) = (*x1, x, *y1, y);
             x = y;
@@ -442,7 +698,9 @@ fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
         .option(Spec::db("air").range(-90.0, 0.0).doc("The breath's noise in dB, in place of the one fitted for the note's vel; for fitting."))
         .option(Spec::db("level").range(-60.0, 60.0).doc("The whole sound's level in dB, in place of the one fitted for the note's vel; for fitting."));
     for (name, hz) in EQ.iter().zip(BANDS) {
-        let doc = format!("The gain in dB of the band at {hz} Hz, in place of the one fitted for the note's vel; for fitting.");
+        let doc = format!(
+            "The gain in dB of the band at {hz} Hz, in place of the one fitted for the note's vel; for fitting."
+        );
         synth = synth.option(Spec::db(name).range(-60.0, 60.0).doc(&doc));
     }
     synth
@@ -454,7 +712,10 @@ fn pitch(o: &Options, depth: f64, rate: f64) -> Net {
         let grown = ((t - 0.25) / 1.2).clamp(0.0, 1.0);
         (std::f64::consts::TAU * rate * t).sin() * depth * grown * grown
     });
-    (o.follow("note") | swing) >> Net::wrap(Box::new(map(|x: &Frame<f32, U2>| hz(x[0] as f64 + x[1] as f64) as f32)))
+    (o.follow("note") | swing)
+        >> Net::wrap(Box::new(map(|x: &Frame<f32, U2>| {
+            hz(x[0] as f64 + x[1] as f64) as f32
+        })))
 }
 
 /// A vibrato's swing, growing in after the note starts, its depth drifting slowly by about a third either way, as a player's does from note to note, and its rate wandering from cycle to cycle.
@@ -463,10 +724,20 @@ fn drifting_swing(depth: f64, rate: f64, seed: u64) -> Net {
         let grown = ((t - 0.25) / 1.2).clamp(0.0, 1.0);
         depth * grown * grown
     });
-    let rates = white_noise(seed ^ 0x9e) >> Net::wrap(Box::new(lowpass_hz(3.0, 0.5) >> map(move |x: &Frame<f32, U1>| rate as f32 * (1.0 + WANDER * x[0])) >> sine::<f32>()));
+    let rates = white_noise(seed ^ 0x9e)
+        >> Net::wrap(Box::new(
+            lowpass_hz(3.0, 0.5)
+                >> map(move |x: &Frame<f32, U1>| rate as f32 * (1.0 + WANDER * x[0]))
+                >> sine::<f32>(),
+        ));
     let swing = rates * grown;
-    let drift = white_noise(seed) >> Net::wrap(Box::new(lowpass_hz(0.7, 0.5) >> lowpass_hz(0.7, 0.5)));
-    swing * (drift >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| (1.0 + DRIFT * x[0]).max(0.0)))))
+    let drift =
+        white_noise(seed) >> Net::wrap(Box::new(lowpass_hz(0.7, 0.5) >> lowpass_hz(0.7, 0.5)));
+    swing
+        * (drift
+            >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| {
+                (1.0 + DRIFT * x[0]).max(0.0)
+            }))))
 }
 
 /// The scale that makes the twice low-passed noise sway the vibrato's depth by about a third.
@@ -478,10 +749,16 @@ const WANDER: f32 = 12.0;
 /// The breath's pressure following vel, rising from silence over its fitted rise at the vel the note starts at.
 fn breath(o: &Options, fit: &Fit) -> Net {
     let vel = o.number("vel").clamp(0.0, 1.0) as f32;
-    let rise = o.given("rise").unwrap_or_else(|| by_vel(vel, fit.rise) as f64).max(1e-3);
+    let rise = o
+        .given("rise")
+        .unwrap_or_else(|| by_vel(vel, fit.rise) as f64)
+        .max(1e-3);
     let at = fit.breath;
     let given = o.given("breath").map(|b| b as f32);
-    let pressure = o.follow("vel") >> Net::wrap(Box::new(map(move |v: &Frame<f32, U1>| given.unwrap_or_else(|| by_vel(v[0].clamp(0.0, 1.0), at)))));
+    let pressure = o.follow("vel")
+        >> Net::wrap(Box::new(map(move |v: &Frame<f32, U1>| {
+            given.unwrap_or_else(|| by_vel(v[0].clamp(0.0, 1.0), at))
+        })));
     pressure * shape(move |t| 1.0 - (1.0 - (t / rise).min(1.0)).powi(2))
 }
 
@@ -490,28 +767,48 @@ fn voiced(o: &Options, ctx: &mut Context, model: Net, fit: &Fit, centre: f32) ->
     let given = EQ.map(|name| o.given(name).map(|g| g as f32));
     let levels = o.given("level").map_or(fit.levels, |l| [l as f32; 3]);
     let airs = o.given("air").map_or(fit.air, |a| [a as f32; 3]);
-    let air = o.follow("vel") >> Net::wrap(Box::new(map(move |v: &Frame<f32, U1>| db(by_vel(v[0].clamp(0.0, 1.0), airs) as f64) as f32)));
+    let air = o.follow("vel")
+        >> Net::wrap(Box::new(map(move |v: &Frame<f32, U1>| {
+            db(by_vel(v[0].clamp(0.0, 1.0), airs) as f64) as f32
+        })));
     let noise = (white_noise(ctx.seed()) >> Net::wrap(Box::new(bandpass_hz(centre, 1.0)))) * air;
-    (model + noise | o.follow("vel")) >> Net::wrap(Box::new(An(Bands::new(fit.gains, given, levels))))
+    (model + noise | o.follow("vel"))
+        >> Net::wrap(Box::new(An(Bands::new(fit.gains, given, levels))))
 }
 
 /// The flute's air jet as a defsynth plays it, its turbulence drawn from `seed`.
 pub(crate) fn air_jet(pitch: Net, breath: Net, seed: u64, even: f64) -> Net {
-    played_jet(pitch, breath, seed, even, 0.0, 0.0, 0.0, 0.0, 0.0) >> Net::wrap(Box::new(pass() | sink()))
+    played_jet(pitch, breath, seed, even, 0.0, 0.0, 0.0, 0.0, 0.0)
+        >> Net::wrap(Box::new(pass() | sink()))
 }
 
 /// The air jet with the breath's `wander` and its `catch` at each slur, its sound and the side the jet flows to.
-fn played_jet(pitch: Net, breath: Net, seed: u64, even: f64, wander: f64, catch: f64, corner_hz: f64, tuned: f64, lift: f64) -> Net {
+fn played_jet(
+    pitch: Net,
+    breath: Net,
+    seed: u64,
+    even: f64,
+    wander: f64,
+    catch: f64,
+    corner_hz: f64,
+    tuned: f64,
+    lift: f64,
+) -> Net {
     let mut jet = Jet::new(6.0, 0.02, even as f32);
     (jet.corner_hz, jet.high_even) = (corner_hz as f32, FLUTE_EVEN[0].min(even as f32));
-    (jet.wander, jet.catch, jet.tuned, jet.lift) = (wander as f32, catch as f32, tuned as f32, lift as f32);
+    (jet.wander, jet.catch, jet.tuned, jet.lift) =
+        (wander as f32, catch as f32, tuned as f32, lift as f32);
     (pitch | breath | white_noise(seed)) >> Net::wrap(Box::new(An(jet)))
 }
 
 /// The bands and level as a defsynth plays them, following `vel`: `gains` at pp, mf and ff, eight to each, and `levels` at each.
 pub(crate) fn wind_bands(sound: Net, vel: Net, gains: &[f64], levels: &[f64]) -> Net {
     let gain = |d: usize| std::array::from_fn(|band| gains[d * 8 + band] as f32);
-    let bands = Bands::new([gain(0), gain(1), gain(2)], [None; 8], [levels[0] as f32, levels[1] as f32, levels[2] as f32]);
+    let bands = Bands::new(
+        [gain(0), gain(1), gain(2)],
+        [None; 8],
+        [levels[0] as f32, levels[1] as f32, levels[2] as f32],
+    );
     (sound | vel) >> Net::wrap(Box::new(An(bands)))
 }
 
@@ -523,7 +820,13 @@ fn flute_sharp(note: f64) -> f64 {
     4.6 - 0.093 * (note - 69.0)
 }
 
-const FLUTE: Fit = Fit { gains: [[0.0; 8]; 3], levels: [-12.0, -12.0, -12.0], breath: [0.38, 0.45, 0.56], rise: [0.05, 0.05, 0.05], air: [-90.0, -90.0, -90.0] };
+const FLUTE: Fit = Fit {
+    gains: [[0.0; 8]; 3],
+    levels: [-12.0, -12.0, -12.0],
+    breath: [0.38, 0.45, 0.56],
+    rise: [0.05, 0.05, 0.05],
+    air: [-90.0, -90.0, -90.0],
+};
 
 fn flute() -> Synth {
     wind_options("flute", 0.17, "The vibrato's depth, reached as the note holds: a flute's vibrato is in the breath, which swells and eases by 0.6 of it, so 0.17 swings a held note's level 1.6 to 2.3 dB, as a played Syrinx's 2 and under VSCO 2's 2 to 4, and its pitch follows.")
@@ -571,53 +874,143 @@ struct Bore {
 // The breath, its rise and its noise are fitted with mix mx.fit at each dynamic to the University of Iowa's recordings, VSCO 2's for the horn and tuba and VCSL's for the tenor sax, the noise held under -20 dB, where the fit would trade the tone for it, and the horn's pp and tuba's ff breath held at their mf one, where the fit's jumps the pitch.
 // A conical reed starts at its threshold already near full, so its breath stays near there and the level carries the dynamics: each wind's pp and mf under its ff as Iowa's recordings have them, the tenor sax, which Iowa lacks, as the reeds' median, and every ff at -18 dB, as the flute's.
 const fn reed_fit(levels: [f32; 3], breath: [f32; 3], rise: [f32; 3], air: [f32; 3]) -> Fit {
-    Fit { gains: [[0.0; 8]; 3], levels, breath, rise, air }
+    Fit {
+        gains: [[0.0; 8]; 3],
+        levels,
+        breath,
+        rise,
+        air,
+    }
 }
-const CLARINET: Fit = reed_fit([-21.0, -14.3, -11.5], [0.435, 0.5, 0.5], [0.137, 0.158, 0.24], [-18.0, -26.0, -26.0]);
+const CLARINET: Fit = reed_fit(
+    [-21.0, -14.3, -11.5],
+    [0.435, 0.5, 0.5],
+    [0.137, 0.158, 0.24],
+    [-18.0, -26.0, -26.0],
+);
 // The conical winds' bands are fitted too, at each dynamic, as their models alone read 7 to 30 dB from their recordings' between 250 Hz and 4 kHz; their levels keep the loudness they had before.
 const OBOE: Fit = Fit {
-    gains: [[0.0, -9.0, -4.0, -2.0, -6.0, 18.0, -5.0, -9.0], [0.0, 2.0, -6.0, 4.0, 2.0, 22.0, 5.0, 10.0], [0.0, 2.0, -2.0, 4.0, -1.0, 30.0, -1.0, 13.0]],
-    ..reed_fit([-25.0, -28.2, -26.6], [0.409, 0.409, 0.409], [0.053, 0.040, 0.031], [-30.0, -38.0, -34.0])
+    gains: [
+        [0.0, -9.0, -4.0, -2.0, -6.0, 18.0, -5.0, -9.0],
+        [0.0, 2.0, -6.0, 4.0, 2.0, 22.0, 5.0, 10.0],
+        [0.0, 2.0, -2.0, 4.0, -1.0, 30.0, -1.0, 13.0],
+    ],
+    ..reed_fit(
+        [-25.0, -28.2, -26.6],
+        [0.409, 0.409, 0.409],
+        [0.053, 0.040, 0.031],
+        [-30.0, -38.0, -34.0],
+    )
 };
 const BASSOON: Fit = Fit {
-    gains: [[7.0, 2.0, 12.0, 21.0, 6.0, 10.0, 5.0, 7.0], [5.0, -4.0, 4.0, 20.0, 7.0, 15.0, 7.0, 6.0], [3.0, -5.0, 7.0, 17.0, 6.0, 15.0, 12.0, 10.0]],
-    ..reed_fit([-47.0, -33.5, -29.0], [0.463, 0.463, 0.463], [0.054, 0.054, 0.041], [-24.0, -30.0, -34.0])
+    gains: [
+        [7.0, 2.0, 12.0, 21.0, 6.0, 10.0, 5.0, 7.0],
+        [5.0, -4.0, 4.0, 20.0, 7.0, 15.0, 7.0, 6.0],
+        [3.0, -5.0, 7.0, 17.0, 6.0, 15.0, 12.0, 10.0],
+    ],
+    ..reed_fit(
+        [-47.0, -33.5, -29.0],
+        [0.463, 0.463, 0.463],
+        [0.054, 0.054, 0.041],
+        [-24.0, -30.0, -34.0],
+    )
 };
 /// The semitones the tenor sax's vibrato at 1 swings, which measures 10.8 cents deep, as VCSL's tenor saxophone played with vibrato.
 const TENOR_SAX_VIBRATO: f64 = 0.145;
 const TENOR_SAX: Fit = Fit {
-    gains: [[1.0, -6.0, 3.0, 8.0, -2.0, -3.0, -1.0, 6.0], [1.0, -6.0, 3.0, 8.0, -2.0, -3.0, -1.0, 6.0], [1.0, -6.0, 5.0, 8.0, 0.0, 1.0, 3.0, 9.0]],
-    ..reed_fit([-29.8, -19.3, -18.8], [0.44, 0.44, 0.46], [0.015, 0.015, 0.004], [-22.0, -22.0, -26.0])
+    gains: [
+        [1.0, -6.0, 3.0, 8.0, -2.0, -3.0, -1.0, 6.0],
+        [1.0, -6.0, 3.0, 8.0, -2.0, -3.0, -1.0, 6.0],
+        [1.0, -6.0, 5.0, 8.0, 0.0, 1.0, 3.0, 9.0],
+    ],
+    ..reed_fit(
+        [-29.8, -19.3, -18.8],
+        [0.44, 0.44, 0.46],
+        [0.015, 0.015, 0.004],
+        [-22.0, -22.0, -26.0],
+    )
 };
 const TRUMPET: Fit = Fit {
-    gains: [[0.0, 8.0, 7.0, 9.0, 12.0, 31.0, 20.0, 7.0], [0.0, 12.0, 10.0, 13.0, 14.0, 27.0, 24.0, 36.0], [0.0, 9.0, 16.0, 13.0, 11.0, 27.0, 26.0, 40.0]],
-    ..reed_fit([-56.6, -60.1, -62.4], [0.41, 0.48, 0.48], [0.115, 0.174, 0.068], [-20.0, -22.0, -20.0])
+    gains: [
+        [0.0, 8.0, 7.0, 9.0, 12.0, 31.0, 20.0, 7.0],
+        [0.0, 12.0, 10.0, 13.0, 14.0, 27.0, 24.0, 36.0],
+        [0.0, 9.0, 16.0, 13.0, 11.0, 27.0, 26.0, 40.0],
+    ],
+    ..reed_fit(
+        [-56.6, -60.1, -62.4],
+        [0.41, 0.48, 0.48],
+        [0.115, 0.174, 0.068],
+        [-20.0, -22.0, -20.0],
+    )
 };
 const TROMBONE: Fit = Fit {
-    gains: [[7.0, 14.0, 18.0, 16.0, 15.0, 15.0, 6.0, 3.0], [8.0, 20.0, 17.0, 18.0, 17.0, 18.0, 23.0, 23.0], [11.0, 21.0, 16.0, 15.0, 13.0, 11.0, 33.0, 40.0]],
-    ..reed_fit([-65.9, -60.7, -54.9], [0.42, 0.42, 0.433], [0.111, 0.066, 0.026], [-20.0, -20.0, -20.0])
+    gains: [
+        [7.0, 14.0, 18.0, 16.0, 15.0, 15.0, 6.0, 3.0],
+        [8.0, 20.0, 17.0, 18.0, 17.0, 18.0, 23.0, 23.0],
+        [11.0, 21.0, 16.0, 15.0, 13.0, 11.0, 33.0, 40.0],
+    ],
+    ..reed_fit(
+        [-65.9, -60.7, -54.9],
+        [0.42, 0.42, 0.433],
+        [0.111, 0.066, 0.026],
+        [-20.0, -20.0, -20.0],
+    )
 };
 const HORN: Fit = Fit {
-    gains: [[13.0, 20.0, 30.0, 34.0, 23.0, 24.0, 14.0, 12.0], [6.0, 7.0, 24.0, 28.0, 13.0, 11.0, 3.0, 7.0], [6.0, 11.0, 22.0, 30.0, 24.0, 23.0, 18.0, 8.0]],
-    ..reed_fit([-78.2, -54.5, -59.2], [0.463, 0.463, 0.532], [0.057, 0.034, 0.085], [-26.0, -30.0, -26.0])
+    gains: [
+        [13.0, 20.0, 30.0, 34.0, 23.0, 24.0, 14.0, 12.0],
+        [6.0, 7.0, 24.0, 28.0, 13.0, 11.0, 3.0, 7.0],
+        [6.0, 11.0, 22.0, 30.0, 24.0, 23.0, 18.0, 8.0],
+    ],
+    ..reed_fit(
+        [-78.2, -54.5, -59.2],
+        [0.463, 0.463, 0.532],
+        [0.057, 0.034, 0.085],
+        [-26.0, -30.0, -26.0],
+    )
 };
 const TUBA: Fit = Fit {
-    gains: [[19.0, 20.0, 15.0, 27.0, 14.0, 6.0, 6.0, 7.0], [23.0, 15.0, 15.0, 24.0, 19.0, 10.0, 6.0, 5.0], [20.0, 13.0, 15.0, 29.0, 26.0, 28.0, 22.0, 16.0]],
-    ..reed_fit([-67.5, -58.9, -57.2], [0.651, 0.671, 0.731], [0.024, 0.024, 0.023], [-20.0, -20.0, -20.0])
+    gains: [
+        [19.0, 20.0, 15.0, 27.0, 14.0, 6.0, 6.0, 7.0],
+        [23.0, 15.0, 15.0, 24.0, 19.0, 10.0, 6.0, 5.0],
+        [20.0, 13.0, 15.0, 29.0, 26.0, 28.0, 22.0, 16.0],
+    ],
+    ..reed_fit(
+        [-67.5, -58.9, -57.2],
+        [0.651, 0.671, 0.731],
+        [0.024, 0.024, 0.023],
+        [-20.0, -20.0, -20.0],
+    )
 };
 
 /// A reed or brass wind whose vibrato option swings `unit` semitones at 1.
 fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static Fit) -> Synth {
-    let doc = if unit == 1.0 { "The vibrato's depth in semitones, reached as the note holds." } else { "The vibrato's depth, reached as the note holds, where 1 is the depth of the recordings played with vibrato." };
+    let doc = if unit == 1.0 {
+        "The vibrato's depth in semitones, reached as the note holds."
+    } else {
+        "The vibrato's depth, reached as the note holds, where 1 is the depth of the recordings played with vibrato."
+    };
     wind_options(name, 0.0, doc)
-        .option(Spec::float("catch").range(0.0, 1.0).doc("How far the breath falls at a slur, in place of the fitted one; for fitting."))
+        .option(
+            Spec::float("catch").range(0.0, 1.0).doc(
+                "How far the breath falls at a slur, in place of the fitted one; for fitting.",
+            ),
+        )
         .build(move |o, ctx| {
-        let mut reed = Reed::new(bore.conical, bore.corner, bore.keep, bore.radiate, bore.bell);
-        reed.tongue_part = bore.tongue;
-        reed.tune = 2f32.powf(-bore.sharp / 1200.0);
-        reed.catch = o.given("catch").unwrap_or(bore.catch as f64) as f32;
-        let model = (pitch(o, o.number("vibrato") * unit, rate) | breath(o, fit) | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
-        Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
-    })
+            let mut reed = Reed::new(
+                bore.conical,
+                bore.corner,
+                bore.keep,
+                bore.radiate,
+                bore.bell,
+            );
+            reed.tongue_part = bore.tongue;
+            reed.tune = 2f32.powf(-bore.sharp / 1200.0);
+            reed.catch = o.given("catch").unwrap_or(bore.catch as f64) as f32;
+            let model = (pitch(o, o.number("vibrato") * unit, rate)
+                | breath(o, fit)
+                | white_noise(ctx.seed()))
+                >> Net::wrap(Box::new(An(reed)));
+            Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
+        })
 }
-

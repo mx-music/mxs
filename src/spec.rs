@@ -49,7 +49,14 @@ pub struct Spec {
 
 impl Spec {
     pub fn new(name: &str, kind: Kind) -> Self {
-        Spec { name: name.to_string(), kind, default: None, range: None, required: false, doc: String::new() }
+        Spec {
+            name: name.to_string(),
+            kind,
+            default: None,
+            range: None,
+            required: false,
+            doc: String::new(),
+        }
     }
 
     pub fn note(name: &str) -> Self {
@@ -85,7 +92,10 @@ impl Spec {
     }
 
     pub fn name(name: &str, values: &[&str]) -> Self {
-        Self::new(name, Kind::Name(values.iter().map(|v| v.to_string()).collect()))
+        Self::new(
+            name,
+            Kind::Name(values.iter().map(|v| v.to_string()).collect()),
+        )
     }
 
     pub fn default(mut self, value: impl Into<Value>) -> Self {
@@ -111,25 +121,49 @@ impl Spec {
     /// The options of the note's envelope, all in beats: attack, decay to decay_level, hold at sustain_level for sustain, then release, with this synth's own sustain and release.
     pub fn envelope(sustain: f64, release: f64) -> Vec<Spec> {
         vec![
-            Spec::beats("attack").default(0.0).range(0.0, f64::INFINITY).doc("How long the note takes to rise to attack_level."),
-            Spec::beats("decay").default(0.0).range(0.0, f64::INFINITY).doc("How long it then takes to fall to decay_level."),
-            Spec::beats("sustain").default(sustain).range(0.0, f64::INFINITY).doc("How long it then holds, moving to sustain_level."),
-            Spec::beats("release").default(release).range(0.0, f64::INFINITY).doc("How long it then takes to fall silent."),
-            Spec::float("attack_level").default(1.0).range(0.0, f64::INFINITY).doc("The level the attack rises to."),
-            Spec::float("decay_level").default(-1.0).doc("The level the decay falls to; sustain_level when below 0."),
-            Spec::float("sustain_level").default(1.0).range(0.0, f64::INFINITY).doc("The level the note holds at."),
+            Spec::beats("attack")
+                .default(0.0)
+                .range(0.0, f64::INFINITY)
+                .doc("How long the note takes to rise to attack_level."),
+            Spec::beats("decay")
+                .default(0.0)
+                .range(0.0, f64::INFINITY)
+                .doc("How long it then takes to fall to decay_level."),
+            Spec::beats("sustain")
+                .default(sustain)
+                .range(0.0, f64::INFINITY)
+                .doc("How long it then holds, moving to sustain_level."),
+            Spec::beats("release")
+                .default(release)
+                .range(0.0, f64::INFINITY)
+                .doc("How long it then takes to fall silent."),
+            Spec::float("attack_level")
+                .default(1.0)
+                .range(0.0, f64::INFINITY)
+                .doc("The level the attack rises to."),
+            Spec::float("decay_level")
+                .default(-1.0)
+                .doc("The level the decay falls to; sustain_level when below 0."),
+            Spec::float("sustain_level")
+                .default(1.0)
+                .range(0.0, f64::INFINITY)
+                .doc("The level the note holds at."),
         ]
     }
 
     /// The value to play, held to the range, and whether it had to be held; or why the value does not fit.
     pub(crate) fn check(&self, value: &Value) -> Result<(Value, bool), String> {
         match (&self.kind, value) {
-            (Kind::Name(values), Value::Name(name)) if values.contains(name) => Ok((value.clone(), false)),
+            (Kind::Name(values), Value::Name(name)) if values.contains(name) => {
+                Ok((value.clone(), false))
+            }
             (Kind::Name(values), _) => Err(format!("takes one of {}", values.join(", "))),
             (_, Value::Name(_)) => Err("takes a number".to_string()),
             (_, Value::Number(x)) if !x.is_finite() => Err("takes a finite number".to_string()),
             (_, Value::Number(x)) => match self.range {
-                Some((low, high)) if *x < low || *x > high => Ok((Value::Number(x.clamp(low, high)), true)),
+                Some((low, high)) if *x < low || *x > high => {
+                    Ok((Value::Number(x.clamp(low, high)), true))
+                }
                 _ => Ok((value.clone(), false)),
             },
         }

@@ -2,7 +2,9 @@
 
 use crate::clock::Timing;
 use crate::device::{self, Format, Range, Settings};
-use crate::mixer::{CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices};
+use crate::mixer::{
+    CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices,
+};
 use crate::options::{Context, Control, Options};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Spec, Value};
@@ -36,13 +38,32 @@ pub enum Target {
 #[derive(Clone, Debug)]
 pub enum Event {
     /// A note of a synth; `id` lets a later change reach it, and `chain` is the effect chain it plays into.
-    Note { id: Option<u64>, synth: String, options: Vec<(String, Value)>, chain: Option<u64> },
+    Note {
+        id: Option<u64>,
+        synth: String,
+        options: Vec<(String, Value)>,
+        chain: Option<u64>,
+    },
     /// A sample `load_sample` returned, with the sample player's options.
-    Sample { id: Option<u64>, sample: u64, options: Vec<(String, Value)>, chain: Option<u64> },
+    Sample {
+        id: Option<u64>,
+        sample: u64,
+        options: Vec<(String, Value)>,
+        chain: Option<u64>,
+    },
     /// Channels of the sound card's input, from `input`, numbered from 0, with amp and pan, playing until stopped.
-    Input { id: Option<u64>, input: usize, channels: usize, options: Vec<(String, Value)>, chain: Option<u64> },
+    Input {
+        id: Option<u64>,
+        input: usize,
+        channels: usize,
+        options: Vec<(String, Value)>,
+        chain: Option<u64>,
+    },
     /// New values for options of sounds already playing, each gliding over its `_slide` option when given.
-    Set { target: Target, options: Vec<(String, f64)> },
+    Set {
+        target: Target,
+        options: Vec<(String, f64)>,
+    },
     /// Ends the sounds started with these ids, fading them over 10 ms.
     Stop { ids: Vec<u64> },
     /// Lets the sounds started with these ids go, as keys let up: a note shaped by its envelope falls silent over its release, and any other sound fades over 10 ms.
@@ -60,8 +81,16 @@ pub enum Source {
 
 impl Event {
     pub fn note(id: Option<u64>, synth: &str, options: &[(&str, f64)]) -> Event {
-        let options = options.iter().map(|(k, v)| (k.to_string(), Value::Number(*v))).collect();
-        Event::Note { id, synth: synth.to_string(), options, chain: None }
+        let options = options
+            .iter()
+            .map(|(k, v)| (k.to_string(), Value::Number(*v)))
+            .collect();
+        Event::Note {
+            id,
+            synth: synth.to_string(),
+            options,
+            chain: None,
+        }
     }
 }
 
@@ -71,10 +100,23 @@ pub enum Error {
     UnknownEffect(String),
     UnknownSample(u64),
     UnknownChain(u64),
-    UnknownOption { owner: String, option: String },
-    BadValue { owner: String, option: String, reason: String },
-    MissingOption { owner: String, option: String },
-    BadSound { owner: String, outputs: usize },
+    UnknownOption {
+        owner: String,
+        option: String,
+    },
+    BadValue {
+        owner: String,
+        option: String,
+        reason: String,
+    },
+    MissingOption {
+        owner: String,
+        option: String,
+    },
+    BadSound {
+        owner: String,
+        outputs: usize,
+    },
     Sample(String),
     Device(String),
     UnknownInput(usize),
@@ -94,9 +136,17 @@ impl std::fmt::Display for Error {
             Error::UnknownSample(id) => write!(f, "no sample loaded as {id}"),
             Error::UnknownChain(id) => write!(f, "no effect chain {id}"),
             Error::UnknownOption { owner, option } => write!(f, "{owner} has no option {option}"),
-            Error::BadValue { owner, option, reason } => write!(f, "{owner}'s option {option} {reason}"),
-            Error::MissingOption { owner, option } => write!(f, "{owner} needs the option {option}"),
-            Error::BadSound { owner, outputs } => write!(f, "{owner} made a sound of {outputs} channels, not 1 or 2"),
+            Error::BadValue {
+                owner,
+                option,
+                reason,
+            } => write!(f, "{owner}'s option {option} {reason}"),
+            Error::MissingOption { owner, option } => {
+                write!(f, "{owner} needs the option {option}")
+            }
+            Error::BadSound { owner, outputs } => {
+                write!(f, "{owner} made a sound of {outputs} channels, not 1 or 2")
+            }
             Error::Sample(reason) => write!(f, "{reason}"),
             Error::Device(reason) => write!(f, "{reason}"),
             Error::UnknownInput(input) => {
@@ -107,8 +157,14 @@ impl std::fmt::Display for Error {
             Error::Busy => write!(f, "the engine has more events waiting than it can take"),
             Error::Offline => write!(f, "this engine renders offline and has no output"),
             Error::Live => write!(f, "this engine plays live and cannot render"),
-            Error::Failed => write!(f, "the engine failed while filling audio, and has to be started again"),
-            Error::DeviceLost(name) => write!(f, "the output device {name} went away, and the engine has to be started again"),
+            Error::Failed => write!(
+                f,
+                "the engine failed while filling audio, and has to be started again"
+            ),
+            Error::DeviceLost(name) => write!(
+                f,
+                "the output device {name} went away, and the engine has to be started again"
+            ),
         }
     }
 }
@@ -179,7 +235,15 @@ impl Engine {
         let clock = Arc::new(AtomicU64::new(0));
         let voices = Voices::new(VOICES);
         let mixer = Mixer::new(receiving, returning, clock.clone(), voices.clone(), None);
-        Engine::with(rate, commands, garbage, clock, voices, Arc::new(AtomicBool::new(false)), Output::Offline(Box::new(mixer)))
+        Engine::with(
+            rate,
+            commands,
+            garbage,
+            clock,
+            voices,
+            Arc::new(AtomicBool::new(false)),
+            Output::Offline(Box::new(mixer)),
+        )
     }
 
     /// An offline engine whose input is `channels` fed through the producer returned, for tests of live input.
@@ -190,9 +254,23 @@ impl Engine {
         let (feed, frames) = rtrb::RingBuffer::new(CAPACITY * channels);
         let clock = Arc::new(AtomicU64::new(0));
         let voices = Voices::new(VOICES);
-        let mixer = Mixer::new(receiving, returning, clock.clone(), voices.clone(), Some(Input { frames, channels }));
+        let mixer = Mixer::new(
+            receiving,
+            returning,
+            clock.clone(),
+            voices.clone(),
+            Some(Input { frames, channels }),
+        );
         let output = Output::Offline(Box::new(mixer));
-        let mut engine = Engine::with(rate, commands, garbage, clock, voices, Arc::new(AtomicBool::new(false)), output);
+        let mut engine = Engine::with(
+            rate,
+            commands,
+            garbage,
+            clock,
+            voices,
+            Arc::new(AtomicBool::new(false)),
+            output,
+        );
         engine.inputs = channels;
         (engine, feed)
     }
@@ -204,7 +282,10 @@ impl Engine {
 
     /// An engine that plays through the default output device, and reads the default input device at the same rate.
     pub fn live_with_input() -> Result<Engine, Error> {
-        Engine::live_with(&Settings { with_input: true, ..Settings::default() })
+        Engine::live_with(&Settings {
+            with_input: true,
+            ..Settings::default()
+        })
     }
 
     /// An engine that plays as `settings` ask, on the default output device at its own rate for what they leave out.
@@ -223,18 +304,33 @@ impl Engine {
         let voices = Voices::new(VOICES);
         let limiting = voices.clone();
         // cpal's streams cannot move between threads on every platform, so one thread owns them until the engine is dropped.
-        std::thread::spawn(move || match open(receiving, returning, mixing, limiting, failing, losing, &settings) {
-            Ok((streams, opened)) => {
-                let _ = ready.send(Ok(opened));
-                let _ = stopped.recv();
-                drop(streams);
-            }
-            Err(reason) => {
-                let _ = ready.send(Err(reason));
+        std::thread::spawn(move || {
+            match open(
+                receiving, returning, mixing, limiting, failing, losing, &settings,
+            ) {
+                Ok((streams, opened)) => {
+                    let _ = ready.send(Ok(opened));
+                    let _ = stopped.recv();
+                    drop(streams);
+                }
+                Err(reason) => {
+                    let _ = ready.send(Err(reason));
+                }
             }
         });
-        let opened = started.recv().map_err(|e| Error::Device(e.to_string()))?.map_err(Error::Device)?;
-        let mut engine = Engine::with(opened.rate, commands, garbage, clock, voices, failed, Output::Live { stop });
+        let opened = started
+            .recv()
+            .map_err(|e| Error::Device(e.to_string()))?
+            .map_err(Error::Device)?;
+        let mut engine = Engine::with(
+            opened.rate,
+            commands,
+            garbage,
+            clock,
+            voices,
+            failed,
+            Output::Live { stop },
+        );
         engine.inputs = opened.inputs;
         engine.lost = lost;
         engine.device = opened.name;
@@ -298,7 +394,10 @@ impl Engine {
     /// The engine's seconds now, and the system time at which it renders them; a live engine knows it from its first buffer on, an offline one never.
     pub fn clock(&self) -> (f64, Option<SystemTime>) {
         let now = self.now();
-        let system = self.timing().and_then(|t| t.system(now)).map(|s| SystemTime::UNIX_EPOCH + Duration::from_secs_f64(s));
+        let system = self
+            .timing()
+            .and_then(|t| t.system(now))
+            .map(|s| SystemTime::UNIX_EPOCH + Duration::from_secs_f64(s));
         (now, system)
     }
 
@@ -309,7 +408,10 @@ impl Engine {
 
     /// The engine's seconds at which it renders the system time `at`, however far the two clocks have drifted apart; a live engine knows it, an offline one does not.
     pub fn seconds_at(&self, at: SystemTime) -> Option<f64> {
-        let system = at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+        let system = at
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
         self.timing().and_then(|t| t.engine(system))
     }
 
@@ -323,21 +425,42 @@ impl Engine {
     }
 
     fn timing(&self) -> Option<Timing> {
-        self.timing.as_ref().map(|t| t.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        self.timing
+            .as_ref()
+            .map(|t| t.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
     /// Adds a synth, replacing one of the same name.
     pub fn register(&mut self, synth: Synth) {
         let owner: Arc<str> = Arc::from(synth.name.as_str());
         let specs: Vec<Spec> = synth.specs.iter().cloned().chain(placing_specs()).collect();
-        self.synths.insert(synth.name.clone(), Registered { item: synth, owner, specs: specs.into() });
+        self.synths.insert(
+            synth.name.clone(),
+            Registered {
+                item: synth,
+                owner,
+                specs: specs.into(),
+            },
+        );
     }
 
     /// Adds an effect, replacing one of the same name.
     pub fn register_effect(&mut self, effect: Effect) {
         let owner: Arc<str> = Arc::from(effect.name.as_str());
-        let specs: Vec<Spec> = effect.specs.iter().cloned().chain(blending_specs()).collect();
-        self.effects.insert(effect.name.clone(), Registered { item: effect, owner, specs: specs.into() });
+        let specs: Vec<Spec> = effect
+            .specs
+            .iter()
+            .cloned()
+            .chain(blending_specs())
+            .collect();
+        self.effects.insert(
+            effect.name.clone(),
+            Registered {
+                item: effect,
+                owner,
+                specs: specs.into(),
+            },
+        );
     }
 
     pub fn synths(&self) -> impl Iterator<Item = &Synth> {
@@ -381,15 +504,27 @@ impl Engine {
         let late = self.voices.late.swap(0, Ordering::Relaxed);
         let most = self.voices.most_late.swap(0, Ordering::Relaxed);
         if late > 0 {
-            let events = if late == 1 { "event arrived" } else { "events arrived" };
+            let events = if late == 1 {
+                "event arrived"
+            } else {
+                "events arrived"
+            };
             let ms = most as f64 / self.rate * 1000.0;
-            self.warnings.push(format!("{late} {events} after their time, by up to {ms:.1} ms, and played at once"));
+            self.warnings.push(format!(
+                "{late} {events} after their time, by up to {ms:.1} ms, and played at once"
+            ));
         }
         let stolen = self.voices.stolen.swap(0, Ordering::Relaxed);
         if stolen > 0 {
             let limit = self.voices.limit.load(Ordering::Relaxed);
-            let notes = if stolen == 1 { "note was" } else { "notes were" };
-            self.warnings.push(format!("{stolen} {notes} stolen to keep to {limit} at once"));
+            let notes = if stolen == 1 {
+                "note was"
+            } else {
+                "notes were"
+            };
+            self.warnings.push(format!(
+                "{stolen} {notes} stolen to keep to {limit} at once"
+            ));
         }
         std::mem::take(&mut self.warnings)
     }
@@ -400,25 +535,36 @@ impl Engine {
     }
 
     /// Starts an effect chain of `effects`, each a name and its options, in order, and returns the chain notes name to play into.
-    pub fn start_effects(&mut self, effects: &[(String, Vec<(String, Value)>)]) -> Result<u64, Error> {
+    pub fn start_effects(
+        &mut self,
+        effects: &[(String, Vec<(String, Value)>)],
+    ) -> Result<u64, Error> {
         self.check_running()?;
         let mut unit: Net = Net::wrap(Box::new(multipass::<U2>()));
         let mut controls = Vec::new();
         let mut tail = 0.0;
         for (name, given) in effects {
-            let registered = self.effects.get(name).ok_or_else(|| Error::UnknownEffect(name.clone()))?;
+            let registered = self
+                .effects
+                .get(name)
+                .ok_or_else(|| Error::UnknownEffect(name.clone()))?;
             let (owner, specs) = (registered.owner.clone(), registered.specs.clone());
-            let (build, effect_tail) = (registered.item.build.clone(), registered.item.tail.clone());
+            let (build, effect_tail) =
+                (registered.item.build.clone(), registered.item.tail.clone());
             let values = self.check(&owner, &specs, given)?;
             let options = Options::new(owner.clone(), specs, values);
             let wet = build(&options, &mut Context::new(owner.clone()));
             if wet.inputs() != 2 || wet.outputs() != 2 {
-                return Err(Error::BadSound { owner: owner.to_string(), outputs: wet.outputs() });
+                return Err(Error::BadSound {
+                    owner: owner.to_string(),
+                    outputs: wet.outputs(),
+                });
             }
             let pre = options.follow("pre_amp") >> Net::wrap(Box::new(split::<U2>()));
             let wet = (Net::wrap(Box::new(multipass::<U2>())) * pre) >> wet;
-            let blended =
-                (Net::wrap(Box::new(multipass::<U2>())) ^ wet) | options.follow("mix") | options.follow("amp");
+            let blended = (Net::wrap(Box::new(multipass::<U2>())) ^ wet)
+                | options.follow("mix")
+                | options.follow("amp");
             unit = unit >> (blended >> Net::wrap(Box::new(An(Blend))));
             controls.push(options.take_controls());
             tail += effect_tail(&options);
@@ -427,7 +573,13 @@ impl Engine {
         unit.allocate();
         self.next += 1;
         let key = self.next;
-        let chain = Chain { key, unit: Box::new(unit), input: BufferVec::new(2), stop: None, tail: self.frames(tail) };
+        let chain = Chain {
+            key,
+            unit: Box::new(unit),
+            input: BufferVec::new(2),
+            stop: None,
+            tail: self.frames(tail),
+        };
         self.send(Command::StartChain(Box::new(chain)))?;
         self.chains.insert(key, controls);
         Ok(key)
@@ -438,7 +590,10 @@ impl Engine {
         if !self.chains.contains_key(&chain) {
             return Err(Error::UnknownChain(chain));
         }
-        self.send(Command::StopChain { key: chain, at: self.frames(at) })
+        self.send(Command::StopChain {
+            key: chain,
+            at: self.frames(at),
+        })
     }
 
     /// Records `source` to a stereo 24-bit WAV file at `path` from `at` seconds, apart from the main output, until `stop_recording`.
@@ -474,7 +629,9 @@ impl Engine {
 
     /// Stops recording the output and closes its file, with what was recorded up to now.
     pub fn stop_recording_output(&mut self) -> Result<(), Error> {
-        let Some(recording) = self.output_recording.take() else { return Ok(()) };
+        let Some(recording) = self.output_recording.take() else {
+            return Ok(());
+        };
         let sent = self.send(Command::StopRecordingOutput);
         self.finish(recording, sent)
     }
@@ -482,32 +639,61 @@ impl Engine {
     /// Whether any note or sample started is still sounding; live input does not count.
     pub fn sounding(&self) -> bool {
         let now = self.now();
-        self.sounds.values().any(|sound| sound.start <= now && now < sound.end && sound.end.is_finite())
+        self.sounds
+            .values()
+            .any(|sound| sound.start <= now && now < sound.end && sound.end.is_finite())
     }
 
     /// A WAV file at `path` and the thread that writes it, fed by the recorder returned.
-    fn recorder(&self, path: &Path, start: u64, float: bool) -> Result<(Recorder, Recording), Error> {
-        let (bits, format) = if float { (32, hound::SampleFormat::Float) } else { (24, hound::SampleFormat::Int) };
-        let spec = hound::WavSpec { channels: 2, sample_rate: self.rate as u32, bits_per_sample: bits, sample_format: format };
+    fn recorder(
+        &self,
+        path: &Path,
+        start: u64,
+        float: bool,
+    ) -> Result<(Recorder, Recording), Error> {
+        let (bits, format) = if float {
+            (32, hound::SampleFormat::Float)
+        } else {
+            (24, hound::SampleFormat::Int)
+        };
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: self.rate as u32,
+            bits_per_sample: bits,
+            sample_format: format,
+        };
         let shown = path.display();
-        let wav = hound::WavWriter::create(path, spec).map_err(|e| Error::Record(format!("cannot write {shown}: {e}")))?;
+        let wav = hound::WavWriter::create(path, spec)
+            .map_err(|e| Error::Record(format!("cannot write {shown}: {e}")))?;
         // Two seconds of stereo frames, which the writer empties every 10 ms.
         let (out, frames) = rtrb::RingBuffer::new(4 * self.rate as usize);
         let giving_up = Arc::new(AtomicBool::new(false));
         let giving = giving_up.clone();
         let rate = self.rate;
         let writer = std::thread::spawn(move || write_wav(wav, frames, giving, float, rate));
-        Ok((Recorder { start, out }, Recording { source: None, giving_up, writer }))
+        Ok((
+            Recorder { start, out },
+            Recording {
+                source: None,
+                giving_up,
+                writer,
+            },
+        ))
     }
 
     /// Stops the recording of an input and closes its file, with what was recorded up to now.
     pub fn stop_recording(&mut self) -> Result<(), Error> {
-        let Some(recording) = self.recording.take() else { return Ok(()) };
+        let Some(recording) = self.recording.take() else {
+            return Ok(());
+        };
         let now = self.clock.load(Ordering::Acquire);
         let mut sent = Ok(());
         if let Some(source) = recording.source {
             self.sounds.remove(&source);
-            sent = self.send(Command::Stop { key: source, at: now });
+            sent = self.send(Command::Stop {
+                key: source,
+                at: now,
+            });
         }
         let sent = sent.and_then(|()| self.send(Command::StopRecording));
         self.finish(recording, sent)
@@ -544,10 +730,21 @@ impl Engine {
         let mut sounds = Vec::new();
         for (at, event) in events {
             match event {
-                Event::Note { id, synth, options, chain } => {
-                    let registered = self.synths.get(synth).ok_or_else(|| Error::UnknownSynth(synth.clone()))?;
-                    let (owner, specs, build) =
-                        (registered.owner.clone(), registered.specs.clone(), registered.item.build.clone());
+                Event::Note {
+                    id,
+                    synth,
+                    options,
+                    chain,
+                } => {
+                    let registered = self
+                        .synths
+                        .get(synth)
+                        .ok_or_else(|| Error::UnknownSynth(synth.clone()))?;
+                    let (owner, specs, build) = (
+                        registered.owner.clone(),
+                        registered.specs.clone(),
+                        registered.item.build.clone(),
+                    );
                     let values = self.check(&owner, &specs, options)?;
                     let options = Options::new(owner.clone(), specs, values);
                     let note = build(&options, &mut Context::new(owner.clone()));
@@ -556,13 +753,24 @@ impl Engine {
                     commands.push(Command::Start(voice));
                     sounds.push((*id, sound));
                 }
-                Event::Sample { id, sample, options, chain } => {
+                Event::Sample {
+                    id,
+                    sample,
+                    options,
+                    chain,
+                } => {
                     let out = chain.map_or(Out::Main, Out::Chain);
                     let (voice, sound) = self.sample_voice(*sample, options, *at, out)?;
                     commands.push(Command::Start(voice));
                     sounds.push((*id, sound));
                 }
-                Event::Input { id, input, channels, options, chain } => {
+                Event::Input {
+                    id,
+                    input,
+                    channels,
+                    options,
+                    chain,
+                } => {
                     let out = chain.map_or(Out::Main, Out::Chain);
                     let (voice, sound) = self.input_voice(*input, *channels, options, *at, out)?;
                     commands.push(Command::Start(voice));
@@ -591,12 +799,22 @@ impl Engine {
                         if let Some(sound) = self.sounds.get_mut(key) {
                             sound.end = sound.end.min(at.max(sound.start) + END_FADE);
                         }
-                        commands.push(Command::Stop { key: *key, at: self.frames(at) });
+                        commands.push(Command::Stop {
+                            key: *key,
+                            at: self.frames(at),
+                        });
                     }
                 }
                 Event::Release { ids } => {
-                    for key in ids.iter().filter_map(|id| self.ids.get(id)).copied().collect::<Vec<_>>() {
-                        let Some(sound) = self.sounds.get_mut(&key) else { continue };
+                    for key in ids
+                        .iter()
+                        .filter_map(|id| self.ids.get(id))
+                        .copied()
+                        .collect::<Vec<_>>()
+                    {
+                        let Some(sound) = self.sounds.get_mut(&key) else {
+                            continue;
+                        };
                         let at = at.max(sound.start);
                         let (stop, gate) = match &sound.release {
                             Some((gate, seconds)) => (at + seconds, Some(gate.clone())),
@@ -604,10 +822,21 @@ impl Engine {
                         };
                         sound.end = sound.end.min(stop + END_FADE);
                         if let Some(gate) = gate {
-                            let control = Control { target: gate, slide: shared(0.0) };
-                            commands.push(Command::Change(Box::new(Change { at: self.frames(at), control, value: Some(0.0), slide: None })));
+                            let control = Control {
+                                target: gate,
+                                slide: shared(0.0),
+                            };
+                            commands.push(Command::Change(Box::new(Change {
+                                at: self.frames(at),
+                                control,
+                                value: Some(0.0),
+                                slide: None,
+                            })));
                         }
-                        commands.push(Command::Stop { key, at: self.frames(stop) });
+                        commands.push(Command::Stop {
+                            key,
+                            at: self.frames(stop),
+                        });
                     }
                 }
                 _ => {}
@@ -652,7 +881,9 @@ impl Engine {
     /// The voices of the notes played so far on an offline engine, taken out of its mixer, for measuring them alone.
     #[cfg(test)]
     pub(crate) fn take_voices(&mut self) -> Vec<Box<Voice>> {
-        let Output::Offline(mixer) = &mut self.output else { panic!("only an offline engine's voices can be taken") };
+        let Output::Offline(mixer) = &mut self.output else {
+            panic!("only an offline engine's voices can be taken")
+        };
         mixer.take_voices()
     }
 
@@ -699,11 +930,18 @@ impl Engine {
     }
 
     /// The values to play: each given value checked against its declaration and held to its range.
-    fn check(&mut self, owner: &str, specs: &[Spec], given: &[(String, Value)]) -> Result<HashMap<String, Value>, Error> {
+    fn check(
+        &mut self,
+        owner: &str,
+        specs: &[Spec],
+        given: &[(String, Value)],
+    ) -> Result<HashMap<String, Value>, Error> {
         let mut values = HashMap::new();
         for (name, value) in given {
             let spec = specs.iter().find(|s| &s.name == name);
-            let slide = name.strip_suffix("_slide").filter(|base| specs.iter().any(|s| s.name == *base));
+            let slide = name
+                .strip_suffix("_slide")
+                .filter(|base| specs.iter().any(|s| s.name == *base));
             let (value, held) = match (spec, slide) {
                 (Some(spec), _) => spec.check(value),
                 (None, Some(_)) => match value {
@@ -711,19 +949,34 @@ impl Engine {
                     _ => Err("takes seconds from 0 up".to_string()),
                 },
                 (None, None) => {
-                    return Err(Error::UnknownOption { owner: owner.to_string(), option: name.clone() });
+                    return Err(Error::UnknownOption {
+                        owner: owner.to_string(),
+                        option: name.clone(),
+                    });
                 }
             }
-            .map_err(|reason| Error::BadValue { owner: owner.to_string(), option: name.clone(), reason })?;
+            .map_err(|reason| Error::BadValue {
+                owner: owner.to_string(),
+                option: name.clone(),
+                reason,
+            })?;
             if held && self.warned.insert((owner.to_string(), name.clone())) {
                 let range = spec.and_then(|s| s.range).unwrap_or((0.0, 0.0));
                 let (low, high) = range;
-                self.warnings.push(format!("{owner}'s option {name} was held to its range, {low} to {high}"));
+                self.warnings.push(format!(
+                    "{owner}'s option {name} was held to its range, {low} to {high}"
+                ));
             }
             values.insert(name.clone(), value);
         }
-        if let Some(missing) = specs.iter().find(|s| s.required && !values.contains_key(&s.name)) {
-            return Err(Error::MissingOption { owner: owner.to_string(), option: missing.name.clone() });
+        if let Some(missing) = specs
+            .iter()
+            .find(|s| s.required && !values.contains_key(&s.name))
+        {
+            return Err(Error::MissingOption {
+                owner: owner.to_string(),
+                option: missing.name.clone(),
+            });
         }
         Ok(values)
     }
@@ -735,7 +988,11 @@ impl Engine {
         at: f64,
         out: Out,
     ) -> Result<(Box<Voice>, Sound), Error> {
-        let data = self.samples.get(&sample).ok_or(Error::UnknownSample(sample))?.clone();
+        let data = self
+            .samples
+            .get(&sample)
+            .ok_or(Error::UnknownSample(sample))?
+            .clone();
         let (owner, specs) = self.sampler.clone();
         let values = self.check(&owner, &specs, given)?;
         let options = Options::new(owner.clone(), specs, values);
@@ -781,7 +1038,12 @@ impl Engine {
         let mut unit = match note.sound.outputs() {
             1 => (note.sound | placing) >> Net::wrap(Box::new(An(PanMono))),
             2 => (note.sound | placing) >> Net::wrap(Box::new(An(Balance))),
-            outputs => return Err(Error::BadSound { owner: owner.to_string(), outputs }),
+            outputs => {
+                return Err(Error::BadSound {
+                    owner: owner.to_string(),
+                    outputs,
+                });
+            }
         };
         unit.set_sample_rate(self.rate);
         unit.allocate();
@@ -792,12 +1054,30 @@ impl Engine {
         let late = now.saturating_sub(self.frames(at));
         let end = start.saturating_add(Ord::max(self.frames(note.end), 1));
         let fade = Ord::max(self.frames(END_FADE), 1);
-        let voice = Voice { key, out, input, unit: Box::new(unit), start, late, end, fade, level: 0.0, stolen: false };
+        let voice = Voice {
+            key,
+            out,
+            input,
+            unit: Box::new(unit),
+            start,
+            late,
+            end,
+            fade,
+            level: 0.0,
+            stolen: false,
+        };
         let chain = match out {
             Out::Chain(key) => Some(key),
             _ => None,
         };
-        let sound = Sound { key, chain, start: at, end: at + note.end, controls: options.take_controls(), release };
+        let sound = Sound {
+            key,
+            chain,
+            start: at,
+            end: at + note.end,
+            controls: options.take_controls(),
+            release,
+        };
         Ok((Box::new(voice), sound))
     }
 
@@ -815,7 +1095,12 @@ impl Engine {
                 .filter(|s| s.chain == Some(*chain) && s.start <= at && at < s.end)
                 .map(|s| &s.controls)
                 .collect(),
-            Target::Effect(chain, index) => self.chains.get(chain).and_then(|c| c.get(*index)).into_iter().collect(),
+            Target::Effect(chain, index) => self
+                .chains
+                .get(chain)
+                .and_then(|c| c.get(*index))
+                .into_iter()
+                .collect(),
         };
         let mut changes = Vec::new();
         let mut by_option: HashMap<&str, (Option<f32>, Option<f32>)> = HashMap::new();
@@ -828,7 +1113,12 @@ impl Engine {
         for controls in controls {
             for (name, (value, slide)) in &by_option {
                 if let Some(control) = controls.get(*name) {
-                    changes.push(Change { at: self.frames(at), control: control.clone(), value: *value, slide: *slide });
+                    changes.push(Change {
+                        at: self.frames(at),
+                        control: control.clone(),
+                        value: *value,
+                        slide: *slide,
+                    });
                 }
             }
         }
@@ -897,21 +1187,39 @@ fn open(
     let name = device::name_of(&device);
     let rate = match settings.rate {
         Some(rate) => rate,
-        None => device.default_output_config().map_err(|e| e.to_string())?.sample_rate(),
+        None => device
+            .default_output_config()
+            .map_err(|e| e.to_string())?
+            .sample_rate(),
     };
-    let ranges: Vec<Range> = device.supported_output_configs().map_err(|e| e.to_string())?.map(Range::from).collect();
+    let ranges: Vec<Range> = device
+        .supported_output_configs()
+        .map_err(|e| e.to_string())?
+        .map(Range::from)
+        .collect();
     let chosen = device::choose(&name, &ranges, rate, settings.buffer)?;
-    let (input_stream, input) =
-        if settings.with_input { open_input(&host, settings.input_device.as_deref(), chosen.rate)? } else { (None, None) };
+    let (input_stream, input) = if settings.with_input {
+        open_input(&host, settings.input_device.as_deref(), chosen.rate)?
+    } else {
+        (None, None)
+    };
     let inputs = input.as_ref().map_or(0, |i| i.channels);
     let frames = clock.clone();
     let mixer = Mixer::new(commands, garbage, clock, voices, input);
     let timing = Arc::new(Mutex::new(Timing::new(chosen.rate as f64)));
-    let live = Live { mixer, failed, lost, frames, timing: timing.clone() };
+    let live = Live {
+        mixer,
+        failed,
+        lost,
+        frames,
+        timing: timing.clone(),
+    };
     let config = cpal::StreamConfig {
         channels: chosen.channels,
         sample_rate: chosen.rate,
-        buffer_size: chosen.buffer.map_or(cpal::BufferSize::Default, cpal::BufferSize::Fixed),
+        buffer_size: chosen
+            .buffer
+            .map_or(cpal::BufferSize::Default, cpal::BufferSize::Fixed),
     };
     let stream = match chosen.format {
         Format::F32 => output_stream::<f32>(&device, config, live),
@@ -920,13 +1228,28 @@ fn open(
     }?;
     stream.play().map_err(|e| e.to_string())?;
     let waiting = Instant::now();
-    while timing.lock().unwrap_or_else(|e| e.into_inner()).system(0.0).is_none() {
+    while timing
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .system(0.0)
+        .is_none()
+    {
         if waiting.elapsed() > Duration::from_secs(2) {
-            return Err(format!("{name} started but asked for no audio within 2 seconds"));
+            return Err(format!(
+                "{name} started but asked for no audio within 2 seconds"
+            ));
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    Ok(((input_stream, stream), Opened { rate: chosen.rate as f64, inputs, name, timing }))
+    Ok((
+        (input_stream, stream),
+        Opened {
+            rate: chosen.rate as f64,
+            inputs,
+            name,
+            timing,
+        },
+    ))
 }
 
 /// What a live engine learns once its device is playing.
@@ -946,11 +1269,21 @@ struct Live {
     timing: Arc<Mutex<Timing>>,
 }
 
-fn output_stream<T>(device: &cpal::Device, config: cpal::StreamConfig, live: Live) -> Result<cpal::Stream, String>
+fn output_stream<T>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    live: Live,
+) -> Result<cpal::Stream, String>
 where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {
-    let Live { mut mixer, failed, lost, frames, timing } = live;
+    let Live {
+        mut mixer,
+        failed,
+        lost,
+        frames,
+        timing,
+    } = live;
     let channels = config.channels as usize;
     let mut left = vec![0.0f32; 16384];
     let mut right = vec![0.0f32; 16384];
@@ -960,7 +1293,10 @@ where
             move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
                 let stamp = info.timestamp();
                 let latency = stamp.playback.duration_since(stamp.callback).as_secs_f64();
-                let system = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+                let system = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs_f64();
                 // The callback never waits on the engine's thread; a reading missed while it holds the lock is one of hundreds a second.
                 if let Ok(mut timing) = timing.try_lock() {
                     timing.observe(frames.load(Ordering::Acquire), system, Some(latency));
@@ -976,15 +1312,26 @@ where
         .map_err(|e| e.to_string())
 }
 
-fn open_input(host: &cpal::Host, name: Option<&str>, rate: cpal::SampleRate) -> Result<(Option<cpal::Stream>, Option<Input>), String> {
+fn open_input(
+    host: &cpal::Host,
+    name: Option<&str>,
+    rate: cpal::SampleRate,
+) -> Result<(Option<cpal::Stream>, Option<Input>), String> {
     let device = device::input(host, name)?;
-    let ranges = device.supported_input_configs().map_err(|e| e.to_string())?;
+    let ranges = device
+        .supported_input_configs()
+        .map_err(|e| e.to_string())?;
     let config = ranges
         .filter(|range| range.sample_format() == cpal::SampleFormat::F32)
         .find_map(|range| range.try_with_sample_rate(rate));
     let Some(config) = config else {
-        let found = device.default_input_config().map_err(|e| e.to_string())?.sample_rate();
-        return Err(format!("the input runs at {found} Hz and the output at {rate} Hz"));
+        let found = device
+            .default_input_config()
+            .map_err(|e| e.to_string())?
+            .sample_rate();
+        return Err(format!(
+            "the input runs at {found} Hz and the output at {rate} Hz"
+        ));
     };
     let channels = config.channels() as usize;
     let (mut feed, frames) = rtrb::RingBuffer::new(CAPACITY * channels);
@@ -1038,16 +1385,31 @@ fn fill<T: cpal::Sample + cpal::FromSample<f32>>(
 
 fn placing_specs() -> Vec<Spec> {
     vec![
-        Spec::float("amp").default(1.0).range(0.0, 16.0).doc("The level the sound is scaled by."),
-        Spec::float("pan").default(0.0).range(-1.0, 1.0).doc("Where the sound sits, from -1, left, to 1, right."),
+        Spec::float("amp")
+            .default(1.0)
+            .range(0.0, 16.0)
+            .doc("The level the sound is scaled by."),
+        Spec::float("pan")
+            .default(0.0)
+            .range(-1.0, 1.0)
+            .doc("Where the sound sits, from -1, left, to 1, right."),
     ]
 }
 
 fn blending_specs() -> Vec<Spec> {
     vec![
-        Spec::float("mix").default(1.0).range(0.0, 1.0).doc("How much of the processed sound replaces the dry one."),
-        Spec::float("pre_amp").default(1.0).range(0.0, 16.0).doc("The level the sound is scaled by before the effect."),
-        Spec::float("amp").default(1.0).range(0.0, 16.0).doc("The level the blend is scaled by."),
+        Spec::float("mix")
+            .default(1.0)
+            .range(0.0, 1.0)
+            .doc("How much of the processed sound replaces the dry one."),
+        Spec::float("pre_amp")
+            .default(1.0)
+            .range(0.0, 16.0)
+            .doc("The level the sound is scaled by before the effect."),
+        Spec::float("amp")
+            .default(1.0)
+            .range(0.0, 16.0)
+            .doc("The level the blend is scaled by."),
     ]
 }
 
@@ -1075,15 +1437,35 @@ fn sample_note(data: Arc<SampleData>, options: &Options) -> Note {
     let mono = data.channels.len() == 1;
     // A mono sample is placed at equal power, so it is raised by as much again as its pan lowers it at the centre.
     let centre = if mono { std::f32::consts::SQRT_2 } else { 1.0 };
-    let gain = if options.number("normalize") > 0.5 && data.peak > 0.0 { centre / data.peak } else { 1.0 };
-    let player = (options.follow("rate") >> Net::wrap(Box::new(An(Player::new(data, from, to, rate))))) * gain;
-    let player = if mono { player >> Net::wrap(Box::new(pass() | sink())) } else { player };
+    let gain = if options.number("normalize") > 0.5 && data.peak > 0.0 {
+        centre / data.peak
+    } else {
+        1.0
+    };
+    let player = (options.follow("rate")
+        >> Net::wrap(Box::new(An(Player::new(data, from, to, rate)))))
+        * gain;
+    let player = if mono {
+        player >> Net::wrap(Box::new(pass() | sink()))
+    } else {
+        player
+    };
     let sustain = options.number("sustain");
-    let (attack, decay, release) = (options.number("attack"), options.number("decay"), options.number("release"));
-    let hold = if sustain < 0.0 { (length - attack - decay - release).max(0.0) } else { sustain };
+    let (attack, decay, release) = (
+        options.number("attack"),
+        options.number("decay"),
+        options.number("release"),
+    );
+    let hold = if sustain < 0.0 {
+        (length - attack - decay - release).max(0.0)
+    } else {
+        sustain
+    };
     let peak = options.number("attack_level");
     let held = options.number("sustain_level");
-    let decayed = Some(options.number("decay_level")).filter(|&l| l >= 0.0).unwrap_or(held);
+    let decayed = Some(options.number("decay_level"))
+        .filter(|&l| l >= 0.0)
+        .unwrap_or(held);
     let level = crate::nodes::shape(move |t| {
         let along = |from: f64, to: f64, x: f64| from + (to - from) * x.clamp(0.0, 1.0);
         if t < attack {
@@ -1096,7 +1478,11 @@ fn sample_note(data: Arc<SampleData>, options: &Options) -> Note {
             along(held, 0.0, (t - attack - decay - hold) / release)
         }
     });
-    let level = if mono { level } else { level >> Net::wrap(Box::new(split::<U2>())) };
+    let level = if mono {
+        level
+    } else {
+        level >> Net::wrap(Box::new(split::<U2>()))
+    };
     Note::rings(player * level, attack + decay + hold + release)
 }
 
@@ -1127,7 +1513,11 @@ impl AudioNode for Balance {
 
     fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U2> {
         let pan = input[2].clamp(-1.0, 1.0);
-        [input[0] * (1.0 - pan).min(1.0) * input[3], input[1] * (1.0 + pan).min(1.0) * input[3]].into()
+        [
+            input[0] * (1.0 - pan).min(1.0) * input[3],
+            input[1] * (1.0 + pan).min(1.0) * input[3],
+        ]
+        .into()
     }
 }
 
@@ -1143,7 +1533,11 @@ impl AudioNode for Blend {
     fn tick(&mut self, input: &Frame<f32, U6>) -> Frame<f32, U2> {
         let mix = input[4].clamp(0.0, 1.0);
         let amp = input[5];
-        [(input[0] * (1.0 - mix) + input[2] * mix) * amp, (input[1] * (1.0 - mix) + input[3] * mix) * amp].into()
+        [
+            (input[0] * (1.0 - mix) + input[2] * mix) * amp,
+            (input[1] * (1.0 - mix) + input[3] * mix) * amp,
+        ]
+        .into()
     }
 }
 
@@ -1156,11 +1550,16 @@ mod tests {
     fn a_panic_while_filling_audio_silences_the_engine_and_is_reported() {
         let mut engine = Engine::offline(48_000.0);
         engine.register(Synth::new("broken").build(|_, _| {
-            let breaks = map(|_: &Frame<f32, U0>| -> f32 { panic!("on purpose while filling audio") });
+            let breaks =
+                map(|_: &Frame<f32, U0>| -> f32 { panic!("on purpose while filling audio") });
             Note::rings(breaks, 1.0)
         }));
-        engine.play(&[(0.0, Event::note(None, "broken", &[]))]).unwrap();
-        let Output::Offline(mixer) = &mut engine.output else { unreachable!() };
+        engine
+            .play(&[(0.0, Event::note(None, "broken", &[]))])
+            .unwrap();
+        let Output::Offline(mixer) = &mut engine.output else {
+            unreachable!()
+        };
         let failed = AtomicBool::new(false);
         let mut data = vec![1.0f32; 256];
         let (mut left, mut right) = (vec![0.0; 64], vec![0.0; 64]);
@@ -1173,12 +1572,19 @@ mod tests {
     fn a_device_of_16_bit_samples_gets_the_float_samples_rounded_to_them() {
         let render = || {
             let mut engine = Engine::offline(48_000.0);
-            crate::synths::all().into_iter().for_each(|s| engine.register(s));
-            engine.play(&[(0.0, Event::note(None, "saw", &[("amp", 2.0)]))]).unwrap();
+            crate::synths::all()
+                .into_iter()
+                .for_each(|s| engine.register(s));
+            engine
+                .play(&[(0.0, Event::note(None, "saw", &[("amp", 2.0)]))])
+                .unwrap();
             engine
         };
         let (mut floats, mut ints) = (render(), render());
-        let (Output::Offline(a), Output::Offline(b)) = (&mut floats.output, &mut ints.output) else { unreachable!() };
+        let (Output::Offline(a), Output::Offline(b)) = (&mut floats.output, &mut ints.output)
+        else {
+            unreachable!()
+        };
         let failed = AtomicBool::new(false);
         let (mut left, mut right) = (vec![0.0; 64], vec![0.0; 64]);
         let mut float_data = vec![0.0f32; 2 * 4800];
@@ -1196,12 +1602,22 @@ mod tests {
         let mut engine = Engine::offline(48_000.0);
         engine.device = "USB Interface".to_string();
         engine.lost.store(true, Ordering::Release);
-        let error = engine.play(&[(0.0, Event::note(None, "saw", &[]))]).unwrap_err();
-        assert_eq!(error.to_string(), "the output device USB Interface went away, and the engine has to be started again");
+        let error = engine
+            .play(&[(0.0, Event::note(None, "saw", &[]))])
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "the output device USB Interface went away, and the engine has to be started again"
+        );
     }
 
     /// Renders `seconds` 1024 frames at a time, feeding each frame's input before it, as a sound card would.
-    fn render_fed(engine: &mut Engine, feed: &mut rtrb::Producer<f32>, seconds: f64, frame: &[f32]) -> (Vec<f32>, Vec<f32>) {
+    fn render_fed(
+        engine: &mut Engine,
+        feed: &mut rtrb::Producer<f32>,
+        seconds: f64,
+        frame: &[f32],
+    ) -> (Vec<f32>, Vec<f32>) {
         let (mut left, mut right) = (Vec::new(), Vec::new());
         let frames = engine.frames(seconds) as usize;
         while left.len() < frames {
@@ -1219,7 +1635,13 @@ mod tests {
     #[test]
     fn live_input_plays_its_channels_placed_by_pan_until_it_stops() {
         let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 2);
-        let mono = Event::Input { id: Some(1), input: 0, channels: 1, options: vec![], chain: None };
+        let mono = Event::Input {
+            id: Some(1),
+            input: 0,
+            channels: 1,
+            options: vec![],
+            chain: None,
+        };
         engine.play(&[(0.0, mono)]).unwrap();
         let (left, right) = render_fed(&mut engine, &mut feed, 0.1, &[0.5, 0.25]);
         let centre = std::f32::consts::FRAC_1_SQRT_2;
@@ -1230,12 +1652,24 @@ mod tests {
         assert_eq!(left[1000], 0.0);
 
         let options = vec![("pan".to_string(), Value::Number(-1.0))];
-        let stereo = Event::Input { id: None, input: 0, channels: 2, options, chain: None };
+        let stereo = Event::Input {
+            id: None,
+            input: 0,
+            channels: 2,
+            options,
+            chain: None,
+        };
         engine.play(&[(0.2, stereo)]).unwrap();
         let (left, right) = render_fed(&mut engine, &mut feed, 0.1, &[0.5, 0.25]);
         assert_eq!(left[1000], 0.5);
         assert_eq!(right[1000], 0.0);
-        let beyond = Event::Input { id: None, input: 1, channels: 2, options: vec![], chain: None };
+        let beyond = Event::Input {
+            id: None,
+            input: 1,
+            channels: 2,
+            options: vec![],
+            chain: None,
+        };
         assert_eq!(engine.play(&[(0.3, beyond)]), Err(Error::UnknownInput(2)));
     }
 

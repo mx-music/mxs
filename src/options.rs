@@ -22,23 +22,41 @@ pub(crate) struct Control {
 
 impl Options {
     pub(crate) fn new(owner: Arc<str>, specs: Arc<[Spec]>, values: HashMap<String, Value>) -> Self {
-        Options { owner, specs, values, controls: Mutex::new(HashMap::new()) }
+        Options {
+            owner,
+            specs,
+            values,
+            controls: Mutex::new(HashMap::new()),
+        }
     }
 
     pub(crate) fn value(&self, name: &str) -> &Value {
         let spec = self.specs.iter().find(|s| s.name == name);
-        let spec = spec.unwrap_or_else(|| panic!("{} reads the option {name}, which it does not declare", self.owner));
+        let spec = spec.unwrap_or_else(|| {
+            panic!(
+                "{} reads the option {name}, which it does not declare",
+                self.owner
+            )
+        });
         self.values
             .get(name)
             .or(spec.default.as_ref())
-            .unwrap_or_else(|| panic!("{} reads the option {name}, which has no default and was not given", self.owner))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} reads the option {name}, which has no default and was not given",
+                    self.owner
+                )
+            })
     }
 
     /// An option's value when the note starts.
     pub fn number(&self, name: &str) -> f64 {
         match self.value(name) {
             Value::Number(x) => *x,
-            Value::Name(n) => panic!("{} reads the option {name} as a number, but it is the name {n}", self.owner),
+            Value::Name(n) => panic!(
+                "{} reads the option {name} as a number, but it is the name {n}",
+                self.owner
+            ),
         }
     }
 
@@ -46,14 +64,20 @@ impl Options {
     pub fn name(&self, name: &str) -> &str {
         match self.value(name) {
             Value::Name(n) => n,
-            Value::Number(x) => panic!("{} reads the option {name} as a name, but it is the number {x}", self.owner),
+            Value::Number(x) => panic!(
+                "{} reads the option {name} as a name, but it is the number {x}",
+                self.owner
+            ),
         }
     }
 
     /// An option's value when the song gave one, for an option declared without a default.
     pub fn given(&self, name: &str) -> Option<f64> {
         if !self.specs.iter().any(|s| s.name == name) {
-            panic!("{} reads the option {name}, which it does not declare", self.owner);
+            panic!(
+                "{} reads the option {name}, which it does not declare",
+                self.owner
+            );
         }
         match self.values.get(name) {
             Some(Value::Number(x)) => Some(*x),
@@ -64,14 +88,20 @@ impl Options {
     /// A signal of an option's value, which glides to each new value the song gives while the note sounds, over the option's `_slide` seconds.
     pub fn follow(&self, name: &str) -> Net {
         let start = self.number(name) as f32;
-        let slide = self.values.get(&format!("{name}_slide")).map_or(0.0, |v| match v {
-            Value::Number(x) => *x as f32,
-            Value::Name(_) => 0.0,
-        });
+        let slide = self
+            .values
+            .get(&format!("{name}_slide"))
+            .map_or(0.0, |v| match v {
+                Value::Number(x) => *x as f32,
+                Value::Name(_) => 0.0,
+            });
         let mut controls = self.controls.lock().unwrap();
         let control = controls
             .entry(name.to_string())
-            .or_insert_with(|| Control { target: Shared::new(start), slide: Shared::new(slide) })
+            .or_insert_with(|| Control {
+                target: Shared::new(start),
+                slide: Shared::new(slide),
+            })
             .clone();
         Net::wrap(Box::new(An(Glide::new(control, start))))
     }
@@ -97,7 +127,12 @@ impl Context {
         self.count += 1;
         // FNV-1a, whose output does not change between Rust releases as std's hasher may.
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-        for byte in self.owner.as_bytes().iter().chain(&self.count.to_le_bytes()) {
+        for byte in self
+            .owner
+            .as_bytes()
+            .iter()
+            .chain(&self.count.to_le_bytes())
+        {
             hash = (hash ^ *byte as u64).wrapping_mul(0x0100_0000_01b3);
         }
         hash
@@ -117,7 +152,14 @@ pub(crate) struct Glide {
 
 impl Glide {
     fn new(control: Control, start: f32) -> Self {
-        Glide { control, aim: start, current: start, step: 0.0, left: 0, rate: DEFAULT_SR }
+        Glide {
+            control,
+            aim: start,
+            current: start,
+            step: 0.0,
+            left: 0,
+            rate: DEFAULT_SR,
+        }
     }
 }
 
@@ -134,7 +176,9 @@ impl AudioNode for Glide {
         let target = self.control.target.value();
         if target != self.aim {
             self.aim = target;
-            let frames = (self.control.slide.value() as f64 * self.rate).round().max(0.0) as u64;
+            let frames = (self.control.slide.value() as f64 * self.rate)
+                .round()
+                .max(0.0) as u64;
             if frames == 0 {
                 self.current = target;
                 self.left = 0;

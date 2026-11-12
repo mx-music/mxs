@@ -32,8 +32,14 @@ unsafe impl GlobalAlloc for Counting {
 static ALLOCATOR: Counting = Counting;
 
 fn main() {
-    let args: Vec<usize> = std::env::args().skip(1).filter_map(|n| n.parse().ok()).collect();
-    let (events, batches) = (args.first().copied().unwrap_or(100), args.get(1).copied().unwrap_or(1));
+    let args: Vec<usize> = std::env::args()
+        .skip(1)
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    let (events, batches) = (
+        args.first().copied().unwrap_or(100),
+        args.get(1).copied().unwrap_or(1),
+    );
     let mut sequencer = Sequencer::new(0, 1, ReplayMode::None);
     sequencer.set_sample_rate(48_000.0);
     let backend = std::sync::Arc::new(std::sync::Mutex::new(sequencer.backend()));
@@ -43,11 +49,18 @@ fn main() {
             sequencer.push(0.0, 0.01, Fade::Smooth, 0.0, 0.0, Box::new(dc(1.0)));
         }
         let backend = backend.clone();
-        sounding = std::thread::spawn(move || render(&mut backend.lock().unwrap(), 1)).join().unwrap();
+        sounding = std::thread::spawn(move || render(&mut backend.lock().unwrap(), 1))
+            .join()
+            .unwrap();
     }
     let backend = backend.clone();
-    std::thread::spawn(move || render(&mut backend.lock().unwrap(), 100)).join().unwrap();
-    println!("{batches} x {events} events: {sounding} sounding at the last push, {} frees on the audio thread", FREES.load(Ordering::Relaxed));
+    std::thread::spawn(move || render(&mut backend.lock().unwrap(), 100))
+        .join()
+        .unwrap();
+    println!(
+        "{batches} x {events} events: {sounding} sounding at the last push, {} frees on the audio thread",
+        FREES.load(Ordering::Relaxed)
+    );
 }
 
 /// Renders blocks of 64 samples as the audio thread, and returns the level at the end of the first.

@@ -3,11 +3,11 @@
 
 mod clock;
 mod device;
+pub mod effects;
 mod engine;
 pub mod graph;
-mod mixer;
-pub mod effects;
 pub mod keys;
+mod mixer;
 pub mod nodes;
 mod options;
 mod sample;
@@ -18,10 +18,10 @@ mod synth;
 pub mod synths;
 
 pub use device::{Device, Settings, devices};
-pub use sample::check as check_sample;
-pub use sample::peak as sample_peak;
 pub use engine::{Engine, Error, Event, Source, Target, VOICES};
 pub use options::{Context, Options};
+pub use sample::check as check_sample;
+pub use sample::peak as sample_peak;
 pub use spec::{Kind, Spec, Value};
 pub use synth::{Effect, EffectDecl, Note, Synth, SynthDecl};
 

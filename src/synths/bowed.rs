@@ -59,7 +59,9 @@ pub(crate) fn bow_options(mut synth: SynthDecl) -> SynthDecl {
         .option(Spec::float("onset").range(0.0, 8.0).doc("How loud the recorded onset is against the level its note holds, in place of the one fitted for the note's vel; 0 leaves it out."))
         .option(Spec::float("bow_position").default(0.12).range(0.05, 0.5).doc("Where the bow meets the string, as a fraction of its length from the bridge."));
     for (name, hz) in EQ.iter().zip(BANDS) {
-        let doc = format!("The gain in dB of the band at {hz} Hz, in place of the one fitted for the note's vel; for fitting.");
+        let doc = format!(
+            "The gain in dB of the band at {hz} Hz, in place of the one fitted for the note's vel; for fitting."
+        );
         synth = synth.option(Spec::db(name).range(-60.0, 60.0).doc(&doc));
     }
     synth
@@ -69,17 +71,34 @@ pub(crate) fn bow_options(mut synth: SynthDecl) -> SynthDecl {
 pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let vel = options.number("vel").clamp(0.0, 1.0);
     let sustain = options.number("sustain");
-    let by_vel = |pp: f64, mf: f64, ff: f64| pp + (mf - pp) * ((vel - 0.3) / 0.3).clamp(0.0, 1.0) + (ff - mf) * ((vel - 0.6) / 0.4).clamp(0.0, 1.0);
+    let by_vel = |pp: f64, mf: f64, ff: f64| {
+        pp + (mf - pp) * ((vel - 0.3) / 0.3).clamp(0.0, 1.0)
+            + (ff - mf) * ((vel - 0.6) / 0.4).clamp(0.0, 1.0)
+    };
 
     // The bow presses harder as it moves faster, as it must to hold the string in Helmholtz motion, by Schelleng's minimum bow force, and up to twice as hard below 110 Hz, where the string would otherwise slip twice a period.
     let speed = (0.2 + vel * 0.6) * options.number("bow_speed");
     let low = (110.0 / hz(options.number("note"))).clamp(1.0, 2.0);
     let legato = options.number("legato").clamp(0.0, 1.0);
-    let bow = Bow { speed, force: 1.8 * low * speed * options.number("bow_force"), position: options.number("bow_position") as f32, takes: 0.03 - 0.01 * legato, rosin: options.given("rosin").unwrap_or_else(|| by_vel(fit.rosin[0], fit.rosin[1], fit.rosin[2])) as f32, seed: ctx.seed() };
+    let bow = Bow {
+        speed,
+        force: 1.8 * low * speed * options.number("bow_force"),
+        position: options.number("bow_position") as f32,
+        takes: 0.03 - 0.01 * legato,
+        rosin: options
+            .given("rosin")
+            .unwrap_or_else(|| by_vel(fit.rosin[0], fit.rosin[1], fit.rosin[2]))
+            as f32,
+        seed: ctx.seed(),
+    };
     let body = options.given("body_hz").unwrap_or(fit.body);
-    let mut sound = string(options.follow("note"), bow) >> highpass_hz(body as f32, 0.541) >> highpass_hz(body as f32, 1.307);
+    let mut sound = string(options.follow("note"), bow)
+        >> highpass_hz(body as f32, 0.541)
+        >> highpass_hz(body as f32, 1.307);
     for (i, hz) in BANDS.into_iter().enumerate() {
-        let gain = options.given(EQ[i]).unwrap_or_else(|| by_vel(fit.gains[0][i], fit.gains[1][i], fit.gains[2][i]));
+        let gain = options
+            .given(EQ[i])
+            .unwrap_or_else(|| by_vel(fit.gains[0][i], fit.gains[1][i], fit.gains[2][i]));
         sound = sound >> bell_hz(hz as f32, 1.4, db(gain) as f32);
     }
     // A delay that swings after the string gives the vibrato, which grows in after 0.3 seconds.
@@ -90,11 +109,20 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
         0.002 + (2.0 * PI * rate_hz * t + PI / 2.0).sin() * depth * grown
     });
     let cutoff = (2000.0 + vel * vel * 7000.0) as f32;
-    sound = (sound | swing) >> tap(0.0, 0.01) >> lowpass_hz(cutoff, 0.541) >> lowpass_hz(cutoff, 1.307);
-    let hiss_level = db(options.given("hiss").unwrap_or_else(|| by_vel(fit.hiss[0], fit.hiss[1], fit.hiss[2]))) as f32;
+    sound =
+        (sound | swing) >> tap(0.0, 0.01) >> lowpass_hz(cutoff, 0.541) >> lowpass_hz(cutoff, 1.307);
+    let hiss_level = db(options
+        .given("hiss")
+        .unwrap_or_else(|| by_vel(fit.hiss[0], fit.hiss[1], fit.hiss[2])))
+        as f32;
     let hiss = match fit.response {
-        Some(response) if options.number("response") >= 0.5 => (white_noise(ctx.seed()) >> convolve(response(), 0)) * hiss_level,
-        _ => (pink_noise(ctx.seed()) >> highpass_hz((1800.0 - vel * 400.0) as f32, 0.707)) * hiss_level,
+        Some(response) if options.number("response") >= 0.5 => {
+            (white_noise(ctx.seed()) >> convolve(response(), 0)) * hiss_level
+        }
+        _ => {
+            (pink_noise(ctx.seed()) >> highpass_hz((1800.0 - vel * 400.0) as f32, 0.707))
+                * hiss_level
+        }
     };
     sound = (sound + hiss) >> dcblock::<f32>();
 
@@ -103,19 +131,41 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let swell = (from_silence + (0.06f64.min(from_silence) - from_silence) * legato).max(1e-3);
     let rising = shape(move |t| 1.0 - (1.0 - (t / swell).min(1.0)).powi(2));
     let level = (vel.powf(0.6) * db(by_vel(fit.levels[0], fit.levels[1], fit.levels[2]))) as f32;
-    let gain = options.given("onset").unwrap_or_else(|| by_vel(fit.onset[0], fit.onset[1], fit.onset[2])) * (1.0 - legato);
+    let gain = options
+        .given("onset")
+        .unwrap_or_else(|| by_vel(fit.onset[0], fit.onset[1], fit.onset[2]))
+        * (1.0 - legato);
     match fit.onsets {
-        Some(onsets) if gain > 0.0 => (sound * rising + onset(onsets(), vel, options.number("note")) * gain as f32) * level,
+        Some(onsets) if gain > 0.0 => {
+            (sound * rising + onset(onsets(), vel, options.number("note")) * gain as f32) * level
+        }
         _ => sound * rising * level,
     }
 }
 
 /// The onset recorded at the dynamic nearest vel, from the nearest note, played faster or slower to sound at `note`.
 fn onset(onsets: &[Onset], vel: f64, note: f64) -> Net {
-    let dynamic = if vel < 0.45 { 0 } else if vel < 0.8 { 1 } else { 2 };
-    let nearest = onsets.iter().filter(|o| o.dynamic == dynamic).min_by(|a, b| (a.note - note).abs().total_cmp(&(b.note - note).abs())).expect("each dynamic has onsets");
+    let dynamic = if vel < 0.45 {
+        0
+    } else if vel < 0.8 {
+        1
+    } else {
+        2
+    };
+    let nearest = onsets
+        .iter()
+        .filter(|o| o.dynamic == dynamic)
+        .min_by(|a, b| (a.note - note).abs().total_cmp(&(b.note - note).abs()))
+        .expect("each dynamic has onsets");
     let rate = 2f64.powf((note - nearest.note) / 12.0);
-    Net::wrap(Box::new(dc(rate as f32))) >> Net::wrap(Box::new(An(Player::new(nearest.data.clone(), 0.0, 1.0, rate)))) >> (pass() | sink())
+    Net::wrap(Box::new(dc(rate as f32)))
+        >> Net::wrap(Box::new(An(Player::new(
+            nearest.data.clone(),
+            0.0,
+            1.0,
+            rate,
+        ))))
+        >> (pass() | sink())
 }
 
 /// The seconds each half of the string delays its wave, at a pitch: its share of the period, less the feedback's sample and its loss filter's delay.
@@ -151,17 +201,44 @@ struct Bow {
 }
 
 /// The bowed string as a defsynth plays it: `speed`, `force`, `position` and `takes` as `Bow` has them, and its rosin's noise drawn from `seed`.
-pub(crate) fn bowed_string(note: Net, speed: f64, force: f64, position: f64, takes: f64, rosin: f64, seed: u64) -> Net {
-    string(note, Bow { speed, force, position: position as f32, takes, rosin: rosin as f32, seed })
+pub(crate) fn bowed_string(
+    note: Net,
+    speed: f64,
+    force: f64,
+    position: f64,
+    takes: f64,
+    rosin: f64,
+    seed: u64,
+) -> Net {
+    string(
+        note,
+        Bow {
+            speed,
+            force,
+            position: position as f32,
+            takes,
+            rosin: rosin as f32,
+            seed,
+        },
+    )
 }
 
 /// The bowed string: a waveguide whose two halves meet at the bow, where friction holds the string or lets it slip, following its note's pitch.
 fn string(note: Net, bow: Bow) -> Net {
-    let Bow { speed, force, position, takes, rosin, seed } = bow;
+    let Bow {
+        speed,
+        force,
+        position,
+        takes,
+        rosin,
+        seed,
+    } = bow;
     let (neck_loss, bridge_loss) = (0.995f32, 0.97f32);
 
     // The bow reaches its speed and force together and quickly, so the string takes up Helmholtz motion at once, after Guettler's attacks; the rosin's noise sways its speed, which the string shapes around each harmonic.
-    let bow = shape_node(move |t| speed * (0.05 + 0.95 * (t / takes).min(1.0))) * (1.0 + pink::<f32>().seed(seed) * rosin) | shape_node(move |t| force * (0.05 + 0.95 * (t / takes).min(1.0)));
+    let bow = shape_node(move |t| speed * (0.05 + 0.95 * (t / takes).min(1.0)))
+        * (1.0 + pink::<f32>().seed(seed) * rosin)
+        | shape_node(move |t| force * (0.05 + 0.95 * (t / takes).min(1.0)));
     // The string sticks to the bow while their speeds are close, and slips once they part; the pitch rides along to each half.
     let junction = map(move |i: &Frame<f32, U5>| -> Frame<f32, U4> {
         let (bow, width, freq, from_neck, from_bridge) = (i[0], i[1], i[2], i[3], i[4]);
@@ -170,10 +247,14 @@ fn string(note: Net, bow: Bow) -> Net {
         [from_bridge + held, freq, from_neck + held, freq].into()
     });
     // Each half delays its wave by its share of the period at the pitch, and loses its highs at a corner that follows the pitch.
-    let neck = (pass() | (map(move |f: &Frame<f32, U1>| delays(f[0], position).0) ^ map(|f: &Frame<f32, U1>| cuts(f[0]).0)))
+    let neck = (pass()
+        | (map(move |f: &Frame<f32, U1>| delays(f[0], position).0)
+            ^ map(|f: &Frame<f32, U1>| cuts(f[0]).0)))
         >> (tap(0.0, 0.1) | pass())
         >> lowpole::<f32>() * -neck_loss;
-    let bridge = (pass() | (map(move |f: &Frame<f32, U1>| delays(f[0], position).1) ^ map(|f: &Frame<f32, U1>| cuts(f[0]).1)))
+    let bridge = (pass()
+        | (map(move |f: &Frame<f32, U1>| delays(f[0], position).1)
+            ^ map(|f: &Frame<f32, U1>| cuts(f[0]).1)))
         >> (tap(0.0, 0.1) | pass())
         >> lowpole::<f32>() * -bridge_loss;
     // The pitch's channel feeds back nothing, so it holds the pitch alone.

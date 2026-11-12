@@ -27,7 +27,10 @@ pub struct SynthDecl {
 impl Synth {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(name: &str) -> SynthDecl {
-        SynthDecl { name: name.to_string(), specs: Vec::new() }
+        SynthDecl {
+            name: name.to_string(),
+            specs: Vec::new(),
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -54,7 +57,11 @@ impl SynthDecl {
     where
         F: Fn(&Options, &mut Context) -> Note + Send + Sync + 'static,
     {
-        Synth { name: self.name, specs: self.specs, build: Arc::new(build) }
+        Synth {
+            name: self.name,
+            specs: self.specs,
+            build: Arc::new(build),
+        }
     }
 }
 
@@ -69,7 +76,11 @@ pub struct Note {
 impl Note {
     /// A sound that rings until it fades by itself, after `seconds`.
     pub fn rings(sound: impl AudioUnit + 'static, seconds: f64) -> Note {
-        Note { sound: net(sound), end: seconds, release: None }
+        Note {
+            sound: net(sound),
+            end: seconds,
+            release: None,
+        }
     }
 
     /// A sound shaped by the note's envelope, from its options attack, decay, sustain, release, attack_level, decay_level and sustain_level, which ends when the envelope does, or falls silent over its release once let go.
@@ -80,15 +91,25 @@ impl Note {
         let release = options.number("release");
         let peak = options.number("attack_level");
         let held = options.number("sustain_level");
-        let decayed = Some(options.number("decay_level")).filter(|&l| l >= 0.0).unwrap_or(held);
+        let decayed = Some(options.number("decay_level"))
+            .filter(|&l| l >= 0.0)
+            .unwrap_or(held);
         // The same curves as mx's envelope on scsynth: a slow attack, a quick decay, a straight sustain and a quick release.
         let levels = [0.0, peak, decayed, held, 0.0];
         let times = [attack, decay, sustain, release];
         let gate = shared(1.0);
         let level = net(var(&gate)) >> gated(&levels, &times, &[1.0, -2.0, 0.0, -3.0]) >> onset();
         let sound = net(sound);
-        let sound = if sound.outputs() == 2 { sound * (level >> split::<U2>()) } else { sound * level };
-        Note { sound, end: attack + decay + sustain + release, release: Some((gate, release)) }
+        let sound = if sound.outputs() == 2 {
+            sound * (level >> split::<U2>())
+        } else {
+            sound * level
+        };
+        Note {
+            sound,
+            end: attack + decay + sustain + release,
+            release: Some((gate, release)),
+        }
     }
 
     /// Ends the note after `seconds`, if it would end later.
@@ -116,7 +137,11 @@ pub struct EffectDecl {
 impl Effect {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(name: &str) -> EffectDecl {
-        EffectDecl { name: name.to_string(), specs: Vec::new(), tail: Arc::new(|_| 1.0) }
+        EffectDecl {
+            name: name.to_string(),
+            specs: Vec::new(),
+            tail: Arc::new(|_| 1.0),
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -153,7 +178,12 @@ impl EffectDecl {
     where
         F: Fn(&Options, &mut Context) -> Net + Send + Sync + 'static,
     {
-        Effect { name: self.name, specs: self.specs, tail: self.tail, build: Arc::new(build) }
+        Effect {
+            name: self.name,
+            specs: self.specs,
+            tail: self.tail,
+            build: Arc::new(build),
+        }
     }
 }
 

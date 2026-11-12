@@ -26,14 +26,26 @@ pub struct Keyboard {
 impl Keyboard {
     pub fn new(synth: &Synth) -> Keyboard {
         let options = synth.specs().iter().map(|s| s.name.clone()).collect();
-        Keyboard { synth: synth.name().to_string(), options, down: HashMap::new(), held: Vec::new(), pedal: false, bend: 0.0, next: 0 }
+        Keyboard {
+            synth: synth.name().to_string(),
+            options,
+            down: HashMap::new(),
+            held: Vec::new(),
+            pedal: false,
+            bend: 0.0,
+            next: 0,
+        }
     }
 
     /// The events one MIDI message makes, at `at` seconds; a message other than a key, the sustain pedal or the wheel makes none.
     pub fn message(&mut self, bytes: &[u8], at: f64) -> Vec<(f64, Event)> {
         match *bytes {
-            [status, key, velocity] if status & 0xf0 == 0x90 && velocity > 0 => self.key_down(key, velocity, at),
-            [status, key, _] if status & 0xf0 == 0x80 || status & 0xf0 == 0x90 => self.key_up(key, at),
+            [status, key, velocity] if status & 0xf0 == 0x90 && velocity > 0 => {
+                self.key_down(key, velocity, at)
+            }
+            [status, key, _] if status & 0xf0 == 0x80 || status & 0xf0 == 0x90 => {
+                self.key_up(key, at)
+            }
             [status, 64, value] if status & 0xf0 == 0xb0 => self.set_pedal(value >= 64, at),
             [status, low, high] if status & 0xf0 == 0xe0 => {
                 let position = ((high as u16) << 7 | low as u16) as f64;
@@ -69,7 +81,9 @@ impl Keyboard {
     }
 
     fn key_up(&mut self, key: u8, at: f64) -> Vec<(f64, Event)> {
-        let Some(id) = self.down.remove(&key) else { return Vec::new() };
+        let Some(id) = self.down.remove(&key) else {
+            return Vec::new();
+        };
         if self.pedal {
             self.held.push((key, id));
             Vec::new()
@@ -82,8 +96,19 @@ impl Keyboard {
         self.pedal = down;
         let mut events = Vec::new();
         if self.has("pedal") {
-            let ids = self.down.values().chain(self.held.iter().map(|(_, id)| id)).copied().collect();
-            events.push((at, Event::Set { target: Target::Sounds(ids), options: vec![("pedal".into(), if down { 1.0 } else { 0.0 })] }));
+            let ids = self
+                .down
+                .values()
+                .chain(self.held.iter().map(|(_, id)| id))
+                .copied()
+                .collect();
+            events.push((
+                at,
+                Event::Set {
+                    target: Target::Sounds(ids),
+                    options: vec![("pedal".into(), if down { 1.0 } else { 0.0 })],
+                },
+            ));
         }
         if !down && !self.held.is_empty() {
             let ids = self.held.drain(..).map(|(_, id)| id).collect();
@@ -97,12 +122,26 @@ impl Keyboard {
         if !self.has("note") {
             return Vec::new();
         }
-        let sounding: Vec<(u8, u64)> = self.down.iter().map(|(&k, &id)| (k, id)).chain(self.held.iter().copied()).collect();
+        let sounding: Vec<(u8, u64)> = self
+            .down
+            .iter()
+            .map(|(&k, &id)| (k, id))
+            .chain(self.held.iter().copied())
+            .collect();
         sounding
             .into_iter()
             .map(|(key, id)| {
-                let options = vec![("note".into(), key as f64 + bend), ("note_slide".into(), BEND_GLIDE)];
-                (at, Event::Set { target: Target::Sounds(vec![id]), options })
+                let options = vec![
+                    ("note".into(), key as f64 + bend),
+                    ("note_slide".into(), BEND_GLIDE),
+                ];
+                (
+                    at,
+                    Event::Set {
+                        target: Target::Sounds(vec![id]),
+                        options,
+                    },
+                )
             })
             .collect()
     }
@@ -111,10 +150,17 @@ impl Keyboard {
 /// The input of `names` to play from: the one named, or the first; or, for a name none has, what the inputs are.
 pub fn choose_input(names: &[String], wanted: Option<&str>) -> Result<usize, String> {
     let known = names.join(", ");
-    let listed = if names.is_empty() { "there are none".to_string() } else { format!("the inputs are {known}") };
+    let listed = if names.is_empty() {
+        "there are none".to_string()
+    } else {
+        format!("the inputs are {known}")
+    };
     match wanted {
         None if names.is_empty() => Err(format!("no MIDI input to play from; {listed}")),
         None => Ok(0),
-        Some(name) => names.iter().position(|n| n == name).ok_or_else(|| format!("no MIDI input named {name}; {listed}")),
+        Some(name) => names
+            .iter()
+            .position(|n| n == name)
+            .ok_or_else(|| format!("no MIDI input named {name}; {listed}")),
     }
 }

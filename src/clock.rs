@@ -16,7 +16,12 @@ pub(crate) struct Timing {
 
 impl Timing {
     pub fn new(rate: f64) -> Timing {
-        Timing { rate, offset: None, last: 0, latency: None }
+        Timing {
+            rate,
+            offset: None,
+            last: 0,
+            latency: None,
+        }
     }
 
     /// Records that `frame` was rendered at `system` seconds since the Unix epoch, to be played `latency` seconds later.
@@ -25,7 +30,9 @@ impl Timing {
         let offset = system - frame as f64 / self.rate;
         self.offset = Some(match self.offset {
             None => offset,
-            Some(old) => offset.min(old + RISE * frame.saturating_sub(self.last) as f64 / self.rate),
+            Some(old) => {
+                offset.min(old + RISE * frame.saturating_sub(self.last) as f64 / self.rate)
+            }
         });
         self.last = frame;
         self.latency = latency;
@@ -47,14 +54,22 @@ mod tests {
     use super::*;
 
     /// A sound card at `rate` whose frames run `drift` faster than the system clock, its callbacks seen with up to `jitter` seconds of delay.
-    fn drifting(rate: f64, drift: f64, jitter: f64, hours: f64, mut each: impl FnMut(&Timing, f64, u64)) {
+    fn drifting(
+        rate: f64,
+        drift: f64,
+        jitter: f64,
+        hours: f64,
+        mut each: impl FnMut(&Timing, f64, u64),
+    ) {
         let mut timing = Timing::new(rate);
         let started = 1_800_000_000.0;
         let buffer = 512;
         let mut seed = 1u64;
         let mut frame = 0;
         while (frame as f64) < hours * 3600.0 * rate {
-            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
             let delay = (seed >> 11) as f64 / (1u64 << 53) as f64 * jitter;
             let truly = started + frame as f64 / (rate * (1.0 + drift));
             timing.observe(frame, truly + delay, Some(0.01));
@@ -64,7 +79,8 @@ mod tests {
     }
 
     #[test]
-    fn over_two_hours_of_drift_either_way_a_system_time_maps_to_the_frame_rendered_then_within_1_ms() {
+    fn over_two_hours_of_drift_either_way_a_system_time_maps_to_the_frame_rendered_then_within_1_ms()
+     {
         let rate = 48_000.0;
         for drift in [100e-6, -100e-6] {
             let mut worst: f64 = 0.0;

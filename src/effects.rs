@@ -42,36 +42,72 @@ fn per_channel(build: impl Fn() -> Net) -> Net {
 
 /// A MIDI note option as Hz, held to what a filter can take.
 fn cutoff(options: &Options, name: &str) -> Net {
-    options.follow(name) >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64).clamp(20.0, 20_000.0) as f32))
+    options.follow(name)
+        >> net(map(|x: &Frame<f32, U1>| {
+            hz(x[0] as f64).clamp(20.0, 20_000.0) as f32
+        }))
 }
 
 /// Resonance from 0 to 1 as a filter's Q: the nearer 1, the more it rings.
 fn q_of(options: &Options, name: &str) -> Net {
-    options.follow(name) >> net(map(|x: &Frame<f32, U1>| 1.0 / (1.0 - x[0].clamp(0.0, 1.0)).max(0.01)))
+    options.follow(name)
+        >> net(map(|x: &Frame<f32, U1>| {
+            1.0 / (1.0 - x[0].clamp(0.0, 1.0)).max(0.01)
+        }))
 }
 
 fn level() -> Effect {
-    Effect::new("level").tail(0.0).build(|_, _| net(multipass::<U2>()))
+    Effect::new("level")
+        .tail(0.0)
+        .build(|_, _| net(multipass::<U2>()))
 }
 
 fn reverb() -> Effect {
     Effect::new("reverb")
-        .option(Spec::float("room").default(0.6).range(0.0, 1.0).doc("How big the room is."))
-        .option(Spec::float("damp").default(0.5).range(0.0, 1.0).doc("How much the room dulls the high frequencies."))
+        .option(
+            Spec::float("room")
+                .default(0.6)
+                .range(0.0, 1.0)
+                .doc("How big the room is."),
+        )
+        .option(
+            Spec::float("damp")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("How much the room dulls the high frequencies."),
+        )
         .tail_from(|o| (o.number("room") * 10.0 + 1.0).min(11.0))
-        .build(|o, _| (net(multipass::<U2>()) | o.follow("room") | o.follow("damp")) >> net(An(Freeverb::new())))
+        .build(|o, _| {
+            (net(multipass::<U2>()) | o.follow("room") | o.follow("damp"))
+                >> net(An(Freeverb::new()))
+        })
 }
 
 fn echo() -> Effect {
     Effect::new("echo")
-        .option(Spec::beats("phase").default(0.25).range(0.0, f64::INFINITY).doc("The time between echoes."))
-        .option(Spec::beats("decay").default(2.0).doc("How long the echoes take to die away."))
-        .option(Spec::beats("max_phase").default(2.0).range(0.0, 60.0).doc("The longest phase it can change to."))
+        .option(
+            Spec::beats("phase")
+                .default(0.25)
+                .range(0.0, f64::INFINITY)
+                .doc("The time between echoes."),
+        )
+        .option(
+            Spec::beats("decay")
+                .default(2.0)
+                .doc("How long the echoes take to die away."),
+        )
+        .option(
+            Spec::beats("max_phase")
+                .default(2.0)
+                .range(0.0, 60.0)
+                .doc("The longest phase it can change to."),
+        )
         .tail_from(|o| o.number("decay").abs())
         .build(|o, _| {
             let most = o.number("max_phase");
             per_channel(|| {
-                let comb = (net(pass()) | o.follow("phase") | o.follow("decay")) >> net(An(Comb::new(most, false)));
+                let comb = (net(pass()) | o.follow("phase") | o.follow("decay"))
+                    >> net(An(Comb::new(most, false)));
                 net(pass()) & comb
             })
         })
@@ -79,23 +115,46 @@ fn echo() -> Effect {
 
 fn lpf() -> Effect {
     Effect::new("lpf")
-        .option(Spec::note("cutoff").default(100.0).doc("The MIDI note above which it cuts."))
+        .option(
+            Spec::note("cutoff")
+                .default(100.0)
+                .doc("The MIDI note above which it cuts."),
+        )
         .tail(0.1)
-        .build(|o, _| per_channel(|| (net(pass()) | cutoff(o, "cutoff") | net(dc(FRAC_1_SQRT_2))) >> net(lowpass::<f32>())))
+        .build(|o, _| {
+            per_channel(|| {
+                (net(pass()) | cutoff(o, "cutoff") | net(dc(FRAC_1_SQRT_2)))
+                    >> net(lowpass::<f32>())
+            })
+        })
 }
 
 fn hpf() -> Effect {
     Effect::new("hpf")
-        .option(Spec::note("cutoff").default(100.0).doc("The MIDI note below which it cuts."))
+        .option(
+            Spec::note("cutoff")
+                .default(100.0)
+                .doc("The MIDI note below which it cuts."),
+        )
         .tail(0.1)
-        .build(|o, _| per_channel(|| (net(pass()) | cutoff(o, "cutoff") | net(dc(FRAC_1_SQRT_2))) >> net(highpass::<f32>())))
+        .build(|o, _| {
+            per_channel(|| {
+                (net(pass()) | cutoff(o, "cutoff") | net(dc(FRAC_1_SQRT_2)))
+                    >> net(highpass::<f32>())
+            })
+        })
 }
 
 const FRAC_1_SQRT_2: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
 fn distortion() -> Effect {
     Effect::new("distortion")
-        .option(Spec::float("distort").default(0.5).range(0.0, 1.0).doc("How hard it drives the sound."))
+        .option(
+            Spec::float("distort")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("How hard it drives the sound."),
+        )
         .tail(0.0)
         .build(|o, _| {
             per_channel(|| {
@@ -110,7 +169,12 @@ fn distortion() -> Effect {
 
 fn pan() -> Effect {
     Effect::new("pan")
-        .option(Spec::float("pan").default(0.0).range(-1.0, 1.0).doc("Where it turns the sound, from -1, left, to 1, right."))
+        .option(
+            Spec::float("pan")
+                .default(0.0)
+                .range(-1.0, 1.0)
+                .doc("Where it turns the sound, from -1, left, to 1, right."),
+        )
         .tail(0.0)
         .build(|o, _| {
             (net(multipass::<U2>()) | o.follow("pan"))
@@ -123,23 +187,54 @@ fn pan() -> Effect {
 
 fn slicer() -> Effect {
     Effect::new("slicer")
-        .option(Spec::beats("phase").default(0.25).range(0.0, f64::INFINITY).doc("The length of a cycle."))
-        .option(Spec::float("phase_offset").default(0.0).range(0.0, 1.0).doc("Where in the cycle it starts."))
-        .option(Spec::float("pulse_width").default(0.5).range(0.0, 1.0).doc("The part of the cycle that is on."))
-        .option(Spec::float("amp_min").default(0.0).doc("The level while off."))
-        .option(Spec::float("amp_max").default(1.0).doc("The level while on."))
-        .option(Spec::seconds("smooth").default(0.0).range(0.0, f64::INFINITY).doc("How many seconds each change takes."))
+        .option(
+            Spec::beats("phase")
+                .default(0.25)
+                .range(0.0, f64::INFINITY)
+                .doc("The length of a cycle."),
+        )
+        .option(
+            Spec::float("phase_offset")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("Where in the cycle it starts."),
+        )
+        .option(
+            Spec::float("pulse_width")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("The part of the cycle that is on."),
+        )
+        .option(
+            Spec::float("amp_min")
+                .default(0.0)
+                .doc("The level while off."),
+        )
+        .option(
+            Spec::float("amp_max")
+                .default(1.0)
+                .doc("The level while on."),
+        )
+        .option(
+            Spec::seconds("smooth")
+                .default(0.0)
+                .range(0.0, f64::INFINITY)
+                .doc("How many seconds each change takes."),
+        )
         .tail(0.0)
         .build(|o, _| {
             let offset = o.number("phase_offset") as f32;
-            let open = (rate_of(o, "phase") | o.follow("pulse_width") | net(dc(1.0)) | net(dc(0.0)))
-                >> net(An(Lfo::new(offset, 1.0, true)));
+            let open =
+                (rate_of(o, "phase") | o.follow("pulse_width") | net(dc(1.0)) | net(dc(0.0)))
+                    >> net(An(Lfo::new(offset, 1.0, true)));
             let low = o.follow("amp_min");
             let level = (open | low | o.follow("amp_max"))
                 >> net(map(|x: &Frame<f32, U3>| x[1] + x[0] * (x[2] - x[1])))
                 >> net(An(Lag::new(o.number("smooth"))));
             (net(multipass::<U2>()) | level)
-                >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> { [x[0] * x[2], x[1] * x[2]].into() }))
+                >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> {
+                    [x[0] * x[2], x[1] * x[2]].into()
+                }))
         })
 }
 
@@ -150,11 +245,34 @@ fn rate_of(options: &Options, name: &str) -> Net {
 
 fn compressor() -> Effect {
     Effect::new("compressor")
-        .option(Spec::float("threshold").default(0.2).range(0.0001, f64::INFINITY).doc("The level above which it lowers the sound."))
-        .option(Spec::float("slope_below").default(1.0).doc("How much the level changes below the threshold."))
-        .option(Spec::float("slope_above").default(0.5).doc("How much the level changes above the threshold."))
-        .option(Spec::seconds("clamp_time").default(0.01).range(0.0, f64::INFINITY).doc("How many seconds it takes to lower the sound."))
-        .option(Spec::seconds("relax_time").default(0.01).range(0.0, f64::INFINITY).doc("How many seconds it takes to let go."))
+        .option(
+            Spec::float("threshold")
+                .default(0.2)
+                .range(0.0001, f64::INFINITY)
+                .doc("The level above which it lowers the sound."),
+        )
+        .option(
+            Spec::float("slope_below")
+                .default(1.0)
+                .doc("How much the level changes below the threshold."),
+        )
+        .option(
+            Spec::float("slope_above")
+                .default(0.5)
+                .doc("How much the level changes above the threshold."),
+        )
+        .option(
+            Spec::seconds("clamp_time")
+                .default(0.01)
+                .range(0.0, f64::INFINITY)
+                .doc("How many seconds it takes to lower the sound."),
+        )
+        .option(
+            Spec::seconds("relax_time")
+                .default(0.01)
+                .range(0.0, f64::INFINITY)
+                .doc("How many seconds it takes to let go."),
+        )
         .tail(0.1)
         .build(|o, _| {
             let controls = o.follow("threshold")
@@ -168,9 +286,23 @@ fn compressor() -> Effect {
 
 fn chorus() -> Effect {
     Effect::new("chorus")
-        .option(Spec::beats("phase").default(0.25).range(0.0, f64::INFINITY).doc("How long the delay takes to sweep back and forth."))
-        .option(Spec::beats("decay").default(0.00001).doc("How long the delayed sound feeds back."))
-        .option(Spec::beats("max_phase").default(1.0).range(0.0, 60.0).doc("The longest phase it can change to."))
+        .option(
+            Spec::beats("phase")
+                .default(0.25)
+                .range(0.0, f64::INFINITY)
+                .doc("How long the delay takes to sweep back and forth."),
+        )
+        .option(
+            Spec::beats("decay")
+                .default(0.00001)
+                .doc("How long the delayed sound feeds back."),
+        )
+        .option(
+            Spec::beats("max_phase")
+                .default(1.0)
+                .range(0.0, 60.0)
+                .doc("The longest phase it can change to."),
+        )
         .tail_from(|o| o.number("decay").abs())
         .build(|o, _| {
             let most = o.number("max_phase").max(0.02);
@@ -178,7 +310,8 @@ fn chorus() -> Effect {
                 let sweep = (rate_of(o, "phase") | net(dc(0.5)) | net(dc(3.0)) | net(dc(0.0)))
                     >> net(An(Lfo::new(start, 1.0, false)))
                     >> net(map(|x: &Frame<f32, U1>| 0.007 + 0.005 * (x[0] * 2.0 - 1.0)));
-                let comb = (net(pass()) | sweep | o.follow("decay")) >> net(An(Comb::new(most, true)));
+                let comb =
+                    (net(pass()) | sweep | o.follow("decay")) >> net(An(Comb::new(most, true)));
                 (net(pass()) & comb) * 0.5
             };
             side(0.0) | side(0.5)
@@ -187,27 +320,70 @@ fn chorus() -> Effect {
 
 fn bitcrusher() -> Effect {
     Effect::new("bitcrusher")
-        .option(Spec::hz("sample_rate").default(10_000.0).range(1.0, f64::INFINITY).doc("The rate in Hz it holds samples at."))
-        .option(Spec::float("bits").default(8.0).range(1.0, 24.0).doc("How many bits it rounds each sample to."))
-        .option(Spec::note("cutoff").default(0.0).doc("A MIDI note for a low-pass after it, off at 0."))
+        .option(
+            Spec::hz("sample_rate")
+                .default(10_000.0)
+                .range(1.0, f64::INFINITY)
+                .doc("The rate in Hz it holds samples at."),
+        )
+        .option(
+            Spec::float("bits")
+                .default(8.0)
+                .range(1.0, 24.0)
+                .doc("How many bits it rounds each sample to."),
+        )
+        .option(
+            Spec::note("cutoff")
+                .default(0.0)
+                .doc("A MIDI note for a low-pass after it, off at 0."),
+        )
         .tail(0.1)
         .build(|o, _| {
             per_channel(|| {
-                let crushed = (net(pass()) | o.follow("sample_rate") | o.follow("bits")) >> net(An(Crusher::new()));
-                let off = o.follow("cutoff") >> net(map(|x: &Frame<f32, U1>| if x[0] > 0.0 { 1.0 } else { 0.0 }));
-                let filtered = net(pass()) ^ ((net(pass()) | cutoff(o, "cutoff") | net(dc(FRAC_1_SQRT_2))) >> net(lowpass::<f32>()));
-                ((crushed >> filtered) | off) >> net(map(|x: &Frame<f32, U3>| x[0] + (x[1] - x[0]) * x[2]))
+                let crushed = (net(pass()) | o.follow("sample_rate") | o.follow("bits"))
+                    >> net(An(Crusher::new()));
+                let off = o.follow("cutoff")
+                    >> net(map(|x: &Frame<f32, U1>| if x[0] > 0.0 { 1.0 } else { 0.0 }));
+                let filtered = net(pass())
+                    ^ ((net(pass()) | cutoff(o, "cutoff") | net(dc(FRAC_1_SQRT_2)))
+                        >> net(lowpass::<f32>()));
+                ((crushed >> filtered) | off)
+                    >> net(map(|x: &Frame<f32, U3>| x[0] + (x[1] - x[0]) * x[2]))
             })
         })
 }
 
 /// The wave options every swept effect takes, with its own default wave.
-fn wave_options(effect: crate::synth::EffectDecl, wave: f64, phase: f64) -> crate::synth::EffectDecl {
+fn wave_options(
+    effect: crate::synth::EffectDecl,
+    wave: f64,
+    phase: f64,
+) -> crate::synth::EffectDecl {
     effect
-        .option(Spec::beats("phase").default(phase).range(0.0, f64::INFINITY).doc("How long one sweep takes."))
-        .option(Spec::float("wave").default(wave).range(0.0, 4.0).doc("The sweep's shape: 0 saw, 1 pulse, 2 triangle, 3 sine and 4 cubic."))
-        .option(Spec::float("invert_wave").default(0.0).range(0.0, 1.0).doc("1 flips the sweep."))
-        .option(Spec::float("phase_offset").default(0.0).range(0.0, 1.0).doc("Where in the sweep it starts."))
+        .option(
+            Spec::beats("phase")
+                .default(phase)
+                .range(0.0, f64::INFINITY)
+                .doc("How long one sweep takes."),
+        )
+        .option(
+            Spec::float("wave")
+                .default(wave)
+                .range(0.0, 4.0)
+                .doc("The sweep's shape: 0 saw, 1 pulse, 2 triangle, 3 sine and 4 cubic."),
+        )
+        .option(
+            Spec::float("invert_wave")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 flips the sweep."),
+        )
+        .option(
+            Spec::float("phase_offset")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("Where in the sweep it starts."),
+        )
 }
 
 /// The sweep from 0 to 1, of the shape and length the wave options give.
@@ -219,32 +395,63 @@ fn sweep(options: &Options, width: Net) -> Net {
 
 fn tremolo() -> Effect {
     wave_options(Effect::new("tremolo"), 2.0, 4.0)
-        .option(Spec::float("depth").default(0.5).range(0.0, 1.0).doc("How far it turns the sound down."))
+        .option(
+            Spec::float("depth")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("How far it turns the sound down."),
+        )
         .tail(0.0)
         .build(|o, _| {
             let level = (sweep(o, net(dc(0.5))) | o.follow("depth"))
                 >> net(map(|x: &Frame<f32, U2>| 1.0 - x[1] * x[0]));
-            (net(multipass::<U2>()) | level) >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> { [x[0] * x[2], x[1] * x[2]].into() }))
+            (net(multipass::<U2>()) | level)
+                >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> {
+                    [x[0] * x[2], x[1] * x[2]].into()
+                }))
         })
 }
 
 fn rlpf() -> Effect {
     Effect::new("rlpf")
-        .option(Spec::note("cutoff").default(100.0).doc("The MIDI note above which it cuts."))
-        .option(Spec::float("res").default(0.5).range(0.0, 1.0).doc("How much it rings at its cutoff."))
+        .option(
+            Spec::note("cutoff")
+                .default(100.0)
+                .doc("The MIDI note above which it cuts."),
+        )
+        .option(
+            Spec::float("res")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("How much it rings at its cutoff."),
+        )
         .tail(0.2)
-        .build(|o, _| per_channel(|| (net(pass()) | cutoff(o, "cutoff") | q_of(o, "res")) >> net(lowpass::<f32>())))
+        .build(|o, _| {
+            per_channel(|| {
+                (net(pass()) | cutoff(o, "cutoff") | q_of(o, "res")) >> net(lowpass::<f32>())
+            })
+        })
 }
 
 fn bpf() -> Effect {
     Effect::new("bpf")
-        .option(Spec::note("centre").default(100.0).doc("The MIDI note of the band it keeps."))
-        .option(Spec::float("res").default(0.6).range(0.0, 1.0).doc("How narrow the band is."))
+        .option(
+            Spec::note("centre")
+                .default(100.0)
+                .doc("The MIDI note of the band it keeps."),
+        )
+        .option(
+            Spec::float("res")
+                .default(0.6)
+                .range(0.0, 1.0)
+                .doc("How narrow the band is."),
+        )
         .tail(0.2)
         .build(|o, _| {
             per_channel(|| {
                 // FunDSP's band-pass peaks at its Q, so it is scaled back to a peak of 1.
-                let band = (net(pass()) | cutoff(o, "centre") | q_of(o, "res")) >> net(bandpass::<f32>());
+                let band =
+                    (net(pass()) | cutoff(o, "centre") | q_of(o, "res")) >> net(bandpass::<f32>());
                 (band | q_of(o, "res")) >> net(map(|x: &Frame<f32, U2>| x[0] / x[1]))
             })
         })
@@ -252,24 +459,68 @@ fn bpf() -> Effect {
 
 fn flanger() -> Effect {
     wave_options(Effect::new("flanger"), 4.0, 4.0)
-        .option(Spec::float("stereo_invert_wave").default(0.0).range(0.0, 1.0).doc("1 sweeps the left channel the other way."))
-        .option(Spec::float("delay").default(5.0).doc("The delay in milliseconds it sweeps up from."))
-        .option(Spec::float("depth").default(5.0).doc("How far in milliseconds it sweeps."))
-        .option(Spec::float("max_delay").default(20.0).range(1.0, 1000.0).doc("The longest delay in milliseconds."))
-        .option(Spec::float("feedback").default(0.0).range(0.0, 1.0).doc("How strongly the delayed sound feeds back."))
-        .option(Spec::beats("decay").default(2.0).doc("How long the delayed sound feeds back."))
-        .option(Spec::float("invert_flange").default(0.0).range(0.0, 1.0).doc("1 subtracts the delayed sound instead."))
+        .option(
+            Spec::float("stereo_invert_wave")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 sweeps the left channel the other way."),
+        )
+        .option(
+            Spec::float("delay")
+                .default(5.0)
+                .doc("The delay in milliseconds it sweeps up from."),
+        )
+        .option(
+            Spec::float("depth")
+                .default(5.0)
+                .doc("How far in milliseconds it sweeps."),
+        )
+        .option(
+            Spec::float("max_delay")
+                .default(20.0)
+                .range(1.0, 1000.0)
+                .doc("The longest delay in milliseconds."),
+        )
+        .option(
+            Spec::float("feedback")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("How strongly the delayed sound feeds back."),
+        )
+        .option(
+            Spec::beats("decay")
+                .default(2.0)
+                .doc("How long the delayed sound feeds back."),
+        )
+        .option(
+            Spec::float("invert_flange")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 subtracts the delayed sound instead."),
+        )
         .tail(1.0)
         .build(|o, _| {
             let most = o.number("max_delay") / 1000.0;
-            let flip = if o.number("stereo_invert_wave") >= 0.5 { 1.0 } else { 0.0 };
-            let sign = if o.number("invert_flange") >= 0.5 { -1.0 } else { 1.0 };
+            let flip = if o.number("stereo_invert_wave") >= 0.5 {
+                1.0
+            } else {
+                0.0
+            };
+            let sign = if o.number("invert_flange") >= 0.5 {
+                -1.0
+            } else {
+                1.0
+            };
             let side = |flipped: f32| {
                 let level = sweep(o, net(dc(0.5)))
-                    >> net(map(move |x: &Frame<f32, U1>| if flipped > 0.0 { 1.0 - x[0] } else { x[0] }));
+                    >> net(map(
+                        move |x: &Frame<f32, U1>| if flipped > 0.0 { 1.0 - x[0] } else { x[0] },
+                    ));
                 let limit = most as f32;
                 let delay = (o.follow("delay") | o.follow("depth") | level)
-                    >> net(map(move |x: &Frame<f32, U3>| ((x[0] + x[1] * x[2]) / 1000.0).clamp(0.0001, limit)));
+                    >> net(map(move |x: &Frame<f32, U3>| {
+                        ((x[0] + x[1] * x[2]) / 1000.0).clamp(0.0001, limit)
+                    }));
                 let decay = (o.follow("decay") | o.follow("feedback"))
                     >> net(map(|x: &Frame<f32, U2>| x[0] * x[1].clamp(0.0, 1.0)));
                 let comb = (net(pass()) | delay | decay) >> net(An(Comb::new(most, true)));
@@ -281,30 +532,79 @@ fn flanger() -> Effect {
 
 fn wobble() -> Effect {
     wave_options(Effect::new("wobble"), 0.0, 0.5)
-        .option(Spec::float("pulse_width").default(0.5).range(0.0, 1.0).doc("The part of a cycle that is up, for wave 1."))
-        .option(Spec::note("cutoff_min").default(60.0).doc("The MIDI note the filter sweeps down to."))
-        .option(Spec::note("cutoff_max").default(120.0).doc("The MIDI note the filter sweeps up to."))
-        .option(Spec::float("res").default(0.8).range(0.0, 1.0).doc("How much the filter rings at its cutoff."))
-        .option(Spec::float("filter").default(0.0).range(0.0, 1.0).doc("0 for a low-pass and 1 for a high-pass."))
+        .option(
+            Spec::float("pulse_width")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("The part of a cycle that is up, for wave 1."),
+        )
+        .option(
+            Spec::note("cutoff_min")
+                .default(60.0)
+                .doc("The MIDI note the filter sweeps down to."),
+        )
+        .option(
+            Spec::note("cutoff_max")
+                .default(120.0)
+                .doc("The MIDI note the filter sweeps up to."),
+        )
+        .option(
+            Spec::float("res")
+                .default(0.8)
+                .range(0.0, 1.0)
+                .doc("How much the filter rings at its cutoff."),
+        )
+        .option(
+            Spec::float("filter")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("0 for a low-pass and 1 for a high-pass."),
+        )
         .tail(0.2)
         .build(|o, _| {
             let high = o.number("filter") >= 0.5;
             per_channel(|| {
                 let level = sweep(o, o.follow("pulse_width"));
                 let cut = (level | o.follow("cutoff_min") | o.follow("cutoff_max"))
-                    >> net(map(|x: &Frame<f32, U3>| hz((x[1] + x[0] * (x[2] - x[1])) as f64).clamp(20.0, 20_000.0) as f32));
+                    >> net(map(|x: &Frame<f32, U3>| {
+                        hz((x[1] + x[0] * (x[2] - x[1])) as f64).clamp(20.0, 20_000.0) as f32
+                    }));
                 let input = net(pass()) | cut | q_of(o, "res");
-                if high { input >> net(highpass::<f32>()) } else { input >> net(lowpass::<f32>()) }
+                if high {
+                    input >> net(highpass::<f32>())
+                } else {
+                    input >> net(lowpass::<f32>())
+                }
             })
         })
 }
 
 fn ping_pong() -> Effect {
     Effect::new("ping_pong")
-        .option(Spec::beats("phase").default(0.25).range(0.001, f64::INFINITY).doc("The time between echoes."))
-        .option(Spec::float("feedback").default(0.5).range(0.0, 0.999).doc("How much of each echo the next keeps."))
-        .option(Spec::beats("max_phase").default(1.0).range(0.01, 60.0).doc("The longest phase it can change to."))
-        .option(Spec::float("pan_start").default(1.0).range(-1.0, 1.0).doc("The side of the first echo, from -1, left, to 1, right."))
+        .option(
+            Spec::beats("phase")
+                .default(0.25)
+                .range(0.001, f64::INFINITY)
+                .doc("The time between echoes."),
+        )
+        .option(
+            Spec::float("feedback")
+                .default(0.5)
+                .range(0.0, 0.999)
+                .doc("How much of each echo the next keeps."),
+        )
+        .option(
+            Spec::beats("max_phase")
+                .default(1.0)
+                .range(0.01, 60.0)
+                .doc("The longest phase it can change to."),
+        )
+        .option(
+            Spec::float("pan_start")
+                .default(1.0)
+                .range(-1.0, 1.0)
+                .doc("The side of the first echo, from -1, left, to 1, right."),
+        )
         .tail_from(|o| {
             let (phase, feedback) = (o.number("phase"), o.number("feedback").max(0.001));
             (2.0 * phase * (-60.0 / (20.0 * feedback.log10())).max(1.0)).min(60.0)
@@ -329,7 +629,13 @@ struct Comb {
 
 impl Comb {
     fn new(most: f64, cubic: bool) -> Self {
-        let mut comb = Comb { most, cubic, buffer: Vec::new(), at: 0, rate: DEFAULT_SR as f32 };
+        let mut comb = Comb {
+            most,
+            cubic,
+            buffer: Vec::new(),
+            at: 0,
+            rate: DEFAULT_SR as f32,
+        };
         comb.set_sample_rate(DEFAULT_SR);
         comb
     }
@@ -338,7 +644,9 @@ impl Comb {
         let n = self.buffer.len();
         let whole = frames.floor();
         let fraction = frames - whole;
-        let back = |k: isize| self.buffer[(self.at as isize - whole as isize - k).rem_euclid(n as isize) as usize];
+        let back = |k: isize| {
+            self.buffer[(self.at as isize - whole as isize - k).rem_euclid(n as isize) as usize]
+        };
         if self.cubic {
             let (y0, y1, y2, y3) = (back(-1), back(0), back(1), back(2));
             let c1 = 0.5 * (y2 - y0);
@@ -375,7 +683,9 @@ impl AudioNode for Comb {
         let feedback = if decay == 0.0 {
             0.0
         } else {
-            0.001f32.powf(input[1].max(0.0) / decay.abs()).copysign(decay)
+            0.001f32
+                .powf(input[1].max(0.0) / decay.abs())
+                .copysign(decay)
         };
         self.buffer[self.at] = input[0] + feedback * delayed;
         [delayed].into()
@@ -420,8 +730,14 @@ impl AudioNode for Freeverb {
         let scale = sample_rate / 44_100.0;
         let length = |n: usize| Ord::max((n as f64 * scale).round() as usize, 1);
         for side in 0..2 {
-            self.combs[side] = COMBS.iter().map(|&n| vec![0.0; length(n + side * SPREAD)]).collect();
-            self.allpasses[side] = ALLPASSES.iter().map(|&n| vec![0.0; length(n + side * SPREAD)]).collect();
+            self.combs[side] = COMBS
+                .iter()
+                .map(|&n| vec![0.0; length(n + side * SPREAD)])
+                .collect();
+            self.allpasses[side] = ALLPASSES
+                .iter()
+                .map(|&n| vec![0.0; length(n + side * SPREAD)])
+                .collect();
         }
         self.comb_at = [[0; 8]; 2];
         self.allpass_at = [[0; 4]; 2];
@@ -475,7 +791,13 @@ struct Lfo {
 
 impl Lfo {
     fn new(offset: f32, level: f32, pulse_only: bool) -> Self {
-        Lfo { offset, phase: offset.rem_euclid(1.0), level, pulse_only, rate: DEFAULT_SR as f32 }
+        Lfo {
+            offset,
+            phase: offset.rem_euclid(1.0),
+            level,
+            pulse_only,
+            rate: DEFAULT_SR as f32,
+        }
     }
 }
 
@@ -494,7 +816,11 @@ impl AudioNode for Lfo {
 
     fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U1> {
         let p = self.phase;
-        let shape = if self.pulse_only { 1 } else { input[2].clamp(0.0, 4.0).round() as u32 };
+        let shape = if self.pulse_only {
+            1
+        } else {
+            input[2].clamp(0.0, 4.0).round() as u32
+        };
         let wave = match shape {
             0 => 2.0 * p - 1.0,
             1 => {
@@ -531,7 +857,11 @@ struct Lag {
 
 impl Lag {
     fn new(seconds: f64) -> Self {
-        let mut lag = Lag { seconds, keep: 0.0, level: None };
+        let mut lag = Lag {
+            seconds,
+            keep: 0.0,
+            level: None,
+        };
         lag.set_sample_rate(DEFAULT_SR);
         lag
     }
@@ -543,7 +873,11 @@ impl AudioNode for Lag {
     type Outputs = U1;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.keep = if self.seconds > 0.0 { 0.001f64.powf(1.0 / (self.seconds * sample_rate)) as f32 } else { 0.0 };
+        self.keep = if self.seconds > 0.0 {
+            0.001f64.powf(1.0 / (self.seconds * sample_rate)) as f32
+        } else {
+            0.0
+        };
     }
 
     fn reset(&mut self) {
@@ -570,7 +904,10 @@ struct Compander {
 
 impl Compander {
     fn new() -> Self {
-        Compander { level: [0.0; 2], rate: DEFAULT_SR as f32 }
+        Compander {
+            level: [0.0; 2],
+            rate: DEFAULT_SR as f32,
+        }
     }
 }
 
@@ -589,13 +926,23 @@ impl AudioNode for Compander {
 
     fn tick(&mut self, input: &Frame<f32, U7>) -> Frame<f32, U2> {
         let threshold = input[2].max(0.0001);
-        let keep = |seconds: f32| if seconds > 0.0 { 0.001f32.powf(1.0 / (seconds * self.rate)) } else { 0.0 };
+        let keep = |seconds: f32| {
+            if seconds > 0.0 {
+                0.001f32.powf(1.0 / (seconds * self.rate))
+            } else {
+                0.0
+            }
+        };
         let (clamp, relax) = (keep(input[5]), keep(input[6]));
         let mut out = [0.0f32; 2];
         for side in 0..2 {
             let x = input[side];
             let size = x.abs();
-            let keep = if size > self.level[side] { clamp } else { relax };
+            let keep = if size > self.level[side] {
+                clamp
+            } else {
+                relax
+            };
             self.level[side] = size + (self.level[side] - size) * keep;
             let level = self.level[side];
             let gain = if level > threshold {
@@ -623,7 +970,12 @@ struct Crusher {
 
 impl Crusher {
     fn new() -> Self {
-        Crusher { since: f32::INFINITY, held: 0.0, before: 0.0, rate: DEFAULT_SR as f32 }
+        Crusher {
+            since: f32::INFINITY,
+            held: 0.0,
+            before: 0.0,
+            rate: DEFAULT_SR as f32,
+        }
     }
 }
 
@@ -673,7 +1025,14 @@ struct PingPong {
 
 impl PingPong {
     fn new(most: f64, side: f32) -> Self {
-        let mut ping = PingPong { most, side, first: Vec::new(), second: Vec::new(), at: 0, rate: DEFAULT_SR as f32 };
+        let mut ping = PingPong {
+            most,
+            side,
+            first: Vec::new(),
+            second: Vec::new(),
+            at: 0,
+            rate: DEFAULT_SR as f32,
+        };
         ping.set_sample_rate(DEFAULT_SR);
         ping
     }
@@ -721,6 +1080,10 @@ impl AudioNode for PingPong {
         };
         let (fl, fr) = place(self.side);
         let (sl, sr) = place(-self.side);
-        [input[0] + first * fl + second * sl, input[1] + first * fr + second * sr].into()
+        [
+            input[0] + first * fl + second * sl,
+            input[1] + first * fr + second * sr,
+        ]
+        .into()
     }
 }

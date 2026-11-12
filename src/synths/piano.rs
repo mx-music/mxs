@@ -8,8 +8,18 @@ use std::f64::consts::PI;
 pub fn piano() -> Synth {
     Synth::new("piano")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
-        .option(Spec::float("vel").default(0.6).range(0.05, 1.0).doc("How hard the key is struck."))
-        .option(Spec::float("pedal").default(0.0).range(0.0, 1.0).doc("How far the sustain pedal is down, letting the other strings ring."))
+        .option(
+            Spec::float("vel")
+                .default(0.6)
+                .range(0.05, 1.0)
+                .doc("How hard the key is struck."),
+        )
+        .option(
+            Spec::float("pedal")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("How far the sustain pedal is down, letting the other strings ring."),
+        )
         .options(Spec::envelope(1.0, 1.0))
         .build(|options, ctx| {
             let vel = options.number("vel");
@@ -21,7 +31,8 @@ pub fn piano() -> Synth {
             let strings = Net::wrap(Box::new(impulse::<U1>())) >> bank;
             let thump = (white_noise(ctx.seed()) >> lowpass_hz(400.0 + vel as f32 * 2000.0, 0.707))
                 * shape(|t| perc(t, 0.001, 0.02));
-            let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3)) * ((vel / 0.6).powf(2.5)) as f32;
+            let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3))
+                * ((vel / 0.6).powf(2.5)) as f32;
             Note::envelope(sound, options)
         })
 }
@@ -62,10 +73,14 @@ fn modes(options: &Options) -> Vec<(f64, f64, f64)> {
                     * (0.5 - 0.75 * (-2.0 * (hz / 300.0).log2().powi(2)).exp()
                         + 1.2 * soft * soft * ((hz / 300.0).log2() / 2.0).clamp(0.0, 1.0)));
         // The undamped strings ring at the harmonics as brightly as at vel 1 and up to twice as long below 1 kHz, the note's own at half.
-        let sympathy =
-            if n <= 24.0 { db(shape - 8.6 * (hz / freq.max(1000.0)).log2().max(0.0)) * pedal * 0.65 } else { 0.0 };
+        let sympathy = if n <= 24.0 {
+            db(shape - 8.6 * (hz / freq.max(1000.0)).log2().max(0.0)) * pedal * 0.65
+        } else {
+            0.0
+        };
         let rung = level * (1.0 - pedal * 0.5) + sympathy;
-        let lasting = fade + sympathy / (rung + 1e-9) * fade * ((1000.0 / hz).log2() / 2.0).clamp(0.0, 1.0);
+        let lasting =
+            fade + sympathy / (rung + 1e-9) * fade * ((1000.0 / hz).log2() / 2.0).clamp(0.0, 1.0);
         strings.push((hz, rung, lasting));
         // A note's strings are tuned a hair apart and beat against each other.
         if n <= 10.0 {
