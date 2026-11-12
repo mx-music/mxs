@@ -17,3 +17,7 @@ keys = ["dep:midir"]
 [[bin]]
 name = "keys"
 required-features = ["keys"]
+
+[[example]]
+name = "virtual_keyboard"
+required-features = ["keys"]

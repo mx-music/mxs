@@ -1,6 +1,6 @@
-//! Plays one instrument from a MIDI keyboard through the default output: keys play notes, the sustain pedal holds them and the pitch bend wheel bends them.
+//! Plays one instrument from a MIDI keyboard through the output device named, or the default one: keys play notes, the sustain pedal holds them and the pitch bend wheel bends them.
 //!
-//! cargo run --release --features keys --bin keys -- [--list] [--input NAME] [--synth piano] [--buffer 256]
+//! cargo run --release --features keys --bin keys -- [--list] [--input NAME] [--device NAME] [--synth piano] [--buffer 128]
 
 use midir::MidiInput;
 use mxs::keys::{Keyboard, choose_input};
@@ -36,9 +36,9 @@ fn run() -> Result<(), String> {
     let index = choose_input(&names, value("--input").as_deref())?;
     let buffer = match value("--buffer") {
         Some(frames) => frames.parse().map_err(|_| format!("--buffer takes a number of frames, not {frames}"))?,
-        None => 256,
+        None => 128,
     };
-    let mut engine = Engine::live_with(&Settings { buffer: Some(buffer), ..Settings::default() }).map_err(|e| e.to_string())?;
+    let mut engine = Engine::live_with(&Settings { device: value("--device"), buffer: Some(buffer), ..Settings::default() }).map_err(|e| e.to_string())?;
     instruments.into_iter().for_each(|s| engine.register(s));
     let (send, messages) = mpsc::channel::<Vec<u8>>();
     let port = ports[index].clone();
