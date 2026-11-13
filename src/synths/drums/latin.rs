@@ -370,10 +370,18 @@ fn conga(name: &'static str, c: &'static Conga) -> Synth {
                 .range(0.0, 1.0)
                 .doc("1 slaps the head."),
         )
+        .option(
+            Spec::float("damp")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 leaves the hand on the head, which stops the tone."),
+        )
         .build(move |o, ctx| {
             let vel = vel(o, 0.0);
             let mute = o.number("mute").clamp(0.0, 1.0);
             let slap = o.number("slap").clamp(0.0, 1.0);
+            let damp = o.number("damp").clamp(0.0, 1.0);
+            let held = 0.09 + 0.25 * vel * vel;
             let freq = hz(o.number("note"));
             let mix = |a: f64, b: f64| a + (b - a) * mute;
             let hand = impulse_net()
@@ -386,13 +394,23 @@ fn conga(name: &'static str, c: &'static Conga) -> Synth {
                 .zip(c.head_tap)
                 .map(|(l, t)| db(l + mute * t - slap * 6.0))
                 .collect();
-            let rings = times(c.rings, mix(1.0, 0.7) * (1.0 - slap * 0.75));
-            let head = modes(hand.clone(), &scaled(c.ratios, freq), &levels, &rings);
+            let rings: Vec<f64> = times(c.rings, mix(1.0, 0.7) * (1.0 - slap * 0.75))
+                .iter()
+                .map(|r| r + (held - r) * damp)
+                .collect();
+            let head = modes(hand.clone(), &scaled(c.ratios, freq), &levels, &rings)
+                + modes(
+                    hand.clone(),
+                    &[c.ratios[0] * freq],
+                    &[db(c.levels[0] - 12.0) * damp],
+                    &[c.rings[0]],
+                );
             let skin_levels: Vec<f64> = (0..7)
                 .map(|i| mix(c.skin[i], c.tap[i]) + slap * 12.0)
                 .collect();
             let skin_ring: Vec<f64> = (0..7)
                 .map(|i| mix(c.skin_rings[i], c.tap_rings[i]) * (1.0 - slap * 0.5))
+                .map(|r| r + (0.6 * held - r) * damp)
                 .collect();
             let mut skin = Net::wrap(Box::new(zero()));
             for some in plate(40, 400.0, 10000.0) {

@@ -63,6 +63,20 @@ fn trimmed(synth: Synth) -> Synth {
     }
 }
 
+/// SPIKE: values for a design being fitted, read from the environment variable `name`, with `defaults` where it gives none.
+fn tune(name: &str, defaults: &[f64]) -> Vec<f64> {
+    let given: Vec<f64> = std::env::var(name)
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|x| x.trim().parse().ok())
+        .collect();
+    defaults
+        .iter()
+        .enumerate()
+        .map(|(i, &d)| given.get(i).copied().unwrap_or(d))
+        .collect()
+}
+
 fn net(unit: impl AudioUnit + 'static) -> Net {
     Net::wrap(Box::new(unit))
 }
