@@ -1,8 +1,8 @@
 //! The drum kit: the kick, snare, clap, crash, hi-hats, toms and rimshot.
 
 use super::{
-    HAT_BANDS, amps, bpf, high_shelf, hpf, impulse_net, low_shelf, lpf, net, noise, peak, plate,
-    scaled, strike_options, times, tune, vel,
+    amps, bpf, high_shelf, hpf, impulse_net, low_shelf, lpf, net, noise, plate, scaled,
+    strike_options, times, tune, vel,
 };
 use crate::nodes::{between, db, exp_segments, hit, hz, modes, segments};
 use crate::{Context, Note, Spec, Synth};
@@ -377,14 +377,10 @@ fn ride() -> Synth {
         })
 }
 
-const CLOSED_LEVELS: [f64; 10] = [
-    -15.0, -12.0, -11.0, -31.0, -20.0, -18.0, -21.0, -5.0, -8.0, -4.0,
-];
-const CLOSED_RINGS: [f64; 10] = [0.6, 0.64, 0.66, 0.67, 0.57, 0.55, 0.53, 0.49, 0.41, 0.28];
-const OPEN_LEVELS: [f64; 10] = [
-    -16.0, -12.0, -1.0, -20.0, -13.0, -15.0, -9.0, -3.0, -8.0, -4.0,
-];
-const OPEN_RINGS: [f64; 10] = [2.4, 2.5, 2.5, 2.5, 2.5, 2.6, 2.6, 2.5, 2.6, 2.7];
+const CLOSED_LEVELS: [f64; 10] = [-30.0, -6.4, -9.2, -10.6, -4.7, -1.4, -5.2, 10.4, 10.7, 14.7];
+const CLOSED_RINGS: [f64; 10] = [0.79, 0.55, 0.58, 0.74, 0.55, 0.43, 0.71, 0.5, 0.31, 0.22];
+const OPEN_LEVELS: [f64; 10] = [-21.0, -14.9, 7.9, -22.7, 5.6, -2.4, 8.4, 11.1, 11.0, 15.0];
+const OPEN_RINGS: [f64; 10] = [2.0, 3.5, 2.37, 2.49, 2.32, 2.96, 2.63, 2.49, 2.71, 2.6];
 
 fn hat(
     name: &'static str,
@@ -413,32 +409,19 @@ fn hat(
         let held = if pedal { o.number("sustain") } else { length };
         let release = o.number("release");
         let soft = (1.0 - vel) / 0.7;
-        let stick = (noise(ctx) >> hpf(1000.0) >> high_shelf(3000.0, (vel - 0.6) * 4.0))
-            * hit(0.0005, 0.005, -4.0);
-        let mut bank = Net::wrap(Box::new(zero()));
-        for some in plate(120, 150.0, 16000.0) {
-            let f: Vec<f64> = some.iter().map(|f| f * scale).collect();
-            let l: Vec<f64> = some
-                .iter()
-                .map(|&f| db(between(f, &HAT_BANDS, levels)))
-                .collect();
-            let r: Vec<f64> = some
-                .iter()
-                .map(|&f| between(f, &HAT_BANDS, rings))
-                .collect();
-            bank = bank + modes(stick.clone(), &f, &l, &r);
-        }
-        let dark = bank >> peak(1300.0, 1.5, soft * 6.0);
-        let sizzle = (noise(ctx) >> hpf(7000.0 * scale)) * hit(0.001, 0.05, -4.0) * 0.1;
-        let thud = (noise(ctx)
-            >> bpf(320.0 * scale, 0.2)
-            >> hpf(250.0 * scale)
-            >> hpf(250.0 * scale)
-            >> lpf(400.0 * scale))
-            * hit(0.001, 0.06, -4.0)
-            * db(soft.sqrt() * 50.0 - 20.0) as f32;
+        let same = |n: Net| n;
+        let dark = band_noise(ctx, levels, rings, 0, scale, &same)
+            >> high_shelf(4000.0, (0.333 - soft) * 10.0);
+        let sizzle = (noise(ctx) >> hpf(7000.0 * scale)) * hit(0.001, 0.05, -4.0) * 0.035;
         let choke = segments(&[1.0, 1.0, 0.0], &[held, release], &[0.0, -4.0]);
-        let sound = (dark * 0.1 + sizzle + thud) * 0.0525 * choke * (vel / 0.6).powf(2.8) as f32;
+        let thud = ((noise(ctx) * exp_segments(&[0.001, 1.0, 0.001], &[0.0005, rings[1]]))
+            >> bpf(320.0 * scale, 0.2)
+            >> hpf(285.0 * scale)
+            >> hpf(285.0 * scale)
+            >> lpf(400.0 * scale))
+            * (soft.max(0.0).sqrt() * if pedal { 0.0 } else { 0.25 }) as f32;
+        let gain = if pedal { 3.3 } else { 2.2 };
+        let sound = (dark * 0.1 + sizzle + thud) * gain * choke * (vel / 0.6).powf(2.8) as f32;
         Note::rings(sound, held + release)
     })
 }
