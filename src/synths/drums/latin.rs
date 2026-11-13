@@ -1,8 +1,8 @@
 //! Latin hand percussion: the cowbell, clave, agogos, ganza, shaker, congas, timbales, guiro, triangle, tambourine, cabasa, cajon and bongos.
 
 use super::{
-    HAT_BANDS, SKIN_BANDS, bpf, high_shelf, hpf, impulse_net, low_shelf, lpf, net, noise, peak,
-    plate, resonant_highpass, resonant_lowpass, scaled, strike_options, times, vel,
+    HAT_BANDS, bpf, high_shelf, hpf, impulse_net, low_shelf, lpf, net, noise, peak, plate,
+    resonant_highpass, resonant_lowpass, scaled, strike_options, times, vel,
 };
 use crate::nodes::{Draws, between, db, decay2, dust, exp_segments, hit, hz, modes, segments};
 use crate::{Context, Note, Spec, Synth};
@@ -290,6 +290,7 @@ struct Conga {
     tap_gain: f64,
     curve: f64,
     bright: [f64; 2],
+    soft: f64,
     gain: f64,
 }
 
@@ -300,16 +301,17 @@ const LOW_CONGA: Conga = Conga {
         -7.0, -21.0, -23.0, 0.0, -27.0, -12.0, -20.0, -13.0, -14.0, -12.0,
     ],
     rings: &[0.5, 1.05, 1.05, 1.08, 1.08, 1.05, 0.8, 0.8, 0.8, 0.75],
-    skin: [-23.0, -34.0, -53.5, -45.0, -37.0, -41.0, -51.0],
-    skin_rings: [0.64, 0.5, 0.65, 0.7, 0.57, 0.53, 0.89],
-    tap: [-14.0, -21.0, -40.0, -28.0, -38.0, -35.0, -43.0],
-    tap_rings: [0.6, 0.6, 0.8, 0.8, 1.2, 1.0, 1.3],
+    skin: [15.5, 6.2, 7.9, -1.0, 1.3, -0.5, -5.8],
+    skin_rings: [0.60, 0.23, 0.61, 0.72, 0.60, 0.60, 0.60],
+    tap: [31.0, 37.6, 30.1, 24.4, 2.0, 19.8, 14.6],
+    tap_rings: [0.46, 0.59, 0.81, 0.78, 1.87, 1.01, 1.37],
     head_tap: &[
-        -40.0, -38.0, -38.0, -41.0, -38.0, -33.0, -26.0, -26.0, -26.0, -26.0,
+        -35.0, -25.0, -25.0, -44.0, -44.0, -39.0, -26.0, -26.0, -26.0, -26.0,
     ],
-    tap_gain: -9.0,
+    tap_gain: -17.0,
     curve: 0.79,
     bright: [-6.0, 5.0],
+    soft: 0.0,
     gain: -33.8,
 };
 
@@ -319,21 +321,22 @@ const MID_CONGA: Conga = Conga {
         0.487, 0.6, 0.66, 0.785, 0.944, 1.0, 1.13, 1.19, 1.627, 2.126, 2.226, 2.437, 3.5,
     ],
     levels: &[
-        -5.5, -29.0, -30.0, -26.0, -19.0, 0.0, -24.0, -30.0, -20.0, -32.0, -22.0, -23.0, -16.0,
+        -5.5, -29.0, -30.0, -26.0, -19.0, 0.0, -24.0, -30.0, -20.0, -32.0, -22.0, -23.0, -30.0,
     ],
     rings: &[
         0.78, 0.9, 0.9, 1.05, 1.05, 1.05, 1.05, 1.05, 0.85, 0.62, 0.62, 0.62, 0.7,
     ],
-    skin: [-22.0, -35.0, -55.0, -52.0, -45.0, -48.0, -58.0],
-    skin_rings: [0.7, 0.6, 0.8, 0.8, 0.6, 0.6, 0.6],
-    tap: [-12.0, -17.6, -18.2, -24.5, -14.0, -4.0, -15.0],
-    tap_rings: [0.6, 0.6, 0.6, 0.7, 0.7, 0.5, 0.6],
+    skin: [1.3, 1.7, -9.8, -31.0, -12.2, -14.1, -19.1],
+    skin_rings: [0.32, 0.47, 0.90, 0.80, 0.60, 0.60, 0.60],
+    tap: [26.6, 32.5, 29.0, -5.5, 16.0, 40.2, 25.9],
+    tap_rings: [0.79, 0.61, 0.63, 1.43, 0.99, 0.47, 0.75],
     head_tap: &[
-        -18.0, -18.0, -18.0, -18.0, -18.0, -28.0, -28.0, -28.0, -30.0, -30.0, -30.0, -30.0, -28.0,
+        -5.0, -18.0, -18.0, -18.0, -18.0, -28.0, -28.0, -28.0, -30.0, -30.0, -30.0, -30.0, -28.0,
     ],
-    tap_gain: -23.1,
+    tap_gain: -30.1,
     curve: 1.17,
     bright: [-5.5, 3.0],
+    soft: 0.5,
     gain: -23.3,
 };
 
@@ -342,16 +345,17 @@ const HIGH_CONGA: Conga = Conga {
     ratios: &[0.372, 0.856, 0.943, 1.0, 1.12, 1.618, 1.664, 2.247, 2.415],
     levels: &[-12.0, -33.0, -26.5, 0.0, -33.6, -14.5, -17.5, -25.0, -39.5],
     rings: &[0.9, 0.72, 0.71, 0.7, 0.7, 0.8, 0.8, 0.47, 0.47],
-    skin: [-19.0, -34.0, -53.5, -50.0, -44.0, -46.0, -52.0],
-    skin_rings: [0.48, 0.62, 0.72, 1.0, 0.85, 1.15, 1.4],
-    tap: [-20.0, -28.6, -22.4, -16.0, -16.8, -2.0, -17.2],
-    tap_rings: [1.3, 1.3, 1.1, 1.1, 1.2, 0.35, 1.2],
+    skin: [17.8, -3.4, -0.6, -8.7, -6.5, -6.1, -7.7],
+    skin_rings: [0.47, 0.83, 0.40, 0.95, 0.60, 0.60, 0.60],
+    tap: [8.5, 16.9, 25.5, 14.0, 9.0, 38.6, 24.7],
+    tap_rings: [1.49, 1.26, 0.97, 1.11, 1.25, 0.20, 0.95],
     head_tap: &[
-        -11.0, -19.0, -19.0, -19.0, -19.0, -33.0, -33.0, -30.0, -30.0,
+        -14.0, -21.0, -21.0, -21.0, -21.0, -40.0, -40.0, -30.0, -30.0,
     ],
     tap_gain: -32.4,
     curve: 1.42,
     bright: [-1.5, 3.0],
+    soft: 0.0,
     gain: -22.8,
 };
 
@@ -394,36 +398,33 @@ fn conga(name: &'static str, c: &'static Conga) -> Synth {
                 .zip(c.head_tap)
                 .map(|(l, t)| db(l + mute * t - slap * 6.0))
                 .collect();
+            let soft = (vel.max(0.1) / 0.6).powf(-c.soft);
             let rings: Vec<f64> = times(c.rings, mix(1.0, 0.7) * (1.0 - slap * 0.75))
                 .iter()
+                .zip(c.ratios)
+                .map(|(r, &ratio)| if ratio > 3.0 { r * mix(soft, 1.0) } else { *r })
                 .map(|r| r + (held - r) * damp)
                 .collect();
-            let head = modes(hand.clone(), &scaled(c.ratios, freq), &levels, &rings)
+            let hz_ = scaled(c.ratios, freq);
+            let levels: Vec<f64> = levels.iter().zip(&hz_).map(|(l, f)| l * f / 20.0).collect();
+            let rest = hand.clone() >> net(lowpole_hz(20.0));
+            let head = modes(rest.clone(), &hz_, &levels, &rings)
                 + modes(
-                    hand.clone(),
-                    &[c.ratios[0] * freq],
-                    &[db(c.levels[0] - 12.0) * damp],
+                    rest,
+                    &[hz_[0]],
+                    &[db(c.levels[0] - 12.0) * damp * hz_[0] / 20.0],
                     &[c.rings[0]],
                 );
             let skin_levels: Vec<f64> = (0..7)
-                .map(|i| mix(c.skin[i], c.tap[i]) + slap * 12.0)
+                .map(|i| mix(c.skin[i], c.tap[i]) + slap * 16.0)
                 .collect();
             let skin_ring: Vec<f64> = (0..7)
-                .map(|i| mix(c.skin_rings[i], c.tap_rings[i]) * (1.0 - slap * 0.5))
+                .map(|i| mix(c.skin_rings[i] * soft, c.tap_rings[i]) * (1.0 - slap * 0.75))
                 .map(|r| r + (0.6 * held - r) * damp)
                 .collect();
-            let mut skin = Net::wrap(Box::new(zero()));
-            for some in plate(40, 400.0, 10000.0) {
-                let l: Vec<f64> = some
-                    .iter()
-                    .map(|&f| db(between(f, &SKIN_BANDS, &skin_levels)))
-                    .collect();
-                let r: Vec<f64> = some
-                    .iter()
-                    .map(|&f| between(f, &SKIN_BANDS, &skin_ring))
-                    .collect();
-                skin = skin + modes(hand.clone(), &some, &l, &r);
-            }
+            let same = |n: Net| n;
+            let skin = super::kit::band_noise(ctx, &skin_levels, &skin_ring, 2, 1.0, &same)
+                >> high_shelf(2000.0, (vel - 0.6) * 10.0);
             let crack =
                 (noise(ctx) >> bpf(3000.0, 0.7)) * hit(0.0005, 0.04, -4.0) * (slap * 4.0) as f32;
             let tone = (vel - 0.6).min(0.0) / -0.3 * c.bright[0]

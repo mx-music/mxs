@@ -640,7 +640,7 @@ const PEDAL_HIHAT: Fitted = Fitted {
 };
 
 /// Noise in each of the ride's bands from `first` on, at its level in dB, fading 60 dB over its ring; `shape` is applied to each band's level.
-fn band_noise(
+pub(super) fn band_noise(
     ctx: &mut Context,
     levels: &[f64],
     rings: &[f64],
