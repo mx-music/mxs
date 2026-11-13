@@ -9,10 +9,38 @@ use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f32::consts::TAU;
 
-/// The centres of the bands mx measures, from 80 Hz to 4 kHz.
-const BANDS: [f32; 8] = [113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, 3162.0];
+/// The centres of the bands mx measures, from 80 Hz to 4 kHz, and of three more above them, up to 16 kHz.
+const BANDS: [f32; 11] = [
+    113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, 3162.0, 5012.0, 7943.0, 12589.0,
+];
 
-const EQ: [&str; 8] = ["eq0", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7"];
+const EQ: [&str; 11] = [
+    "eq0", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7", "eq8", "eq9", "eq10",
+];
+
+/// A conical bore whose corner follows the pitch: the corner in Hz above which its end lets the sound out, the centre in Hz of its breath's noise, how far its sound falls at a slur and the seconds it takes to come back to a third, and how much its pitch, level and steepening drift.
+const fn cone(bell: f32, air: f32, slur: [f32; 2], drift: [f32; 3]) -> Bore {
+    Bore {
+        conical: true,
+        corner: 2.0,
+        cutoff: 0.0,
+        keep: 0.95,
+        bell,
+        bell_corner: 0.0,
+        smooth: 2.0,
+        zeta: 0.4,
+        relative: false,
+        air,
+        tongue: 0.25,
+        kick: 0.0,
+        catch: slur[0],
+        mend: slur[1],
+        gasp: 0.0,
+        jitter: drift[0],
+        shimmer: drift[1],
+        wander: drift[2],
+    }
+}
 
 pub fn all() -> Vec<Synth> {
     vec![
@@ -23,14 +51,13 @@ pub fn all() -> Vec<Synth> {
             1.0,
             Bore {
                 conical: false,
-                radiate: 1,
-                bell: 2570.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 1500.0,
+                cutoff: 1500.0,
+                bell_corner: 2.0,
+                smooth: 0.0,
+                relative: true,
                 tongue: 0.0,
-                catch: 0.27,
-                sharp: 4.4,
+                kick: 1.25,
+                ..cone(1500.0, 1500.0, [0.5, 0.03], [1.0, 0.3, 0.0])
             },
             &CLARINET,
         ),
@@ -38,119 +65,49 @@ pub fn all() -> Vec<Synth> {
             "oboe",
             5.0,
             1.0,
-            Bore {
-                conical: true,
-                radiate: 0,
-                bell: 300.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 1500.0,
-                tongue: 0.0,
-                catch: 0.35,
-                sharp: 4.0,
-            },
+            cone(1000.0, 1500.0, [0.46, 0.03], [2.0, 0.2, 0.1]),
             &OBOE,
         ),
         reed_wind(
             "bassoon",
             5.5,
             1.0,
-            Bore {
-                conical: true,
-                radiate: 1,
-                bell: 300.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 800.0,
-                tongue: 0.25,
-                catch: 0.52,
-                sharp: 5.0,
-            },
+            cone(400.0, 800.0, [0.5, 0.03], [2.0, 0.3, 0.1]),
             &BASSOON,
         ),
         reed_wind(
             "tenor_sax",
             4.94,
             TENOR_SAX_VIBRATO,
-            Bore {
-                conical: true,
-                radiate: 1,
-                bell: 400.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 1500.0,
-                tongue: 0.25,
-                catch: 0.5,
-                sharp: 5.0,
-            },
+            cone(800.0, 1500.0, [0.64, 0.03], [0.8, 0.25, 0.08]),
             &TENOR_SAX,
         ),
         reed_wind(
             "trumpet",
             4.9,
             1.0,
-            Bore {
-                conical: true,
-                radiate: 1,
-                bell: 1470.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 1500.0,
-                tongue: 0.0,
-                catch: 0.58,
-                sharp: 5.0,
-            },
+            cone(1200.0, 1500.0, [0.68, 0.065], [2.0, 0.2, 0.04]),
             &TRUMPET,
         ),
         reed_wind(
             "trombone",
             4.95,
             1.0,
-            Bore {
-                conical: true,
-                radiate: 1,
-                bell: 1110.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 1000.0,
-                tongue: 0.25,
-                catch: 0.62,
-                sharp: 4.5,
-            },
+            cone(700.0, 1000.0, [0.67, 0.065], [2.0, 0.35, 0.05]),
             &TROMBONE,
         ),
         reed_wind(
             "horn",
             5.0,
             1.0,
-            Bore {
-                conical: true,
-                radiate: 1,
-                bell: 400.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 800.0,
-                tongue: 0.2,
-                catch: 0.65,
-                sharp: 5.0,
-            },
+            cone(500.0, 800.0, [0.79, 0.065], [2.5, 0.35, 0.08]),
             &HORN,
         ),
         reed_wind(
             "tuba",
             5.0,
             1.0,
-            Bore {
-                conical: true,
-                radiate: 1,
-                bell: 300.0,
-                corner: 8.0,
-                keep: 0.95,
-                air: 300.0,
-                tongue: 0.6,
-                catch: 0.9,
-                sharp: 2.5,
-            },
+            cone(300.0, 300.0, [0.77, 0.065], [2.5, 0.4, 0.08]),
             &TUBA,
         ),
     ]
@@ -401,6 +358,7 @@ impl AudioNode for Jet {
 /// The clarinet's bore is a cylinder, closed at the reed and open at the bell, whose sound comes back inverted after half a period, so it favours the odd harmonics.
 /// A conical bore, as the oboe's, bassoon's and saxophone's, and the brass's, whose bell and mouthpiece bring their resonances to whole multiples, is a cylinder beside a short one as long as its missing apex, both open, with every harmonic.
 /// Its inputs are the pitch in Hz, the mouth's pressure, and white noise for the breath's turbulence.
+/// Its outputs are the wave that reaches the bell, which the bell radiates, the pitch it plays, and how far a slur's dip has yet to come back, from 0 to 1.
 #[derive(Clone)]
 pub(crate) struct Reed {
     bore: Line,
@@ -408,19 +366,18 @@ pub(crate) struct Reed {
     /// A conical bore's missing apex, a short open tube beside the bore, as part of the whole length.
     apex: Line,
     apex_loss: Loss,
-    apex_part: f32,
-    out: DcBlock,
+    pub(crate) apex_part: f32,
     conical: bool,
     /// How freely the reed lets the air through, the embouchure's ζ, from 0 to 1.
-    zeta: f32,
-    /// The bore's corner as a multiple of the pitch, and its loss at each round trip.
+    pub(crate) zeta: f32,
+    /// The corner above which the bore's open holes or bell let the sound out instead of sending it back, `corner` times the pitch and never under `cutoff` Hz, and what the bore keeps at each round trip.
+    /// A corner that follows the pitch plays every note alike, so a bore that sounds one note sounds them all; one in Hz, as a clarinet's row of open holes gives, lets a low note keep more harmonics than a high one.
+    cutoff: f32,
     corner: f32,
     keep: f32,
     turbulence: f32,
-    /// How many one-pole high-passes the sound in the bore goes through as it radiates from the bell, each rising 6 dB an octave up to `bell` Hz, and their last input and output.
-    radiate: usize,
-    bell: f32,
-    radiated: [[f32; 2]; 2],
+    /// Whether the mouth's pressure is a multiple of the least that sounds the note, which grows as the bore loses more of the pitch.
+    pub(crate) relative: bool,
     /// The bore's and the apex's delays the sample before, the ones a jump of note fades from, and how far it has faded, from 0 to 1.
     delay: f32,
     from: f32,
@@ -430,32 +387,29 @@ pub(crate) struct Reed {
     /// The part of the mouth's pressure the tongue's release sends into the bore, and the samples left of it, which the breath's first arrival starts.
     pub(crate) tongue_part: f32,
     tongue: i32,
-    /// The ratio its pitch is played at, below 1 where the loss filter, delaying the higher harmonics less than the pitch, pulls the note sharp.
-    pub(crate) tune: f32,
     pulse: f32,
-    /// How far the mouth's pressure falls at a jump of note, and how far it has yet to come back, from 0 to 1, as a slur in the Philharmonia's legato phrases dips 6 to 9 dB over 25 to 35 ms on a reed and 13 to 14 dB over 65 ms on a brass wind.
+    /// How far the mouth's pressure falls at a jump of note, how far it has yet to come back, from 0 to 1, and the seconds it takes to come back to a third, as a slur in the Philharmonia's legato phrases dips 6 to 9 dB over 25 to 35 ms on a reed and 13 to 14 dB over 65 ms on a brass wind.
     pub(crate) catch: f32,
     fall: f32,
+    pub(crate) mend: f32,
     rate: f32,
 }
 
 impl Reed {
-    pub(crate) fn new(conical: bool, corner: f32, keep: f32, radiate: usize, bell: f32) -> Reed {
+    pub(crate) fn new(conical: bool, cutoff: f32, corner: f32, keep: f32) -> Reed {
         Reed {
             bore: Line::new(8192),
             loss: Loss::default(),
             apex: Line::new(4096),
             apex_loss: Loss::default(),
             apex_part: 0.3,
-            out: DcBlock::default(),
             conical,
             zeta: 0.4,
+            cutoff,
             corner,
             keep,
             turbulence: 0.005,
-            radiate,
-            bell,
-            radiated: [[0.0; 2]; 2],
+            relative: false,
             delay: 0.0,
             from: 0.0,
             short: 1.0,
@@ -463,19 +417,24 @@ impl Reed {
             fade: 1.0,
             tongue_part: 0.0,
             tongue: -1,
-            tune: 1.0,
             pulse: 1.0,
             catch: 0.0,
             fall: 0.0,
+            mend: 0.02,
             rate: DEFAULT_SR as f32,
         }
     }
 }
 
+/// The pole of the low-pass a bore's end sends its sound back through, at `freq` Hz, its corner at `cutoff` Hz and never under `corner` times the pitch.
+fn end_pole(freq: f32, cutoff: f32, corner: f32, rate: f32) -> f32 {
+    Loss::pole((corner * freq).max(cutoff).min(0.45 * rate), rate)
+}
+
 impl AudioNode for Reed {
     const ID: u64 = 0x6d78_0062;
     type Inputs = U3;
-    type Outputs = U1;
+    type Outputs = U3;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
         self.rate = sample_rate as f32;
@@ -486,22 +445,33 @@ impl AudioNode for Reed {
         self.loss = Loss::default();
         self.apex.clear();
         self.apex_loss = Loss::default();
-        self.out = DcBlock::default();
-        self.radiated = [[0.0; 2]; 2];
         self.delay = 0.0;
         self.fade = 1.0;
         self.tongue = -1;
         self.fall = 0.0;
     }
 
-    fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U1> {
-        let freq = (input[0] * self.tune).clamp(20.0, 5000.0);
-        self.fall *= Loss::pole(8.0, self.rate);
-        let mouth =
-            input[1].max(0.0) * (1.0 + self.turbulence * input[2]) * (1.0 - self.catch * self.fall);
+    fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U3> {
+        let freq = input[0].clamp(20.0, 5000.0);
+        let noise = input[2];
+        self.fall *= (-1.0 / (self.mend * self.rate)).exp();
         let period = self.rate / freq;
         let w = TAU * freq / self.rate;
-        let a = Loss::pole(self.corner * freq, self.rate);
+        let a = end_pole(freq, self.cutoff, self.corner, self.rate);
+        // A reed starts to sound where the flow's slope with pressure, ζ (3γ - 1) / (2 √γ), makes up what the bore loses of the pitch at each round trip, (1 - g) / (1 + g).
+        let least = if self.relative {
+            let g = self.keep * (1.0 - a) / (1.0 - 2.0 * a * w.cos() + a * a).sqrt();
+            let lost = (1.0 - g) / (1.0 + g);
+            let root = (2.0 * lost + (4.0 * lost * lost + 12.0 * self.zeta * self.zeta).sqrt())
+                / (6.0 * self.zeta);
+            root * root
+        } else {
+            1.0
+        };
+        let mouth = input[1].max(0.0)
+            * least
+            * (1.0 + self.turbulence * noise)
+            * (1.0 - self.catch * self.fall);
         // A cone is played as Dalmont, Gilbert and Kergomard's cylindrical saxophone: the bore beside a tube as long as the missing apex, both open, whose resonances fall on every harmonic of their joint length.
         let back = if self.conical {
             -0.5 * (self.loss.y + self.apex_loss.y)
@@ -538,8 +508,7 @@ impl AudioNode for Reed {
         } else {
             0.0
         };
-        let into = pressure + self.loss.y + pulse;
-        self.bore.write(into);
+        self.bore.write(pressure + self.loss.y + pulse);
         self.apex.write(pressure + self.apex_loss.y);
         let delay = if self.conical {
             period * (1.0 - self.apex_part)
@@ -550,9 +519,13 @@ impl AudioNode for Reed {
         let short = (period * self.apex_part - 1.0 - Loss::lag(a, w)).max(1.0);
         // A jump of note fades from the old delays to the new over 4 ms, as the flute's does, where switching at once clicks.
         if self.delay > 0.0 && (delay - self.delay).abs() > 0.01 * delay {
-            (self.from, self.short_from, self.fade, self.fall) = (self.delay, self.short, 0.0, 1.0);
+            (self.from, self.short_from, self.fade) = (self.delay, self.short, 0.0);
         }
         (self.delay, self.short) = (delay, short);
+        // The dip falls as the fade goes, where falling at once clicks.
+        if self.fade < 1.0 {
+            self.fall = self.fall.max(self.fade);
+        }
         self.fade = (self.fade + 1.0 / (0.004 * self.rate)).min(1.0);
         let b = self.fade * self.bore.read(delay) + (1.0 - self.fade) * self.bore.read(self.from);
         self.loss.tick(b * self.keep, a);
@@ -561,30 +534,181 @@ impl AudioNode for Reed {
                 + (1.0 - self.fade) * self.apex.read(self.short_from);
             self.apex_loss.tick(b * self.keep, a);
         }
-        let mut sound = self.out.tick(pressure);
-        // A bell radiates its low harmonics weakly, rising 6 dB an octave, and its high ones fully; differencing alone would keep rising to the top and lift the reed's turbulence over the note.
-        let r = Loss::pole(self.bell, self.rate);
-        for [x, y] in self.radiated.iter_mut().take(self.radiate) {
-            (*y, *x) = (r * (*y + sound - *x), sound);
-            sound = *y;
-        }
-        // Each high-pass also lowers the pitch's level, which an instrument does not, so the sound is taken back by its gain at the pitch.
-        let gain = r * 2.0 * (w / 2.0).sin() / (1.0 - 2.0 * r * w.cos() + r * r).sqrt();
-        [sound / gain.powi(self.radiate as i32)].into()
+        [b, freq, self.fall].into()
     }
+}
+
+/// The samples the bell's line delays a wave at rest.
+const STEEP: f32 = 60.0;
+
+/// The end of a bore, which lets out what it does not send back: the wave that reaches it less the same wave through a low-pass at `cutoff` Hz, never under `corner` times the pitch.
+/// A loud wave in a brass bore steepens on its way, its crests travelling faster than its troughs, so its upper harmonics grow with its level, as Msallam, Dequidt, Caussé and Tassart's trombone has them, "Physical model of the trombone including nonlinear effects", JASA 2000; here each sample arrives earlier by `steep` radians of the note's period for each unit of its pressure.
+/// A crest cannot overtake the trough before it: once the wave is a shock, a sawtooth, more steepening leaves it one, so the steepening stops short of what the wave's steepest slope allows.
+/// On a reed wind the same stage stands in for the reed's closing, which sharpens the wave's edge the harder the reed is blown.
+/// Its inputs are the wave, the pitch in Hz, how far a slur's dip has yet to come back, the steepening, the part of the wave the breath has let through so far, from 0 to 1, and the part of the steepening the player's drift leaves, from 0 to 1.
+#[derive(Clone)]
+struct Bell {
+    line: Line,
+    before: f32,
+    slope: f32,
+    low: Loss,
+    cutoff: f32,
+    corner: f32,
+    /// The corner, as a multiple of the pitch, of the two low-passes that round the wave before it steepens, as a bore's losses do, or 0 for none.
+    smooth: f32,
+    smoothed: [f32; 2],
+    /// The dB louder the sound is an octave up, from middle C.
+    lift: f32,
+    /// How far the wave falls at a slur, from 0 to 1.
+    catch: f32,
+    rate: f32,
+}
+
+impl Bell {
+    fn new(cutoff: f32, corner: f32) -> Bell {
+        Bell {
+            line: Line::new(128),
+            before: 0.0,
+            slope: 0.0,
+            low: Loss::default(),
+            cutoff,
+            corner,
+            smooth: 0.0,
+            smoothed: [0.0; 2],
+            lift: 0.0,
+            catch: 0.0,
+            rate: DEFAULT_SR as f32,
+        }
+    }
+}
+
+impl AudioNode for Bell {
+    const ID: u64 = 0x6d78_0063;
+    type Inputs = U6;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+    }
+
+    fn reset(&mut self) {
+        self.line.clear();
+        (self.before, self.slope) = (0.0, 0.0);
+        self.low = Loss::default();
+        self.smoothed = [0.0; 2];
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U6>) -> Frame<f32, U1> {
+        let freq = input[1].clamp(20.0, 5000.0);
+        let smooth = Loss::pole(self.smooth * freq, self.rate);
+        // At a slur the breath catches, and the wave falls and comes back with it.
+        let mut wave = input[0] * input[4] * (1.0 - self.catch * input[2]);
+        if self.smooth > 0.0 {
+            for y in self.smoothed.iter_mut() {
+                *y = (1.0 - smooth) * wave + smooth * *y;
+                wave = *y;
+            }
+        }
+        self.line.write(wave);
+        // The wave's steepest slope over the last few periods, falling by half in 30 ms.
+        let slope = (wave - self.before).abs();
+        self.before = wave;
+        self.slope = slope.max(self.slope * 0.5f32.powf(1.0 / (0.03 * self.rate)));
+        // The steepening is in periods over 2π for each unit of pressure, so a note steepens as much at any pitch.
+        let steep = (input[3].max(0.0) * self.rate / (TAU * freq))
+            .min(SHOCK / self.slope.max(1e-6))
+            * input[5];
+        let wave = if steep > 0.0 {
+            #[allow(clippy::let_and_return)]
+            // The pressure that arrives now left earlier or later by its own level, found in two steps from the one that would arrive with no steepening.
+            let at = |p: f32| (STEEP - steep * p).clamp(2.0, 2.0 * STEEP - 2.0);
+            let first = self.line.read(at(self.line.read(STEEP)));
+            self.line.read(at(first))
+        } else {
+            wave
+        };
+        let a = end_pole(freq, self.cutoff, self.corner, self.rate);
+        let lift = db((self.lift * (freq / 261.63).log2()) as f64) as f32;
+        [(wave - self.low.tick(wave, a)) * lift].into()
+    }
+}
+
+/// How near a shock the steepening may bring the wave, where 1 is a shock.
+const SHOCK: f32 = 1.0;
+
+/// A slow random sway of about unit size, the sum of one that turns 1.3 times a second and one that turns 7, as a player's pitch and level drift and flutter while a note holds.
+#[derive(Clone)]
+struct Sway {
+    seed: u64,
+    state: u64,
+    turns: [[f32; 3]; 2],
+    rate: f32,
+}
+
+impl Sway {
+    fn new(seed: u64) -> Sway {
+        Sway {
+            seed,
+            state: seed | 1,
+            turns: [[0.0; 3]; 2],
+            rate: DEFAULT_SR as f32,
+        }
+    }
+
+    fn draw(&mut self) -> f32 {
+        self.state ^= self.state << 13;
+        self.state ^= self.state >> 7;
+        self.state ^= self.state << 17;
+        (self.state >> 40) as f32 / (1u64 << 23) as f32 - 1.0
+    }
+}
+
+impl AudioNode for Sway {
+    const ID: u64 = 0x6d78_0064;
+    type Inputs = U0;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+    }
+
+    fn reset(&mut self) {
+        self.state = self.seed | 1;
+        self.turns = [[0.0; 3]; 2];
+    }
+
+    fn tick(&mut self, _: &Frame<f32, U0>) -> Frame<f32, U1> {
+        let mut sum = 0.0;
+        for (turn, (hz, part)) in [(1.3, 1.6), (7.0, 1.2)].into_iter().enumerate() {
+            let [from, to, at] = self.turns[turn];
+            let at = at + hz / self.rate;
+            self.turns[turn] = if at >= 1.0 {
+                [to, self.draw(), at - 1.0]
+            } else {
+                [from, to, at]
+            };
+            let [from, to, at] = self.turns[turn];
+            sum += part * (from + (to - from) * (0.5 - 0.5 * (std::f32::consts::PI * at).cos()));
+        }
+        [sum].into()
+    }
+}
+
+fn sway(seed: u64) -> Net {
+    Net::wrap(Box::new(An(Sway::new(seed))))
 }
 
 /// Peaks at each band mx measures, their gains following vel between the ones fitted at pp, mf and ff, or held at those given for fitting, then the level for vel.
 /// Its inputs are the sound and vel.
 #[derive(Clone)]
 struct Bands {
-    gains: [[f32; 8]; 3],
-    given: [Option<f32>; 8],
+    gains: [[f32; 11]; 3],
+    given: [Option<f32>; 11],
     levels: [f32; 3],
     vel: f32,
     level: f32,
-    coefficients: [[f32; 5]; 8],
-    state: [[f32; 4]; 8],
+    coefficients: [[f32; 5]; 11],
+    state: [[f32; 4]; 11],
     rate: f32,
 }
 
@@ -596,15 +720,15 @@ fn by_vel(vel: f32, at: [f32; 3]) -> f32 {
 }
 
 impl Bands {
-    fn new(gains: [[f32; 8]; 3], given: [Option<f32>; 8], levels: [f32; 3]) -> Bands {
+    fn new(gains: [[f32; 11]; 3], given: [Option<f32>; 11], levels: [f32; 3]) -> Bands {
         Bands {
             gains,
             given,
             levels,
             vel: -1.0,
             level: 0.0,
-            coefficients: [[0.0; 5]; 8],
-            state: [[0.0; 4]; 8],
+            coefficients: [[0.0; 5]; 11],
+            state: [[0.0; 4]; 11],
             rate: DEFAULT_SR as f32,
         }
     }
@@ -626,7 +750,7 @@ impl Bands {
             });
             // A peaking filter after Robert Bristow-Johnson's "Cookbook formulae for audio EQ biquad filter coefficients".
             let a = 10f32.powf(gain / 40.0);
-            let w = TAU * centre / self.rate;
+            let w = TAU * centre.min(0.45 * self.rate) / self.rate;
             let alpha = w.sin() / (2.0 * 1.4);
             let a0 = 1.0 + alpha / a;
             self.coefficients[band] = [
@@ -651,7 +775,7 @@ impl AudioNode for Bands {
     }
 
     fn reset(&mut self) {
-        self.state = [[0.0; 4]; 8];
+        self.state = [[0.0; 4]; 11];
         self.vel = -1.0;
     }
 
@@ -675,7 +799,7 @@ impl AudioNode for Bands {
 /// An instrument's figures, fitted to its recordings at pp, mf and ff.
 pub(crate) struct Fit {
     /// The gain in dB at each band.
-    pub gains: [[f32; 8]; 3],
+    pub gains: [[f32; 11]; 3],
     /// The whole sound's level in dB.
     pub levels: [f32; 3],
     /// The breath's pressure.
@@ -684,6 +808,12 @@ pub(crate) struct Fit {
     pub rise: [f32; 3],
     /// The breath's noise in dB, against the sound of the model.
     pub air: [f32; 3],
+    /// The radians of the note's period a unit of pressure arrives earlier at the bell, which steepens a loud wave.
+    pub steep: [f32; 3],
+    /// The cents the model plays sharp at middle C, which the player takes back, with their change by the semitone from there and by the semitone squared.
+    pub sharp: [[f32; 3]; 3],
+    /// The dB louder the sound is an octave up.
+    pub lift: f32,
 }
 
 /// A wind's options: those every wind takes, then for fitting each band's gain, the level, the breath and its rise, in place of those fitted for the note's vel.
@@ -707,14 +837,21 @@ fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
 }
 
 /// The note's frequency, gliding with its note option, swung by a vibrato `depth` semitones deep at `rate` that waits a quarter second, then grows in over 1.2.
-fn pitch(o: &Options, depth: f64, rate: f64) -> Net {
+/// The player takes back the cents the model plays sharp, `sharp` at pp, mf and ff, and drifts by about `jitter` cents.
+fn pitch(o: &Options, depth: f64, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, seed: u64) -> Net {
     let swing = shape(move |t| {
         let grown = ((t - 0.25) / 1.2).clamp(0.0, 1.0);
         (std::f64::consts::TAU * rate * t).sin() * depth * grown * grown
     });
-    (o.follow("note") | swing)
-        >> Net::wrap(Box::new(map(|x: &Frame<f32, U2>| {
-            hz(x[0] as f64 + x[1] as f64) as f32
+    (o.follow("note") | swing | sway(seed) | o.follow("vel"))
+        >> Net::wrap(Box::new(map(move |x: &Frame<f32, U4>| {
+            let from = x[0] - 60.0;
+            let sharp = by_vel(
+                x[3].clamp(0.0, 1.0),
+                sharp.map(|[at, slope, curve]| at + slope * from + curve * from * from),
+            );
+            let cents = jitter * x[2] - sharp;
+            hz(x[0] as f64 + x[1] as f64 + cents as f64 / 100.0) as f32
         })))
 }
 
@@ -746,20 +883,28 @@ const DRIFT: f32 = 100.0;
 /// The scale that makes the low-passed noise wander the vibrato's rate about 6 percent from cycle to cycle, where VSCO 2's flute's wanders 6 to 9.
 const WANDER: f32 = 12.0;
 
-/// The breath's pressure following vel, rising from silence over its fitted rise at the vel the note starts at.
-fn breath(o: &Options, fit: &Fit) -> Net {
+/// The seconds the breath takes to reach its pressure, fitted for the vel the note starts at.
+fn rise(o: &Options, fit: &Fit) -> f64 {
     let vel = o.number("vel").clamp(0.0, 1.0) as f32;
-    let rise = o
-        .given("rise")
+    o.given("rise")
         .unwrap_or_else(|| by_vel(vel, fit.rise) as f64)
-        .max(1e-3);
+        .max(1e-3)
+}
+
+/// How far the breath has risen `t` seconds into a rise of `rise`, from 0 to 1.
+fn risen(t: f64, rise: f64) -> f64 {
+    1.0 - (1.0 - (t / rise).min(1.0)).powi(2)
+}
+
+/// The breath's pressure following vel, rising from silence over `rise` seconds.
+fn breath(o: &Options, fit: &Fit, rise: f64) -> Net {
     let at = fit.breath;
     let given = o.given("breath").map(|b| b as f32);
     let pressure = o.follow("vel")
         >> Net::wrap(Box::new(map(move |v: &Frame<f32, U1>| {
             given.unwrap_or_else(|| by_vel(v[0].clamp(0.0, 1.0), at))
         })));
-    pressure * shape(move |t| 1.0 - (1.0 - (t / rise).min(1.0)).powi(2))
+    pressure * shape(move |t| risen(t, rise))
 }
 
 /// The model's sound with the breath's noise around `centre` Hz, through the fitted bands, at the fitted level for vel.
@@ -801,12 +946,20 @@ fn played_jet(
     (pitch | breath | white_noise(seed)) >> Net::wrap(Box::new(An(jet)))
 }
 
-/// The bands and level as a defsynth plays them, following `vel`: `gains` at pp, mf and ff, eight to each, and `levels` at each.
+/// The bands and level as a defsynth plays them, following `vel`: `gains` at pp, mf and ff, eight to each for the bands up to 3162 Hz, and `levels` at each.
 pub(crate) fn wind_bands(sound: Net, vel: Net, gains: &[f64], levels: &[f64]) -> Net {
-    let gain = |d: usize| std::array::from_fn(|band| gains[d * 8 + band] as f32);
+    let gain = |d: usize| {
+        std::array::from_fn(|band| {
+            if band < 8 {
+                gains[d * 8 + band] as f32
+            } else {
+                0.0
+            }
+        })
+    };
     let bands = Bands::new(
         [gain(0), gain(1), gain(2)],
-        [None; 8],
+        [None; 11],
         [levels[0] as f32, levels[1] as f32, levels[2] as f32],
     );
     (sound | vel) >> Net::wrap(Box::new(An(bands)))
@@ -821,11 +974,14 @@ fn flute_sharp(note: f64) -> f64 {
 }
 
 const FLUTE: Fit = Fit {
-    gains: [[0.0; 8]; 3],
+    gains: [[0.0; 11]; 3],
     levels: [-12.0, -12.0, -12.0],
     breath: [0.38, 0.45, 0.56],
     rise: [0.05, 0.05, 0.05],
     air: [-90.0, -90.0, -90.0],
+    steep: [0.0; 3],
+    sharp: [[0.0; 3]; 3],
+    lift: 0.0,
 };
 
 fn flute() -> Synth {
@@ -844,11 +1000,12 @@ fn flute() -> Synth {
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
             let pitch = o.follow("note") >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
             let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed() ^ 0x76) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
-            let jet = played_jet(pitch, breath(o, &FLUTE) * throb, ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(3000.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64), o.number("lift"));
+            let rise = rise(o, &FLUTE);
+            let jet = played_jet(pitch, breath(o, &FLUTE, rise) * throb, ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(3000.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64), o.number("lift"));
             // The breath hisses above 3 kHz where the jet strikes the edge, pulsing as it crosses, after the bands, so they do not colour it.
             let pulse = o.given("pulse").unwrap_or(1.0) as f32;
             let side = Net::wrap(Box::new(map(move |s: &Frame<f32, U1>| 1.0 - pulse + 2.0 * pulse * s[0])));
-            let hiss = side * (white_noise(ctx.seed()) >> Net::wrap(Box::new(highpass_hz(3000.0, 0.707) >> lowpass_hz(10_000.0, 0.707)))) * breath(o, &FLUTE) * db(o.given("hiss").unwrap_or(-36.0)) as f32;
+            let hiss = side * (white_noise(ctx.seed()) >> Net::wrap(Box::new(highpass_hz(3000.0, 0.707) >> lowpass_hz(10_000.0, 0.707)))) * breath(o, &FLUTE, rise) * db(o.given("hiss").unwrap_or(-36.0)) as f32;
             // mx's bands stop at 4 kHz, and above them the jet is brighter than the Philharmonia's flute and a played Syrinx, by 10 dB from 4 to 10 kHz, which a shelf takes away.
             let bright = Net::wrap(Box::new(highshelf_hz(4000.0, 0.707, db(o.given("shelf").unwrap_or(-8.0)) as f32)));
             let tone = voiced(o, ctx, Net::wrap(Box::new(pass())), &FLUTE, 2000.0) >> bright;
@@ -858,130 +1015,167 @@ fn flute() -> Synth {
         })
 }
 
-/// A reed or brass wind's bore: whether it is conical, how many high-passes its sound goes through as it radiates and their cutoff in Hz, fitted to its recordings at mf, its corner as a multiple of the pitch, how much it keeps at each round trip, the centre in Hz of the breath's noise, the part of the mouth's pressure its tongue's release sends in, how far the breath falls at a slur, and the cents its model plays sharp, which the player takes back.
+/// A reed or brass wind's bore and how it is played.
 struct Bore {
+    /// Whether it is a cone.
     conical: bool,
-    radiate: usize,
-    bell: f32,
+    /// The corner above which it stops sending the sound back, as a multiple of the pitch and never under `cutoff` Hz, and what it keeps at each round trip.
     corner: f32,
+    cutoff: f32,
     keep: f32,
+    /// The corner in Hz above which its end lets the sound out, never under `bell_corner` times the pitch.
+    bell: f32,
+    bell_corner: f32,
+    /// The corner, as a multiple of the pitch, of the low-passes that round the wave before it steepens, or 0 for none.
+    smooth: f32,
+    /// How freely the reed lets the air through.
+    zeta: f32,
+    /// Whether the breath is a multiple of the least that sounds the note.
+    relative: bool,
+    /// The centre in Hz of the breath's noise.
     air: f32,
+    /// The part of the mouth's pressure the tongue's release sends in, and the breath a soft note starts at before it falls to its own, or 0 to start at its own.
     tongue: f32,
+    kick: f32,
+    /// How far the sound falls at a slur, the seconds it takes to come back to a third, and how far the breath falls with it.
     catch: f32,
-    sharp: f32,
+    mend: f32,
+    gasp: f32,
+    /// The cents the pitch drifts, the dB the level does, and the part of itself the steepening does, while a note holds.
+    jitter: f32,
+    shimmer: f32,
+    wander: f32,
 }
 
-// The breath, its rise and its noise are fitted with mix mx.fit at each dynamic to the University of Iowa's recordings, VSCO 2's for the horn and tuba and VCSL's for the tenor sax, the noise held under -20 dB, where the fit would trade the tone for it, and the horn's pp and tuba's ff breath held at their mf one, where the fit's jumps the pitch.
-// A conical reed starts at its threshold already near full, so its breath stays near there and the level carries the dynamics: each wind's pp and mf under its ff as Iowa's recordings have them, the tenor sax, which Iowa lacks, as the reeds' median, and every ff at -18 dB, as the flute's.
-const fn reed_fit(levels: [f32; 3], breath: [f32; 3], rise: [f32; 3], air: [f32; 3]) -> Fit {
-    Fit {
-        gains: [[0.0; 8]; 3],
-        levels,
-        breath,
-        rise,
-        air,
-    }
-}
-const CLARINET: Fit = reed_fit(
-    [-21.0, -14.3, -11.5],
-    [0.435, 0.5, 0.5],
-    [0.137, 0.158, 0.24],
-    [-18.0, -26.0, -26.0],
-);
-// The conical winds' bands are fitted too, at each dynamic, as their models alone read 7 to 30 dB from their recordings' between 250 Hz and 4 kHz; their levels keep the loudness they had before.
+// Each reed and brass wind's bands, steepening and rise are fitted at pp, mf and ff to the harmonics and attacks of the Philharmonia's and the University of Iowa's notes, VSCO 2's for the horn and tuba and VCSL's for the tenor sax; its noise to their harmonics-to-noise; its levels and lift keep each note as loud as it was before the fit; its sharp is the cents the model plays sharp.
+const CLARINET: Fit = Fit {
+    gains: [
+        [2.5, 1.0, -1.5, -1.2, -4.1, -1.5, 0.6, 3.0, 2.3, -1.0, -1.4],
+        [1.1, 0.5, -0.5, 0.7, -1.1, -1.7, -1.9, 5.4, 2.0, -2.2, -1.8],
+        [0.5, 1.4, -1.4, -0.1, 1.6, 0.6, -2.7, 0.5, 3.4, -2.0, -1.3],
+    ],
+    levels: [7.8, 9.6, 8.8],
+    breath: [1.08, 1.3, 1.6],
+    rise: [0.2, 0.1, 0.1],
+    air: [-60.0, -60.0, -45.5],
+    steep: [0.0, 0.0, 0.0],
+    sharp: [
+        [0.5561, -0.0234, -0.0005],
+        [4.6487, 0.1855, -0.0036],
+        [9.9079, 0.4126, -0.0097],
+    ],
+    lift: -3.76,
+};
 const OBOE: Fit = Fit {
     gains: [
-        [0.0, -9.0, -4.0, -2.0, -6.0, 18.0, -5.0, -9.0],
-        [0.0, 2.0, -6.0, 4.0, 2.0, 22.0, 5.0, 10.0],
-        [0.0, 2.0, -2.0, 4.0, -1.0, 30.0, -1.0, 13.0],
+        [-1.8, -8.4, -6.6, -3.0, -1.3, 7.9, 0.1, 2.6, 5.3, 2.0, 3.2],
+        [-1.3, -6.4, -6.4, -6.2, -3.3, 9.3, 3.0, 6.1, 3.9, -0.1, 1.8],
+        [-1.2, -5.7, -7.3, -6.0, -3.7, 6.9, -2.3, 5.5, 5.8, 2.6, 3.0],
     ],
-    ..reed_fit(
-        [-25.0, -28.2, -26.6],
-        [0.409, 0.409, 0.409],
-        [0.053, 0.040, 0.031],
-        [-30.0, -38.0, -34.0],
-    )
+    levels: [-5.1, 2.5, 7.9],
+    breath: [0.6, 0.62, 0.66],
+    rise: [0.35, 0.25, 0.2],
+    air: [-50.0, -60.0, -51.0],
+    steep: [1.0, 1.5, 3.2],
+    sharp: [[8.7797, 0.0, 0.0], [7.5615, 0.0, 0.0], [5.2375, 0.0, 0.0]],
+    lift: -3.65,
 };
 const BASSOON: Fit = Fit {
     gains: [
-        [7.0, 2.0, 12.0, 21.0, 6.0, 10.0, 5.0, 7.0],
-        [5.0, -4.0, 4.0, 20.0, 7.0, 15.0, 7.0, 6.0],
-        [3.0, -5.0, 7.0, 17.0, 6.0, 15.0, 12.0, 10.0],
+        [-5.6, -1.4, 2.3, 13.7, 3.1, 1.7, -0.1, 1.3, 2.3, 1.4, 0.8],
+        [-8.4, -5.4, -0.1, 9.4, 1.4, 7.0, 2.2, 1.9, 3.5, 5.4, 4.1],
+        [-10.0, -6.8, -1.2, 8.1, 0.8, 6.5, 3.5, 3.9, 6.1, 6.7, 4.3],
     ],
-    ..reed_fit(
-        [-47.0, -33.5, -29.0],
-        [0.463, 0.463, 0.463],
-        [0.054, 0.054, 0.041],
-        [-24.0, -30.0, -34.0],
-    )
+    levels: [-19.4, -5.7, -0.3],
+    breath: [0.6, 0.62, 0.66],
+    rise: [0.3, 0.15, 0.15],
+    air: [-35.0, -50.0, -42.5],
+    steep: [3.2, 3.2, 3.2],
+    sharp: [[8.7327, 0.0, 0.0], [7.517, 0.0, 0.0], [5.1921, 0.0, 0.0]],
+    lift: -4.60,
 };
 /// The semitones the tenor sax's vibrato at 1 swings, which measures 10.8 cents deep, as VCSL's tenor saxophone played with vibrato.
 const TENOR_SAX_VIBRATO: f64 = 0.145;
 const TENOR_SAX: Fit = Fit {
     gains: [
-        [1.0, -6.0, 3.0, 8.0, -2.0, -3.0, -1.0, 6.0],
-        [1.0, -6.0, 3.0, 8.0, -2.0, -3.0, -1.0, 6.0],
-        [1.0, -6.0, 5.0, 8.0, 0.0, 1.0, 3.0, 9.0],
+        [-4.5, -12.0, -5.2, -3.0, -0.5, -0.3, 2.9, 8.5, 5.6, 4.6, 2.8],
+        [-10.8, -11.1, -2.3, 0.3, -5.5, -2.1, 3.9, 9.5, 9.9, 6.9, 4.7],
+        [
+            -9.8, -10.6, -3.8, -1.3, -8.3, -3.8, 1.8, 5.7, 7.6, 12.1, 7.8,
+        ],
     ],
-    ..reed_fit(
-        [-29.8, -19.3, -18.8],
-        [0.44, 0.44, 0.46],
-        [0.015, 0.015, 0.004],
-        [-22.0, -22.0, -26.0],
-    )
+    levels: [0.3, 9.4, 12.9],
+    breath: [0.6, 0.62, 0.66],
+    rise: [0.01, 0.012, 0.006],
+    air: [-54.5, -60.0, -58.0],
+    steep: [1.0, 1.5, 3.2],
+    sharp: [[8.7338, 0.0, 0.0], [7.5151, 0.0, 0.0], [5.1983, 0.0, 0.0]],
+    lift: -7.47,
 };
 const TRUMPET: Fit = Fit {
     gains: [
-        [0.0, 8.0, 7.0, 9.0, 12.0, 31.0, 20.0, 7.0],
-        [0.0, 12.0, 10.0, 13.0, 14.0, 27.0, 24.0, 36.0],
-        [0.0, 9.0, 16.0, 13.0, 11.0, 27.0, 26.0, 40.0],
+        [
+            -4.7, -11.7, -4.7, -1.7, -1.3, 12.7, 11.1, 2.9, 0.2, -0.6, -0.1,
+        ],
+        [-3.2, -9.4, -7.8, -4.3, -2.3, 3.4, 5.5, 8.7, 4.1, 3.9, 1.8],
+        [-3.8, -10.8, -10.0, -5.1, -5.0, 1.0, 2.8, 7.2, 6.3, 9.8, 4.3],
     ],
-    ..reed_fit(
-        [-56.6, -60.1, -62.4],
-        [0.41, 0.48, 0.48],
-        [0.115, 0.174, 0.068],
-        [-20.0, -22.0, -20.0],
-    )
+    levels: [0.9, 9.7, 13.3],
+    breath: [0.6, 0.62, 0.66],
+    rise: [0.35, 0.35, 0.2],
+    air: [-60.0, -55.0, -55.0],
+    steep: [1.0, 3.2, 3.2],
+    sharp: [[8.7541, 0.0, 0.0], [7.5353, 0.0, 0.0], [5.2181, 0.0, 0.0]],
+    lift: -9.31,
 };
 const TROMBONE: Fit = Fit {
     gains: [
-        [7.0, 14.0, 18.0, 16.0, 15.0, 15.0, 6.0, 3.0],
-        [8.0, 20.0, 17.0, 18.0, 17.0, 18.0, 23.0, 23.0],
-        [11.0, 21.0, 16.0, 15.0, 13.0, 11.0, 33.0, 40.0],
+        [-8.0, -1.3, 0.4, 3.9, 5.1, 6.1, -0.4, -0.5, 1.1, 2.2, 1.1],
+        [-11.2, -7.3, -4.1, -0.9, 0.7, 5.4, 6.4, 10.2, 7.5, 2.8, 1.3],
+        [
+            -12.7, -13.2, -11.3, -7.0, -5.1, 0.7, 5.0, 8.6, 14.8, 16.7, 5.4,
+        ],
     ],
-    ..reed_fit(
-        [-65.9, -60.7, -54.9],
-        [0.42, 0.42, 0.433],
-        [0.111, 0.066, 0.026],
-        [-20.0, -20.0, -20.0],
-    )
+    levels: [-21.9, -4.7, 12.0],
+    breath: [0.6, 0.62, 0.66],
+    rise: [0.3, 0.3, 0.25],
+    air: [-37.0, -45.5, -50.0],
+    steep: [2.2, 3.2, 3.2],
+    sharp: [[8.7325, 0.0, 0.0], [7.5093, 0.0, 0.0], [5.1892, 0.0, 0.0]],
+    lift: -7.77,
 };
 const HORN: Fit = Fit {
     gains: [
-        [13.0, 20.0, 30.0, 34.0, 23.0, 24.0, 14.0, 12.0],
-        [6.0, 7.0, 24.0, 28.0, 13.0, 11.0, 3.0, 7.0],
-        [6.0, 11.0, 22.0, 30.0, 24.0, 23.0, 18.0, 8.0],
+        [-4.0, 0.8, 4.5, 8.3, 4.7, 0.4, -3.7, -5.5, -3.9, -0.2, 1.1],
+        [-9.2, -1.9, 4.4, 7.5, 5.3, 7.2, 4.7, -1.9, -1.6, 0.6, 1.1],
+        [-12.8, -8.4, -1.7, 3.3, 1.2, 0.4, 7.5, 8.2, 7.5, 6.4, 3.1],
     ],
-    ..reed_fit(
-        [-78.2, -54.5, -59.2],
-        [0.463, 0.463, 0.532],
-        [0.057, 0.034, 0.085],
-        [-26.0, -30.0, -26.0],
-    )
+    levels: [-14.4, -9.7, 4.2],
+    breath: [0.6, 0.62, 0.66],
+    rise: [0.2, 0.25, 0.25],
+    air: [-35.5, -35.5, -42.0],
+    steep: [2.2, 3.2, 3.2],
+    sharp: [[8.7341, 0.0, 0.0], [7.5077, 0.0, 0.0], [5.186, 0.0, 0.0]],
+    lift: -5.56,
 };
 const TUBA: Fit = Fit {
     gains: [
-        [19.0, 20.0, 15.0, 27.0, 14.0, 6.0, 6.0, 7.0],
-        [23.0, 15.0, 15.0, 24.0, 19.0, 10.0, 6.0, 5.0],
-        [20.0, 13.0, 15.0, 29.0, 26.0, 28.0, 22.0, 16.0],
+        [3.5, 5.5, 5.1, 3.1, 8.0, 2.8, -1.9, -0.7, 0.0, 0.1, 0.0],
+        [-3.2, 3.8, 7.0, 5.5, 6.9, 4.8, 0.3, -0.1, 0.2, 0.5, 0.1],
+        [-12.5, -4.3, -0.0, -0.3, 5.7, 8.8, 10.1, 8.6, 4.5, 1.3, 0.3],
     ],
-    ..reed_fit(
-        [-67.5, -58.9, -57.2],
-        [0.651, 0.671, 0.731],
-        [0.024, 0.024, 0.023],
-        [-20.0, -20.0, -20.0],
-    )
+    levels: [-23.9, -16.6, 0.7],
+    breath: [0.6, 0.62, 0.66],
+    rise: [0.25, 0.22, 0.18],
+    air: [-30.0, -30.0, -36.0],
+    steep: [2.2, 3.2, 3.2],
+    sharp: [[8.7129, 0.0, 0.0], [7.4601, 0.0, 0.0], [5.1423, 0.0, 0.0]],
+    lift: -3.93,
 };
+
+/// The seconds the breath takes to reach its pressure, as fast as a tongue lets it go, and the seconds its kick takes to fall to a third.
+const SPEAKS: f64 = 0.01;
+const KICK: f64 = 0.05;
 
 /// A reed or brass wind whose vibrato option swings `unit` semitones at 1.
 fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static Fit) -> Synth {
@@ -990,27 +1184,136 @@ fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static
     } else {
         "The vibrato's depth, reached as the note holds, where 1 is the depth of the recordings played with vibrato."
     };
+    let fitting = |name: &str, high: f64, what: &str| {
+        let doc = format!("{what}, in place of the fitted one; for fitting.");
+        Spec::float(name).range(0.0, high).doc(&doc)
+    };
     wind_options(name, 0.0, doc)
+        .option(fitting("kick", 3.0, "The breath a soft note starts at"))
+        .option(fitting("catch", 1.0, "How far the sound falls at a slur"))
+        .option(fitting(
+            "mend",
+            1.0,
+            "The seconds a slur's dip takes to come back to a third",
+        ))
+        .option(fitting("gasp", 1.0, "How far the breath falls at a slur"))
+        .option(fitting(
+            "corner",
+            100.0,
+            "The bore's corner as a multiple of the pitch",
+        ))
+        .option(fitting(
+            "cutoff",
+            20_000.0,
+            "The least the bore's corner is, in Hz",
+        ))
+        .option(fitting(
+            "keep",
+            1.0,
+            "What the bore keeps at each round trip",
+        ))
+        .option(fitting(
+            "zeta",
+            1.0,
+            "How freely the reed lets the air through",
+        ))
+        .option(fitting(
+            "apex",
+            0.5,
+            "A cone's missing apex, as part of its whole length",
+        ))
+        .option(fitting(
+            "bell",
+            20_000.0,
+            "The corner in Hz above which the bore's end lets the sound out",
+        ))
+        .option(fitting(
+            "tongue",
+            2.0,
+            "The part of the mouth's pressure the tongue's release sends in",
+        ))
+        .option(fitting(
+            "steep",
+            50.0,
+            "The radians of the note's period a unit of pressure arrives earlier at the bell",
+        ))
+        .option(fitting(
+            "jitter",
+            50.0,
+            "The cents the pitch drifts while a note holds",
+        ))
+        .option(fitting(
+            "shimmer",
+            6.0,
+            "The dB the level drifts while a note holds",
+        ))
+        .option(fitting(
+            "wander",
+            4.0,
+            "The part of itself the steepening drifts while a note holds",
+        ))
+        .option(Spec::float("lift").range(-24.0, 24.0).doc(
+            "The dB louder the sound is an octave up, in place of the fitted one; for fitting.",
+        ))
         .option(
-            Spec::float("catch").range(0.0, 1.0).doc(
-                "How far the breath falls at a slur, in place of the fitted one; for fitting.",
-            ),
+            Spec::float("sharp")
+                .range(-100.0, 100.0)
+                .doc("The cents the model plays sharp, in place of the fitted ones; for fitting."),
         )
         .build(move |o, ctx| {
+            let or = |name: &str, fitted: f32| o.given(name).map_or(fitted, |given| given as f32);
             let mut reed = Reed::new(
                 bore.conical,
-                bore.corner,
-                bore.keep,
-                bore.radiate,
-                bore.bell,
+                or("cutoff", bore.cutoff),
+                or("corner", bore.corner),
+                or("keep", bore.keep),
             );
-            reed.tongue_part = bore.tongue;
-            reed.tune = 2f32.powf(-bore.sharp / 1200.0);
-            reed.catch = o.given("catch").unwrap_or(bore.catch as f64) as f32;
-            let model = (pitch(o, o.number("vibrato") * unit, rate)
-                | breath(o, fit)
-                | white_noise(ctx.seed()))
-                >> Net::wrap(Box::new(An(reed)));
-            Note::envelope(voiced(o, ctx, model, fit, bore.air), o)
+            reed.zeta = or("zeta", bore.zeta);
+            reed.apex_part = or("apex", 0.3);
+            reed.relative = bore.relative;
+            reed.tongue_part = or("tongue", bore.tongue);
+            (reed.catch, reed.mend) = (or("gasp", bore.gasp), or("mend", bore.mend));
+            let sharp = o
+                .given("sharp")
+                .map_or(fit.sharp, |cents| [[cents as f32, 0.0, 0.0]; 3]);
+            let pitch = pitch(
+                o,
+                o.number("vibrato") * unit,
+                rate,
+                sharp,
+                or("jitter", bore.jitter),
+                ctx.seed(),
+            );
+            let steeps = o
+                .given("steep")
+                .map_or(fit.steep, |steep| [steep as f32; 3]);
+            let wander = or("wander", bore.wander);
+            let steep = o.follow("vel")
+                >> Net::wrap(Box::new(map(move |x: &Frame<f32, U1>| {
+                    by_vel(x[0].clamp(0.0, 1.0), steeps)
+                })));
+            // The drift only eases the steepening, which is already as near a shock as it may be.
+            let eased = sway(ctx.seed())
+                >> Net::wrap(Box::new(map(move |x: &Frame<f32, U1>| {
+                    1.0 - (wander * (1.0 + x[0])).clamp(0.0, 1.0)
+                })));
+            // A reed near the least breath that sounds it takes a third of a second to speak, where a player's tongue starts a soft note in under a tenth: the breath comes at once, with a kick that dies away, and the bell lets the wave through as the player's breath rises.
+            let rise = rise(o, fit);
+            let let_through = shape(move |t| risen(t, rise));
+            let start = by_vel(o.number("vel").clamp(0.0, 1.0) as f32, fit.breath);
+            let kick = (or("kick", bore.kick) - start).max(0.0) as f64;
+            let kicked = shape(move |t| kick * (-t / KICK).exp() * risen(t, SPEAKS));
+            let breath = breath(o, fit, rise.min(SPEAKS)) + kicked;
+            let model = (pitch | breath | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
+            let mut bell = Bell::new(or("bell", bore.bell), bore.bell_corner);
+            (bell.smooth, bell.lift, bell.catch) =
+                (bore.smooth, or("lift", fit.lift), or("catch", bore.catch));
+            let sound = (model | steep | let_through | eased) >> Net::wrap(Box::new(An(bell)));
+            let depth = or("shimmer", bore.shimmer);
+            let shimmer = sway(ctx.seed())
+                >> Net::wrap(Box::new(map(move |x: &Frame<f32, U1>| {
+                    db((depth * x[0]) as f64) as f32
+                })));
+            Note::envelope(voiced(o, ctx, sound, fit, bore.air) * shimmer, o)
         })
 }
