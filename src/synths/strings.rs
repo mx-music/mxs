@@ -429,7 +429,7 @@ impl AudioNode for Pulses {
 }
 
 /// The piano: each harmonic a resonator struck once, with a thump of noise.
-/// Its options are `note`, `vel` for how hard the key is struck, and `pedal` for the sustain pedal.
+/// Its options are `note`, `vel` for how hard the key is struck, `pedal` for the sustain pedal, `aftersound` for the fade in two stages, `uneven` and `instrument` for the keys' differences, and `knock` for the hammer's knock.
 pub fn piano() -> Synth {
     Synth::new("piano")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
@@ -445,9 +445,33 @@ pub fn piano() -> Synth {
                 .range(0.0, 1.0)
                 .doc("How far the sustain pedal is down, letting the other strings ring."),
         )
+        .option(
+            Spec::float("aftersound")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("How far each harmonic fades in two stages, fast after the strike and then slowly, as the Steinway's do."),
+        )
+        .option(
+            Spec::float("uneven")
+                .default(1.0)
+                .range(0.0, 1.0)
+                .doc("How far each key differs from its neighbours in its harmonics' levels, fades and beating."),
+        )
+        .option(
+            Spec::integer("instrument")
+                .default(0.0)
+                .doc("Which piano's keys `uneven` draws, each number another instrument."),
+        )
+        .option(
+            Spec::float("knock")
+                .default(1.0)
+                .range(0.0, 1.0)
+                .doc("How loud the hammer's knock through the soundboard is."),
+        )
         .options(Spec::envelope(1.0, 1.0))
         .build(|options, ctx| {
             let vel = options.number("vel");
+            let knock = options.number("knock");
             let bank = piano_modes(options)
                 .into_iter()
                 .map(|(hz, level, fade)| crate::nodes::struck(hz, level, fade))
@@ -458,12 +482,49 @@ pub fn piano() -> Synth {
                 * shape(|t| perc(t, 0.001, 0.02));
             let sound = (strings * 0.019 + thump * (vel as f32 * 0.1 * 0.3))
                 * ((vel / 0.6).powf(2.5)) as f32;
-            Note::envelope(sound, options)
+            if knock <= 0.0 {
+                return Note::envelope(sound, options);
+            }
+            // The soundboard's resonances stay where they are whatever the key.
+            let board = [80.0, 105.0, 160.0, 230.0, 320.0, 350.0, 410.0, 520.0]
+                .into_iter()
+                .map(|hz| crate::nodes::struck(hz, 1.0, 0.5))
+                .reduce(|a, b| a & b)
+                .expect("the soundboard has resonances");
+            let blow = (white_noise(ctx.seed()) >> lowpass_hz(700.0, 0.707))
+                * shape(|t| perc(t, 0.001, 0.012));
+            let high = db(-(options.number("note") - 72.0).clamp(0.0, 7.0));
+            let knocked = (blow >> board) * (KNOCK * knock * high * (vel / 0.6).powf(1.5)) as f32;
+            Note::envelope(sound + knocked, options)
         })
+}
+
+const KNOCK: f64 = 0.0007;
+
+/// A number from -1 to 1 for one harmonic of one key of one piano, the same at every strike.
+fn vary(instrument: f64, note: f64, harmonic: f64, which: u64) -> f64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for part in [
+        instrument as u64,
+        note.round() as u64,
+        harmonic as u64,
+        which,
+    ] {
+        for byte in part.to_le_bytes() {
+            hash = (hash ^ byte as u64).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    hash ^= hash >> 33;
+    hash = hash.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    hash ^= hash >> 33;
+    (hash >> 11) as f64 / (1u64 << 52) as f64 - 1.0
 }
 
 /// Each mode of a note as `(hz, level, fade)`: the strings' harmonics, then their beating twins.
 fn piano_modes(options: &Options) -> Vec<(f64, f64, f64)> {
+    let aftersound = options.number("aftersound");
+    let uneven = options.number("uneven");
+    let instrument = options.number("instrument");
     let note = options.number("note");
     let freq = hz(note);
     let vel = options.number("vel");
@@ -506,10 +567,42 @@ fn piano_modes(options: &Options) -> Vec<(f64, f64, f64)> {
         let rung = level * (1.0 - pedal * 0.5) + sympathy;
         let lasting =
             fade + sympathy / (rung + 1e-9) * fade * ((1000.0 / hz).log2() / 2.0).clamp(0.0, 1.0);
-        strings.push((hz, rung, lasting));
-        // A note's strings are tuned a hair apart and beat against each other.
-        if n <= 10.0 {
-            beating.push((hz * 1.0001, level * 0.5, fade * 1.5));
+        if aftersound <= 0.0 && uneven <= 0.0 {
+            strings.push((hz, rung, lasting));
+            // A note's strings are tuned a hair apart and beat against each other.
+            if n <= 10.0 {
+                beating.push((hz * 1.0001, level * 0.5, fade * 1.5));
+            }
+            continue;
+        }
+        let key = |which| uneven * vary(instrument, note, n, which);
+        let gain = db(5.5 * (key(0) + key(1)));
+        let longer = 2f64.powf(0.5 * key(2));
+        let apart = 1.0
+            + 0.0001
+                * (1.0 + 5.0 * uneven * vary(instrument, note, 0.0, 3).abs())
+                * (1.0 + 0.5 * key(4));
+        let twin = if n <= 10.0 { level * 0.5 } else { 0.0 };
+        // The strike's sound fades fast and leaves the slow part, 20 dB under it, to ring on.
+        let slow = (rung + twin) * 0.1 * aftersound;
+        let fast = rung + twin * aftersound - slow;
+        // 0 up to G#3, rising to 1 at E4: the strike fades faster up the keyboard.
+        let upper = ((note - 56.0) / 8.0).clamp(0.0, 1.0);
+        let quick = (0.38 - 0.16 * upper).powf(aftersound);
+        strings.push((hz, fast * gain, lasting * longer * quick));
+        if slow > 0.0 {
+            beating.push((
+                hz * apart,
+                slow * gain,
+                lasting * longer * (2.5 - 0.5 * upper),
+            ));
+        }
+        if twin * (1.0 - aftersound) > 0.0 {
+            beating.push((
+                hz * apart,
+                twin * (1.0 - aftersound) * gain,
+                fade * longer * 1.5,
+            ));
         }
     }
 
