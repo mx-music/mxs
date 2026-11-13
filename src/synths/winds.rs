@@ -455,7 +455,7 @@ impl AudioNode for Reed {
         let freq = input[0].clamp(20.0, 5000.0);
         let noise = input[2];
         self.fall *= (-1.0 / (self.mend * self.rate)).exp();
-        let period = self.rate / freq;
+        let period = self.rate / freq * 2f32.powf(SCOOP * self.fall / 1200.0);
         let w = TAU * freq / self.rate;
         let a = end_pole(freq, self.cutoff, self.corner, self.rate);
         // A reed starts to sound where the flow's slope with pressure, ζ (3γ - 1) / (2 √γ), makes up what the bore loses of the pitch at each round trip, (1 - g) / (1 + g).
@@ -537,6 +537,9 @@ impl AudioNode for Reed {
         [b, freq, self.fall].into()
     }
 }
+
+/// The cents flat a note starts after a slur, coming up as the dip comes back, as the notes of the Philharmonia's legato phrases start 13 to 16 cents flat.
+const SCOOP: f32 = 20.0;
 
 /// The samples the bell's line delays a wave at rest.
 const STEEP: f32 = 60.0;
@@ -698,6 +701,55 @@ fn sway(seed: u64) -> Net {
     Net::wrap(Box::new(An(Sway::new(seed))))
 }
 
+/// The semitones a second above which a gliding note is a change of fingering, where a slower one is a bend.
+const FINGERED: f32 = 6.0;
+
+/// The longest the fingers hold the note they left, in seconds; a glide that lasts longer is a glissando, and the bore follows the rest of it.
+const HELD: f32 = 0.08;
+
+/// A player's fingers, or a brass player's lips and valves: the bore cannot pass through the pitches between two notes, so while the note glides fast they hold the one it left, and take the one it reaches when it stops.
+/// In the Philharmonia's legato phrases the pitch is between two notes for 0 to 26 ms of a slur, where a glide spends all of its time there.
+#[derive(Clone)]
+struct Fingers {
+    held: f32,
+    before: f32,
+    gliding: f32,
+    started: bool,
+    rate: f32,
+}
+
+impl AudioNode for Fingers {
+    const ID: u64 = 0x6d78_0066;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+    }
+
+    fn reset(&mut self) {
+        (self.gliding, self.started) = (0.0, false);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let note = input[0];
+        if !self.started {
+            (self.held, self.before, self.started) = (note, note, true);
+        }
+        let fast = (note - self.before).abs() * self.rate > FINGERED;
+        self.before = note;
+        if fast && self.gliding < HELD {
+            self.gliding += 1.0 / self.rate;
+        } else {
+            self.held = note;
+            if !fast {
+                self.gliding = 0.0;
+            }
+        }
+        [self.held].into()
+    }
+}
+
 /// Peaks at each band mx measures, their gains following vel between the ones fitted at pp, mf and ff, or held at those given for fitting, then the level for vel.
 /// Its inputs are the sound and vel.
 #[derive(Clone)]
@@ -836,14 +888,22 @@ fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
     synth
 }
 
-/// The note's frequency, gliding with its note option, swung by a vibrato `depth` semitones deep at `rate` that waits a quarter second, then grows in over 1.2.
+/// The note's frequency, following its note option as the player's fingers do, swung by a vibrato `depth` semitones deep at `rate` that waits a quarter second, then grows in over 1.2.
 /// The player takes back the cents the model plays sharp, `sharp` at pp, mf and ff, and drifts by about `jitter` cents.
 fn pitch(o: &Options, depth: f64, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, seed: u64) -> Net {
     let swing = shape(move |t| {
         let grown = ((t - 0.25) / 1.2).clamp(0.0, 1.0);
         (std::f64::consts::TAU * rate * t).sin() * depth * grown * grown
     });
-    (o.follow("note") | swing | sway(seed) | o.follow("vel"))
+    let fingers = Fingers {
+        held: 0.0,
+        before: 0.0,
+        gliding: 0.0,
+        started: false,
+        rate: DEFAULT_SR as f32,
+    };
+    let note = o.follow("note") >> Net::wrap(Box::new(An(fingers)));
+    (note | swing | sway(seed) | o.follow("vel"))
         >> Net::wrap(Box::new(map(move |x: &Frame<f32, U4>| {
             let from = x[0] - 60.0;
             let sharp = by_vel(
