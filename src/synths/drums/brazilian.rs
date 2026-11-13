@@ -75,9 +75,17 @@ const PANDEIRO: [Stroke; 4] = [
     },
 ];
 
+/// What a fully muted head's modes are multiplied by: their pitch, a whole tone up, and the seconds they ring; chosen by ear, not measured.
+const PANDEIRO_MUTED: [f64; 2] = [1.1225, 0.2];
+
 /// The pandeiro, whose `stroke` option picks the stroke; `fixed` makes one of the old names that each played one stroke.
 fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
-    let mut decl = Synth::new(name).options(strike_options(49.0));
+    let mut decl = Synth::new(name).options(strike_options(49.0)).option(
+        Spec::float("muted")
+            .default(0.0)
+            .range(0.0, 1.0)
+            .doc("1 presses a finger of the holding hand on the head from behind, so it rings higher and shorter."),
+    );
     if fixed.is_none() {
         let names: Vec<&str> = PANDEIRO.iter().map(|s| s.name).collect();
         decl = decl.option(Spec::name("stroke", &names).default("thumb").doc(
@@ -92,13 +100,16 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
             .expect("a stroke the option allows");
         let vel = vel(o, 0.0);
         let freq = hz(o.number("note"));
+        let mute = o.number("muted").clamp(0.0, 1.0);
+        let pressed = freq * PANDEIRO_MUTED[0].powf(mute);
+        let rings = s.rings.map(|ring| ring * PANDEIRO_MUTED[1].powf(mute));
         let stick =
             (impulse_net() + noise(ctx) * hit(0.0005, 0.004, -4.0)) >> lpf(800.0 + vel * 4000.0);
         let skin = modes(
             stick,
-            &scaled(&[0.974, 1.652, 2.475, 3.25, 4.13], freq),
+            &scaled(&[0.974, 1.652, 2.475, 3.25, 4.13], pressed),
             &s.head,
-            &s.rings,
+            &rings,
         );
         let body = (noise(ctx) >> bpf(freq * s.crack[2], 2.0))
             * (hit(0.001, s.crack[1], -4.0) + hit(0.001, s.crack[1] * 4.0, -4.0) * 0.06)
