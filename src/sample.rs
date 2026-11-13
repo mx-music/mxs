@@ -13,16 +13,21 @@ pub(crate) struct SampleData {
 
 impl SampleData {
     pub fn load(path: &Path) -> Result<SampleData, String> {
-        let shown = path.display();
+        let shown = path.display().to_string();
         let bytes = std::fs::read(path).map_err(|e| format!("{shown}: {e}"))?;
-        let data = match Format::of(&bytes) {
-            Some(Format::Flac) => load_flac(path),
-            Some(Format::Wav) => wav(&bytes).and_then(|pcm| pcm.decode(&bytes)),
-            Some(Format::Aiff) => aiff(&bytes).and_then(|pcm| pcm.decode(&bytes)),
+        SampleData::decode(&shown, &bytes)
+    }
+
+    /// The sample in the bytes of a file, which messages call `shown`.
+    pub fn decode(shown: &str, bytes: &[u8]) -> Result<SampleData, String> {
+        let data = match Format::of(bytes) {
+            Some(Format::Flac) => decode_flac(shown, bytes),
+            Some(Format::Wav) => wav(bytes).and_then(|pcm| pcm.decode(bytes)),
+            Some(Format::Aiff) => aiff(bytes).and_then(|pcm| pcm.decode(bytes)),
             None => Err("it is not a FLAC, WAV or AIFF file".to_string()),
         };
         let data = data.map_err(|e| {
-            if e.starts_with(&shown.to_string()) {
+            if e.starts_with(shown) {
                 e
             } else {
                 format!("{shown}: {e}")
@@ -44,15 +49,20 @@ impl SampleData {
 /// The length in seconds of the file at `path`, reading only its headers, or why mx cannot play it.
 pub fn check(path: &Path) -> Result<f64, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-    match Format::of(&bytes) {
+    check_bytes(&bytes)
+}
+
+/// The length in seconds of the file whose bytes these are, reading only its headers, or why mx cannot play it.
+pub fn check_bytes(bytes: &[u8]) -> Result<f64, String> {
+    match Format::of(bytes) {
         Some(Format::Flac) => {
-            let info = claxon::FlacReader::open(path)
+            let info = claxon::FlacReader::new(bytes)
                 .map_err(|e| e.to_string())?
                 .streaminfo();
             Ok(info.samples.unwrap_or(0) as f64 / info.sample_rate as f64)
         }
-        Some(Format::Wav) => wav(&bytes).map(|pcm| pcm.seconds()),
-        Some(Format::Aiff) => aiff(&bytes).map(|pcm| pcm.seconds()),
+        Some(Format::Wav) => wav(bytes).map(|pcm| pcm.seconds()),
+        Some(Format::Aiff) => aiff(bytes).map(|pcm| pcm.seconds()),
         None => Err("it is not a FLAC, WAV or AIFF file".to_string()),
     }
 }
@@ -60,6 +70,11 @@ pub fn check(path: &Path) -> Result<f64, String> {
 /// The loudest sample of the file at `path`, as a level from 0, read from all of it.
 pub fn peak(path: &Path) -> Result<f32, String> {
     SampleData::load(path).map(|data| data.peak)
+}
+
+/// The loudest sample of the file whose bytes these are, as a level from 0, read from all of it.
+pub fn peak_bytes(bytes: &[u8]) -> Result<f32, String> {
+    SampleData::decode("the sample", bytes).map(|data| data.peak)
 }
 
 enum Format {
@@ -79,15 +94,14 @@ impl Format {
     }
 }
 
-fn load_flac(path: &Path) -> Result<SampleData, String> {
-    let mut reader =
-        claxon::FlacReader::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+fn decode_flac(shown: &str, bytes: &[u8]) -> Result<SampleData, String> {
+    let mut reader = claxon::FlacReader::new(bytes).map_err(|e| format!("{shown}: {e}"))?;
     let info = reader.streaminfo();
     let count = info.channels as usize;
     let scale = 1.0 / (1u64 << (info.bits_per_sample - 1)) as f32;
     let mut channels = vec![Vec::new(); count];
     for (i, sample) in reader.samples().enumerate() {
-        let sample = sample.map_err(|e| format!("{}: {e}", path.display()))?;
+        let sample = sample.map_err(|e| format!("{shown}: {e}"))?;
         channels[i % count].push(sample as f32 * scale);
     }
     Ok(SampleData {

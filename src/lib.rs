@@ -21,7 +21,9 @@ pub use device::{Device, Settings, devices};
 pub use engine::{Engine, Error, Event, Source, Target, VOICES};
 pub use options::{Context, Options};
 pub use sample::check as check_sample;
+pub use sample::check_bytes as check_sample_bytes;
 pub use sample::peak as sample_peak;
+pub use sample::peak_bytes as sample_peak_bytes;
 pub use spec::{Kind, Spec, Value};
 pub use synth::{Effect, EffectDecl, Note, Synth, SynthDecl};
 

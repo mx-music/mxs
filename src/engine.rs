@@ -546,6 +546,14 @@ impl Engine {
         Ok(self.next)
     }
 
+    /// Loads the bytes of a FLAC, WAV or AIFF file, which messages call `shown`, and returns the number events name it by.
+    pub fn load_sample_bytes(&mut self, shown: &str, bytes: &[u8]) -> Result<u64, Error> {
+        let data = SampleData::decode(shown, bytes).map_err(Error::Sample)?;
+        self.next += 1;
+        self.samples.insert(self.next, Arc::new(data));
+        Ok(self.next)
+    }
+
     /// How many channels a loaded sample has.
     pub fn sample_channels(&self, sample: u64) -> Option<usize> {
         self.samples.get(&sample).map(|data| data.channels.len())
