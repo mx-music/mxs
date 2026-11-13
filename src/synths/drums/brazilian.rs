@@ -1,10 +1,11 @@
 //! Brazilian percussion: the pandeiro, surdo, cuica, tamborim, caxixi and berimbau.
 
+use super::cuica::{RUBS, Rub, STEP};
 use super::{
     amps, bpf, high_shelf, hpf, impulse_net, lpf, net, noise, peak, scaled, strike_options, vel,
 };
 use crate::nodes::{
-    Draws, db, exp_segments, hit, hz, modes, perc, segments, shape, struck, white_noise,
+    Draws, db, exp_segments, harmonic_tone, hit, hz, modes, perc, shape, struck, white_noise,
 };
 use crate::{Note, Spec, Synth};
 use fundsp::math::rnd1;
@@ -212,206 +213,148 @@ fn surdo() -> Synth {
 
 const SURDO_MUTED_LEVEL: f64 = -6.0;
 
-/// One stroke of the cuíca, as reinsamba's pack "Cuica" on Freesound has them: the low strokes, with the head free, at note 65, and the high ones, with it pressed, at note 79, between which every figure moves with the note.
-/// The levels of the 2nd to the 16th harmonics against the fundamental, in dB, every 20 ms from 25 ms before the stroke's start to 175 ms after, held after, for the low strokes and the high ones.
-/// Measured over 25 ms windows of the recordings' strokes from where the pitch tracker finds them starting, a frame's length before they sound, and taken as the median of each moment: a low stroke is bright as it scoops up and darkens some 20 dB as it settles, where a high one barely changes.
-const CUICA_NOTES: [f64; 2] = [65.0, 79.0];
-const CUICA_TRACKS: [[[f64; 11]; 15]; 2] = [
-    [
-        [
-            4.0, -2.0, 1.0, -1.0, -5.0, -12.0, -12.0, -14.0, -21.0, -21.0, -16.0,
-        ],
-        [
-            -12.0, -23.0, -15.0, -19.0, -22.0, -24.0, -28.0, -30.0, -33.0, -33.0, -31.0,
-        ],
-        [
-            -10.0, -28.0, -19.0, -19.0, -18.0, -26.0, -31.0, -32.0, -37.0, -40.0, -38.0,
-        ],
-        [
-            -23.0, -40.0, -31.0, -34.0, -37.0, -42.0, -46.0, -47.0, -50.0, -52.0, -48.0,
-        ],
-        [
-            -28.0, -38.0, -33.0, -30.0, -34.0, -44.0, -46.0, -47.0, -50.0, -49.0, -47.0,
-        ],
-        [
-            -25.0, -45.0, -37.0, -44.0, -46.0, -50.0, -53.0, -54.0, -56.0, -57.0, -55.0,
-        ],
-        [
-            -30.0, -49.0, -41.0, -40.0, -43.0, -48.0, -52.0, -53.0, -55.0, -58.0, -56.0,
-        ],
-        [
-            -28.0, -52.0, -46.0, -45.0, -50.0, -54.0, -57.0, -60.0, -63.0, -65.0, -61.0,
-        ],
-        [
-            -34.0, -57.0, -45.0, -47.0, -50.0, -52.0, -56.0, -60.0, -62.0, -63.0, -59.0,
-        ],
-        [
-            -35.0, -56.0, -44.0, -42.0, -49.0, -60.0, -63.0, -67.0, -69.0, -68.0, -65.0,
-        ],
-        [
-            -37.0, -59.0, -50.0, -50.0, -54.0, -58.0, -60.0, -65.0, -68.0, -70.0, -64.0,
-        ],
-        [
-            -36.0, -62.0, -55.0, -54.0, -56.0, -65.0, -72.0, -75.0, -75.0, -74.0, -68.0,
-        ],
-        [
-            -38.0, -62.0, -57.0, -58.0, -63.0, -73.0, -76.0, -76.0, -75.0, -74.0, -67.0,
-        ],
-        [
-            -40.0, -66.0, -64.0, -64.0, -67.0, -71.0, -77.0, -77.0, -76.0, -72.0, -67.0,
-        ],
-        [
-            -39.0, -66.0, -64.0, -63.0, -69.0, -73.0, -76.0, -77.0, -75.0, -73.0, -69.0,
-        ],
-    ],
-    [
-        [
-            -13.0, -24.0, -23.0, -23.0, -25.0, -22.0, -22.0, -22.0, -21.0, -23.0, -21.0,
-        ],
-        [
-            -19.0, -29.0, -29.0, -23.0, -19.0, -21.0, -21.0, -24.0, -22.0, -21.0, -21.0,
-        ],
-        [
-            -32.0, -43.0, -39.0, -37.0, -34.0, -32.0, -32.0, -34.0, -36.0, -36.0, -36.0,
-        ],
-        [
-            -39.0, -46.0, -44.0, -40.0, -40.0, -36.0, -34.0, -36.0, -36.0, -38.0, -39.0,
-        ],
-        [
-            -44.0, -53.0, -52.0, -49.0, -45.0, -48.0, -49.0, -50.0, -50.0, -49.0, -50.0,
-        ],
-        [
-            -46.0, -60.0, -60.0, -55.0, -52.0, -52.0, -52.0, -52.0, -55.0, -55.0, -56.0,
-        ],
-        [
-            -48.0, -62.0, -62.0, -60.0, -58.0, -58.0, -58.0, -59.0, -59.0, -58.0, -59.0,
-        ],
-        [
-            -45.0, -64.0, -64.0, -64.0, -60.0, -57.0, -57.0, -57.0, -58.0, -60.0, -61.0,
-        ],
-        [
-            -45.0, -65.0, -67.0, -67.0, -65.0, -64.0, -64.0, -63.0, -62.0, -60.0, -60.0,
-        ],
-        [
-            -44.0, -64.0, -65.0, -64.0, -58.0, -52.0, -51.0, -50.0, -54.0, -54.0, -56.0,
-        ],
-        [
-            -34.0, -59.0, -63.0, -67.0, -66.0, -66.0, -67.0, -64.0, -64.0, -60.0, -61.0,
-        ],
-        [
-            -43.0, -63.0, -71.0, -71.0, -67.0, -65.0, -65.0, -64.0, -63.0, -62.0, -61.0,
-        ],
-        [
-            -44.0, -64.0, -67.0, -68.0, -67.0, -65.0, -66.0, -65.0, -63.0, -62.0, -61.0,
-        ],
-        [
-            -43.0, -65.0, -69.0, -72.0, -69.0, -68.0, -67.0, -67.0, -64.0, -64.0, -61.0,
-        ],
-        [
-            -43.0, -66.0, -70.0, -74.0, -70.0, -69.0, -67.0, -66.0, -65.0, -64.0, -62.0,
-        ],
-    ],
-];
-const CUICA_TRACK_STEP: f64 = 0.02;
+/// The note the recordings' isolated low strokes settle at, 363 Hz.
+const CUICA_NOTE: f64 = 65.65;
+/// How a stroke is matched to one of the recordings': the semitones of note within which a player's strokes stray anyway and count for nothing, what a semitone of scoop and a doubling of length count against a semitone of note, and how far behind the nearest a stroke may be and still be drawn.
+const CUICA_NEAR: [f64; 4] = [0.7, 0.8, 1.4, 0.35];
+/// The seconds at each end of a stroke that keep their own pace when `sustain` stretches it, and the seconds over which a `scoop` bends its start.
+const CUICA_ENDS: f64 = 0.036;
+const CUICA_SCOOPS: f64 = 0.08;
+/// How far a stroke's pitch moves against the recorded stroke's, which the recordings' strokes spread by about a third, and seldom deeper than a third more.
+const CUICA_MOVES: [f64; 3] = [0.3, 0.4, 1.3];
+/// The dB an octave of harmonics gains for each 1 of vel over 0.8, the cents the note strays and the dB the level does.
+const CUICA_BRIGHTENS: f64 = 6.0;
+const CUICA_STRAYS: [f64; 2] = [15.0, 1.0];
+/// The rub's noise: what is left of the recordings once their harmonics are taken out falls 12 dB an octave above 900 Hz and 6 dB below 400 Hz; unit noise leaves the two filters at the level given last.
+const CUICA_RUB: [f64; 3] = [900.0, 400.0, 0.15];
+/// The level of a stroke's loudest moment at vel 0.6.
+const CUICA_LEVEL: f64 = 0.042;
 
-/// The cents under the note the stroke starts at, the seconds it holds there as the rub catches, and the seconds it then scoops up into the note.
-const CUICA_SCOOPS: [[f64; 3]; 2] = [[198.0, 0.03, 0.08], [140.0, 0.02, 0.06]];
-/// The cents the pitch sags as the stroke ends, and the seconds into the stroke it starts to, sagging over 50 ms.
-const CUICA_SAGS: [[f64; 2]; 2] = [[30.0, 0.17], [40.0, 0.15]];
-/// The stroke's level and the seconds between, a 30 ms rise and a hold that the low strokes keep longer than the high ones, then the head ringing on from 25 dB down and fading about 30 dB in 100 ms as the stick turns.
-const CUICA_LEVELS: [[f64; 7]; 2] = [
-    [0.14, 0.9, 1.0, 0.56, 0.18, 0.056, 0.0],
-    [0.16, 0.8, 1.0, 0.4, 0.25, 0.056, 0.0],
-];
-const CUICA_TIMES: [[f64; 6]; 2] = [
-    [0.03, 0.06, 0.06, 0.05, 0.02, 0.15],
-    [0.03, 0.02, 0.06, 0.055, 0.02, 0.15],
-];
-/// No two of a player's strokes match: across the recordings' strokes the scoop is up to two thirds shallower than its median but seldom more than a quarter deeper, the length by a third, the pitch it settles at by 77 cents, of which a stroke here keeps 30, and the level by 2 dB.
-const CUICA_SPREADS: [f64; 4] = [0.65, 0.3, 30.0, 2.0];
-const CUICA_DEEPER: f64 = 0.4;
-/// The pitch wobbles about 13 cents as the stick grips and slips, and the rub's noise sits about 60 dB under the fundamental between its harmonics.
-const CUICA_WOBBLE: f32 = 1600.0;
-const CUICA_RUB: f64 = -32.0;
-
+/// One stroke of the cuíca, the stick rubbed one way, played back from the nearest of the strokes measured in `cuica::RUBS`: its pitch and each harmonic move as that stroke's did, at the note asked for.
+/// A stroke with no `sustain` is one played alone, with the head ringing on after it; with one, it is a stroke from a run, stretched in its middle to last that long.
 fn cuica() -> Synth {
     let strokes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let last = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(usize::MAX));
     Synth::new("cuica")
-        .options(strike_options(CUICA_NOTES[0]))
+        .options(strike_options(CUICA_NOTE))
+        .option(
+            Spec::beats("sustain")
+                .default(0.0)
+                .range(0.0, f64::INFINITY)
+                .doc("How long the stroke lasts, as one of a run of strokes; 0 is a stroke played alone, at its own length."),
+        )
+        .option(
+            Spec::float("scoop")
+                .range(-12.0, 12.0)
+                .doc("The semitones under its note the stroke starts, or over it when below 0; with none, as the nearest recorded stroke does."),
+        )
         .build(move |o, ctx| {
             let vel = vel(o, 0.0);
-            let note = o.number("note");
             let stroke = strokes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let seed = ctx.seed() ^ stroke.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+            let seed = ctx.seed() ^ stroke.wrapping_mul(0xd6e8_feb8_6659_fd93);
             let mut draws = Draws::new(seed);
+            let (note, sustain, scoop) = (o.number("note"), o.number("sustain"), o.given("scoop"));
+
+            let [strays, scoops, lengths, behind] = CUICA_NEAR;
+            let started = |rub: &Rub| -rub.cents[0] as f64 / 100.0;
+            let mut near: Vec<(f64, usize)> = RUBS
+                .iter()
+                .enumerate()
+                .filter(|(_, rub)| sustain > 0.0 || rub.alone)
+                .map(|(at, rub)| {
+                    let lasts = rub.body as f64 * STEP;
+                    let far = ((note - rub.note).abs() - strays).max(0.0)
+                        + scoop.map_or(0.0, |scoop| scoops * (scoop - started(rub)).abs())
+                        + if sustain > 0.0 { lengths * (sustain / lasts).log2().abs() } else { 0.0 };
+                    (far, at)
+                })
+                .collect();
+            near.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let nearest = near[0].0;
+            near.retain(|(far, _)| *far <= nearest + behind);
+            // No stroke twice running where another is as near.
+            let before = last.load(std::sync::atomic::Ordering::Relaxed);
+            if near.len() > 1 {
+                near.retain(|(_, at)| *at != before);
+            }
+            let at = near[(draws.draw() * near.len() as f64) as usize % near.len()].1;
+            last.store(at, std::sync::atomic::Ordering::Relaxed);
+            let rub = &RUBS[at];
+
+            let count = if sustain > 0.0 { rub.body } else { rub.cents.len() };
+            let own = count as f64 * STEP;
+            let length = if sustain > 0.0 { sustain.max(0.05) } else { own };
+            let ends = CUICA_ENDS.min(own / 3.0).min(length / 3.0);
+            let pace = (own - 2.0 * ends) / (length - 2.0 * ends);
+            // Where in the recorded stroke, in steps, the stroke is at `t` seconds.
+            let place = move |t: f64| {
+                let there = if t < ends {
+                    t
+                } else if t > length - ends {
+                    own - (length - t)
+                } else {
+                    ends + (t - ends) * pace
+                };
+                there / STEP - 0.5
+            };
+            let between = move |u: f64| {
+                let u = u.clamp(0.0, (count - 1) as f64);
+                let from = Ord::min(u as usize, count - 2);
+                (from, u - from as f64)
+            };
+
             let mut normal = || {
                 (-2.0 * draws.draw().max(1.0e-12).ln()).sqrt()
                     * (std::f64::consts::TAU * draws.draw()).cos()
             };
-            let spread: Vec<f64> = CUICA_SPREADS.iter().map(|sd| sd * normal()).collect();
-            let high =
-                ((note - CUICA_NOTES[0]) / (CUICA_NOTES[1] - CUICA_NOTES[0])).clamp(0.0, 1.0);
-            let mix = |pair: [f64; 2]| pair[0] + (pair[1] - pair[0]) * high;
-            let under = mix([CUICA_SCOOPS[0][0], CUICA_SCOOPS[1][0]])
-                * (1.0 + spread[0] * if spread[0] > 0.0 { CUICA_DEEPER } else { 1.0 }).max(0.15);
-            let (hold, scoop) = (
-                mix([CUICA_SCOOPS[0][1], CUICA_SCOOPS[1][1]]),
-                mix([CUICA_SCOOPS[0][2], CUICA_SCOOPS[1][2]]),
-            );
-            let longer = spread[1].exp().clamp(0.7, 1.5);
-            let (sag, sags) = (
-                mix([CUICA_SAGS[0][0], CUICA_SAGS[1][0]]),
-                mix([CUICA_SAGS[0][1], CUICA_SAGS[1][1]]) * longer,
-            );
-            let smooth = |x: f64| x * x * (3.0 - 2.0 * x);
-            let settled = hz(note + spread[2] / 100.0);
-            let glide = shape(move |t| {
-                let risen = smooth(((t - hold) / scoop).clamp(0.0, 1.0));
-                let sagged = smooth(((t - sags) / 0.05).clamp(0.0, 1.0));
-                settled * 2f64.powf(-(under * (1.0 - risen) + sag * sagged) / 1200.0)
+            let settled = note + CUICA_STRAYS[0] * normal() / 100.0;
+            let [spread, least, most] = CUICA_MOVES;
+            let moves = (1.0 + spread * normal()).clamp(least, most);
+            let bend = scoop.map_or(0.0, |scoop| scoop - moves * started(rub));
+            let pitch = shape(move |t| {
+                let (from, x) = between(place(t));
+                let cents = rub.cents[from] as f64
+                    + (rub.cents[from + 1] - rub.cents[from]) as f64 * x;
+                let bent = bend * (1.0 - t / CUICA_SCOOPS).max(0.0).powi(2);
+                hz(settled + moves * cents / 100.0 - bent)
             });
-            let wobble = white_noise(seed ^ 0x77)
-                >> lpf(6.0)
-                >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| {
-                    2f32.powf(CUICA_WOBBLE * x[0] / 1200.0)
-                })));
-            let pitch = glide * wobble;
-            let bright = (vel - 0.6) * 4.0;
-            let mut tone = pitch.clone() >> Net::wrap(Box::new(sine::<f32>()));
-            for k in (2..=16).filter(|k| *k as f64 * settled < 16_000.0) {
-                let track: Vec<f64> = (0..11)
-                    .map(|i| {
-                        mix([CUICA_TRACKS[0][k - 2][i], CUICA_TRACKS[1][k - 2][i]])
-                            + bright * (k as f64).log2().min(2.0)
-                    })
-                    .collect();
-                let level = shape(move |t| {
-                    let at = ((t + 0.025) / CUICA_TRACK_STEP).clamp(0.0, 10.0);
-                    let i = Ord::min(at as usize, 9);
-                    db(track[i] + (track[i + 1] - track[i]) * (at - i as f64))
+
+            let levels: std::sync::Arc<Vec<[f64; 17]>> = std::sync::Arc::new(
+                rub.levels[..count].iter().map(|row| row.map(|level| db(level as f64))).collect(),
+            );
+            let level = {
+                let levels = levels.clone();
+                move |u: f64, k: usize| {
+                    let (from, x) = between(u);
+                    levels[from][k] + (levels[from + 1][k] - levels[from][k]) * x
+                }
+            };
+            let brightens = CUICA_BRIGHTENS * (vel - 0.8);
+            let harmonics = level.clone();
+            let tone = pitch
+                >> harmonic_tone(16, move |k, _, t| {
+                    harmonics(place(t), k - 1) * db(brightens * (k as f64).log2())
                 });
-                tone = tone
-                    + ((pitch.clone() * k as f32) >> Net::wrap(Box::new(sine::<f32>()))) * level;
-            }
-            let rub = (white_noise(seed ^ 0x55) >> lpf(4000.0)) * db(CUICA_RUB) as f32;
-            let stroke: Vec<f64> = (0..7)
-                .map(|i| mix([CUICA_LEVELS[0][i], CUICA_LEVELS[1][i]]))
-                .collect();
-            let times: Vec<f64> = (0..6)
-                .map(|i| {
-                    mix([CUICA_TIMES[0][i], CUICA_TIMES[1][i]])
-                        * if i == 0 || i == 5 { 1.0 } else { longer }
-                })
-                .collect();
-            let length: f64 = times.iter().sum();
-            let envelope = segments(&stroke, &times, &[0.0, 0.0, 0.0, 0.0, 0.0, -4.0]);
-            let level = CUICA_LEVEL * (vel / 0.6).powf(1.5) * db(spread[3]);
-            Note::rings((tone + rub) * envelope * level as f32, length + 0.01)
+
+            let [above, below, left] = CUICA_RUB;
+            // White noise of ±1 has a third of the power of unit noise.
+            let rubbed = white_noise(seed ^ 0x55)
+                >> lowpass_hz(above as f32, 0.707)
+                >> highpole_hz(below as f32);
+            let rubbing = shape(move |t| level(place(t), 16) * 3f64.sqrt() / left);
+
+            // Each stroke fades over half a step into the next, as the recordings' strokes join, 30 dB down, with no gap.
+            let fade = shape(move |t| {
+                let u = place(t);
+                (u + 1.0).clamp(0.0, 1.0) * (count as f64 - u).clamp(0.0, 1.0)
+            });
+            let gain = CUICA_LEVEL * vel / 0.6 * db(CUICA_STRAYS[1] * normal());
+            Note::rings(
+                (tone + rubbed * rubbing) * fade * gain as f32,
+                length + STEP / 2.0,
+            )
         })
 }
-
-/// The stroke's level, as loud as the first design's.
-const CUICA_LEVEL: f64 = 0.05;
 
 /// One stroke of the stick on the tamborim: its head rings on its lowest mode, 524 Hz in the Commons recording, with strong modes near 1.8 and 2.5 times it, the second outlasting the first; two quiet modes below it and higher modes with the stick's crack fill the bands from 160 Hz to 10 kHz.
 /// Each mode is a ratio to the lowest, a level in dB and the seconds it fades 60 dB in.

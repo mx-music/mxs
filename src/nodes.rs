@@ -74,6 +74,21 @@ where
     })
 }
 
+/// A tone of `count` harmonics at the frequency its input gives, whose levels move as it sounds.
+/// `level` gives a harmonic's gain from its number, its frequency in Hz and the seconds since the note started; it is asked every 32 samples, and the gain moves in a straight line between.
+pub fn harmonic_tone<F>(count: usize, level: F) -> Net
+where
+    F: Fn(usize, f64, f64) -> f64 + Clone + Send + Sync + 'static,
+{
+    Net::wrap(Box::new(An(HarmonicTone {
+        level,
+        gains: vec![(0.0, 0.0); count],
+        phase: 0.0,
+        at: 0,
+        dt: 1.0 / DEFAULT_SR,
+    })))
+}
+
 /// A percussive level at `t` seconds: a straight rise over `attack`, then a fall to silence over `release`.
 pub fn perc(t: f64, attack: f64, release: f64) -> f64 {
     if t < attack {
@@ -383,6 +398,65 @@ where
         let level = (self.f)(self.t);
         self.t += self.dt;
         [level as f32].into()
+    }
+}
+
+#[derive(Clone)]
+struct HarmonicTone<F> {
+    level: F,
+    /// Each harmonic's gain and what it moves by at each sample.
+    gains: Vec<(f64, f64)>,
+    phase: f64,
+    at: u64,
+    dt: f64,
+}
+
+impl<F> AudioNode for HarmonicTone<F>
+where
+    F: Fn(usize, f64, f64) -> f64 + Clone + Send + Sync + 'static,
+{
+    const ID: u64 = 0x6d78_0008;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        (self.phase, self.at) = (0.0, 0);
+    }
+
+    fn set_sample_rate(&mut self, rate: f64) {
+        self.dt = 1.0 / rate;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let hz = input[0] as f64;
+        if self.at.is_multiple_of(32) {
+            let (t, top) = (self.at as f64 * self.dt, 0.45 / self.dt);
+            for (k, (gain, step)) in self.gains.iter_mut().enumerate() {
+                let f = (k + 1) as f64 * hz;
+                let level = |t| {
+                    if f < top {
+                        (self.level)(k + 1, f, t)
+                    } else {
+                        0.0
+                    }
+                };
+                if self.at == 0 {
+                    *gain = level(t);
+                }
+                *step = (level(t + 32.0 * self.dt) - *gain) / 32.0;
+            }
+        }
+        self.at += 1;
+        // sin(k x) from the two before it: sin(k x) = 2 cos(x) sin((k - 1) x) - sin((k - 2) x).
+        let (sin, cos) = (std::f64::consts::TAU * self.phase).sin_cos();
+        let (mut before, mut last, mut sum) = (0.0, sin, 0.0);
+        for (gain, step) in self.gains.iter_mut() {
+            sum += *gain * last;
+            *gain += *step;
+            (before, last) = (last, 2.0 * cos * last - before);
+        }
+        self.phase = (self.phase + hz * self.dt).fract();
+        [sum as f32].into()
     }
 }
 

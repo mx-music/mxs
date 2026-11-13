@@ -6,6 +6,7 @@ use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 
 mod brazilian;
+mod cuica;
 mod kit;
 mod latin;
 mod tabla;
