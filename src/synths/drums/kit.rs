@@ -36,15 +36,23 @@ fn kick() -> Synth {
                 .range(0.0, 1.0)
                 .doc("How hard it is struck."),
         )
+        .option(
+            Spec::float("beater")
+                .default(1.0)
+                .range(0.0, 1.0)
+                .doc("How hard the beater is; 0 is a felt beater, which leaves out the click."),
+        )
         .build(|o, ctx| {
             let note = o.number("note");
             let vel = vel(o, 0.0);
+            let hard = o.number("beater");
             let sweep = segments(&[26.0, 0.0], &[0.07], &[-6.0])
                 >> net(map(move |x: &Frame<f32, U1>| hz(note + x[0] as f64) as f32));
-            let body = (sweep >> net(An(Sine::<f32>::with_phase(0.25)))) * hit(0.001, 0.55, -5.0);
+            let body = (sweep >> net(An(Sine::<f32>::with_phase(0.25))))
+                * hit(0.001 + 0.004 * (1.0 - hard), 0.55, -5.0);
             let beater = (noise(ctx) >> hpf(1800.0))
                 * hit(0.0005, 0.012, -4.0)
-                * (0.3 * db((vel - 0.6) * 20.0)) as f32;
+                * (0.3 * hard * db((vel - 0.6) * 20.0)) as f32;
             let shell = modes(impulse_net(), &[hz(note) * 1.75], &[0.1], &[1.5]);
             let struck = (body + beater) >> net(map(|x: &Frame<f32, U1>| x[0].tanh()));
             Note::rings((struck + shell) * (vel / 0.6).powf(2.5) as f32, 1.5)
@@ -96,13 +104,13 @@ fn snare() -> Synth {
             };
             let burst = bounced(noise(ctx) * hit(0.0005, 0.004, -4.0));
             let hard = ((vel - 0.65) / 0.175).clamp(0.0, 1.0);
-            let ratios = [1.0, 1.2, 1.46, 1.66, 2.18, 2.8];
-            let levels: Vec<f64> = [-3.0, 0.0, -3.0, -3.0, -14.0, -14.0]
+            let ratios = [1.0, 1.2, 1.46, 1.66, 2.18, 2.8, 3.6, 4.4];
+            let levels: Vec<f64> = [-3.0, 0.0, -3.0, -3.0, -14.0, -14.0, -24.0, -24.0]
                 .iter()
-                .zip([0.0, 0.0, -11.0, -11.0, 4.0, 4.0])
+                .zip([0.0, 0.0, -11.0, -11.0, 4.0, 4.0, 0.0, 0.0])
                 .map(|(l, h)| db(l + h * hard))
                 .collect();
-            let rings = [0.65, 0.65, 0.65, 0.6, 0.55, 0.55];
+            let rings = [0.65, 0.65, 0.65, 0.6, 0.55, 0.55, 0.5, 0.5];
             let hz_ = scaled(&ratios, freq);
             let levels: Vec<f64> = levels.iter().zip(&hz_).map(|(l, f)| l * f / 20.0).collect();
             let stick = stick >> net(lowpole_hz(20.0));
@@ -154,7 +162,8 @@ fn snare() -> Synth {
                         &bright,
                     ) * weight as f32;
             }
-            Note::rings(sound, 2.5)
+            let plain = snares == 1.0 && rim == 0.0 && buzz == 0.0;
+            Note::rings(sound, if plain { 1.5 } else { 2.5 })
         })
 }
 
@@ -194,13 +203,13 @@ fn crash() -> Synth {
                 300.0, 500.0, 800.0, 1300.0, 2000.0, 3200.0, 5000.0, 8000.0, 12500.0,
             ];
             let levels = [
-                -19.4, -46.4, -49.5, -39.5, -32.8, -36.5, -27.1, -31.8, -19.3,
+                -19.4, -46.4, -46.5, -32.0, -32.8, -36.5, -27.1, -31.8, -19.3,
             ];
-            let rings = [11.0, 9.6, 7.06, 5.28, 4.36, 3.38, 2.83, 1.93, 0.8];
+            let rings = [9.6, 9.6, 5.2, 5.28, 4.36, 3.38, 2.83, 1.93, 0.8];
             let mut fit = levels.to_vec();
             fit.extend([50.0, 6.0, -20.0, -14.0, 2.0]);
             let levels = &fit[0..9];
-            let shorter = [0.0, 0.75, 0.68, 0.51, 0.4, 0.31, 0.18, 0.0, 0.0];
+            let shorter = [0.75, 0.75, 0.68, 0.51, 0.4, 0.31, 0.18, 0.0, 0.0];
             let stick = (noise(ctx) >> hpf(1000.0) >> high_shelf(3000.0, (vel - 0.6) * 4.0))
                 * hit(0.0005, 0.01, -4.0);
             let mut bank = Net::wrap(Box::new(zero()));
@@ -225,10 +234,19 @@ fn crash() -> Synth {
                 .map(|i| rings[i] * (vel / 0.55).powf(-shorter[i]))
                 .collect();
             let same = |level: Net| level;
-            let early_rings: Vec<f64> = noise_rings.iter().map(|r| r.min(fit[13])).collect();
+            let early_rings: Vec<f64> = (0..9)
+                .map(|i| {
+                    if i < 3 {
+                        noise_rings[i]
+                    } else {
+                        noise_rings[i].min(fit[13])
+                    }
+                })
+                .collect();
             bank = bank * db(fit[12] + 7.0) as f32
                 + ((band_noise(ctx, levels, &noise_rings, 1, scale, &same) * db(fit[12]) as f32
-                    + band_noise(ctx, levels, &early_rings, 1, scale, &same))
+                    + band_noise(ctx, levels, &early_rings, 1, scale, &same)
+                    + band_noise(ctx, &[-33.0], &noise_rings, 0, scale * 0.7, &same))
                     >> high_shelf(3000.0, (vel - 0.6) * 4.0))
                     * db(fit[9]) as f32;
             let crack = (noise(ctx) >> hpf(6000.0 * scale))
@@ -236,7 +254,7 @@ fn crash() -> Synth {
                 * (2.0 * db(fit[11])) as f32;
             let thud = (noise(ctx)
                 >> bpf(330.0 * scale, 1.0)
-                >> hpf(200.0 * scale)
+                >> hpf(110.0 * scale)
                 >> lpf(400.0 * scale)
                 >> lpf(400.0 * scale))
                 * hit(0.001, 0.035, -4.0)
@@ -429,8 +447,8 @@ struct Tom {
     ratios: &'static [f64],
     levels: &'static [f64],
     rings: &'static [f64],
-    skin: [f64; 7],
-    skin_rings: [f64; 7],
+    skin: [f64; 8],
+    skin_rings: [f64; 8],
     gain: f64,
     curve: f64,
     bright: [f64; 4],
@@ -439,11 +457,11 @@ struct Tom {
 const HIGH_TOM: Tom = Tom {
     ratios: &[1.0, 1.16, 1.32, 1.95, 2.55, 2.71, 2.99, 3.08, 3.59, 6.78],
     levels: &[
-        0.0, -8.0, -11.0, -10.0, -7.7, -11.0, -4.6, -7.8, -10.7, -10.8,
+        0.0, -8.0, -11.0, -10.0, -7.7, -11.0, -4.6, -7.8, -10.7, -19.8,
     ],
     rings: &[1.47, 1.47, 1.5, 2.1, 1.0, 0.79, 0.79, 0.78, 0.92, 0.62],
-    skin: [-51.6, 33.7, -2.7, 16.0, 8.1, -3.4, -32.5],
-    skin_rings: [0.47, 0.36, 0.25, 0.43, 0.31, 0.47, 0.07],
+    skin: [34.0, -51.6, 28.7, -2.7, 16.0, 8.1, -3.4, -32.5],
+    skin_rings: [0.75, 0.47, 0.54, 0.38, 0.65, 0.47, 0.6, 0.1],
     gain: -35.1,
     curve: 1.32,
     bright: [1500.0, 0.0, 12.0, 16.0],
@@ -457,8 +475,8 @@ const LOW_TOM: Tom = Tom {
         0.0, -9.4, -12.1, -12.9, -15.2, -9.3, -9.8, -14.7, -14.6, -6.9, -13.2,
     ],
     rings: &[1.6, 1.6, 1.56, 1.5, 1.4, 1.5, 1.5, 1.5, 0.95, 0.93, 1.06],
-    skin: [35.5, 19.4, 23.6, 23.7, 9.7, 6.5, -58.9],
-    skin_rings: [0.73, 0.33, 0.08, 0.38, 0.4, 0.39, 0.06],
+    skin: [35.0, 35.5, 19.4, 26.0, 20.0, 9.7, 6.5, -58.9],
+    skin_rings: [0.9, 0.73, 0.33, 0.5, 0.6, 0.62, 0.55, 0.06],
     gain: -32.0,
     curve: 0.79,
     bright: [250.0, 24.0, 20.0, 10.0],
@@ -490,8 +508,8 @@ fn tom(name: &'static str, note: f64, t: &'static Tom) -> Synth {
             let same = |n: Net| n;
             let click = (noise(ctx) * hit(0.0005, 0.004, -4.0)) >> hpf(1500.0) >> lpf(4000.0);
             let dense = tilt(
-                band_noise(ctx, &t.skin, &t.skin_rings, 3, freq / f0, &same)
-                    + click * db(22.0) as f32,
+                band_noise(ctx, &t.skin, &t.skin_rings, 2, freq / f0, &same)
+                    + click * db(16.0) as f32,
             );
             let sound = (head + dense * db(-11.0) as f32)
                 * (db(t.gain) * (vel / 0.65).powf(t.curve)) as f32;
