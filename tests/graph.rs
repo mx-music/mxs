@@ -305,3 +305,22 @@ fn a_synth_that_takes_an_input_is_refused_when_registered() {
     );
     assert!(matches!(refused, Err(reason) if reason.contains("a synth has no input")));
 }
+
+#[test]
+fn a_deeply_nested_graph_plays_on_a_thread_with_a_small_stack() {
+    let level = (0..2000).fold(n(0.5), |inner, _| call("max", vec![inner, n(0.0)]));
+    let graph = rings(struck_mode(1.0, level), 0.8);
+    let sound = std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(move || {
+            let clauses = vec![Clause {
+                matches: vec![],
+                graph,
+            }];
+            render(Synth::graph("deep", note_specs(), clauses).unwrap(), &[])
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    assert!(sound.iter().any(|x| x.abs() > 0.01));
+}

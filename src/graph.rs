@@ -146,8 +146,13 @@ impl Effect {
     }
 }
 
+// A graph nests as deep as the music written for it, and the BEAM runs these on a scheduler's small stack, so each level grows the stack when it runs low.
+// A level of eval and call takes over 128 KiB in a debug build.
+const RED_ZONE: usize = 256 * 1024;
+const GROWTH: usize = 4 * 1024 * 1024;
+
 fn calls(graph: &Graph, node: &str) -> bool {
-    match graph {
+    stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
         Graph::List(items) => items.iter().any(|g| calls(g, node)),
         Graph::Call { name, args, named } => {
             name == node
@@ -157,11 +162,11 @@ fn calls(graph: &Graph, node: &str) -> bool {
                     .any(|g| calls(g, node))
         }
         _ => false,
-    }
+    })
 }
 
 fn known(graph: &Graph) -> Result<(), String> {
-    match graph {
+    stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
         Graph::List(items) => items.iter().try_for_each(known),
         Graph::Call { name, args, named } => {
             if !ARITHMETIC.contains(&name.as_str()) && !NODES.contains(&name.as_str()) {
@@ -172,7 +177,7 @@ fn known(graph: &Graph) -> Result<(), String> {
                 .try_for_each(known)
         }
         _ => Ok(()),
-    }
+    })
 }
 
 /// What a graph works out to: a number known when the note starts, a signal, a list, a name, or the note itself.
@@ -259,7 +264,7 @@ struct Build<'a> {
 
 impl Build<'_> {
     fn eval(&mut self, graph: &Graph) -> Result<V, String> {
-        match graph {
+        stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
             Graph::Number(x) => Ok(V::Num(*x)),
             Graph::Name(name) => Ok(V::Name(name.clone())),
             Graph::Option(name) => Ok(V::Num(self.options.number(name))),
@@ -270,7 +275,7 @@ impl Build<'_> {
                     .collect::<Result<_, _>>()?,
             )),
             Graph::Call { name, args, named } => self.call(name, args, named),
-        }
+        })
     }
 
     fn call(&mut self, name: &str, args: &[Graph], named: &[(String, Graph)]) -> Result<V, String> {

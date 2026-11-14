@@ -10,6 +10,7 @@ fundsp = "0.23.0"
 hound = "3.5.1"
 midir = { version = "0.11.1", optional = true }
 rtrb = "0.4"
+stacker = "0.1.25"
 
 [features]
 keys = ["dep:midir"]
