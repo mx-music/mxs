@@ -1,5 +1,32 @@
 //! mx's effects, each a stereo sound in and out, with options that glide as the song changes them.
 //! Times such as phase and decay come in seconds; mx turns its beats into seconds before it starts an effect.
+//!
+//! Notes play into a chain of effects, which `Engine::start_effects` makes from names and options, in order:
+//!
+//! ```
+//! use mxs::{Engine, Event, RATE, Value, effects, synths};
+//!
+//! fn main() -> Result<(), mxs::Error> {
+//!     let mut engine = Engine::offline(RATE);
+//!     synths::all().into_iter().for_each(|s| engine.register(s));
+//!     effects::all().into_iter().for_each(|e| engine.register_effect(e));
+//!
+//!     let reverb = ("reverb".to_string(), vec![("room".to_string(), Value::Number(0.6))]);
+//!     let chain = engine.start_effects(&[reverb])?;
+//!
+//!     let note = Event::Note {
+//!         id: None,
+//!         synth: "piano".to_string(),
+//!         options: vec![("note".to_string(), Value::Number(60.0))],
+//!         chain: Some(chain),
+//!     };
+//!     engine.play(&[(0.0, note)])?;
+//!     engine.render(3.0)?;
+//!     Ok(())
+//! }
+//! ```
+//!
+#![doc = include_str!("../docs/effects.md")]
 
 use crate::nodes::hz;
 use crate::options::Options;

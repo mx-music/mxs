@@ -1,6 +1,4 @@
-//! mx's sound engine on FunDSP: synths and effects registered by name, played from events stamped with seconds, live on the default output or rendered offline.
-//! mx's own synths are in `synths`, built only from what this crate makes public, as a synth of someone else's would be.
-
+#![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
 mod clock;
