@@ -13,7 +13,7 @@ pub(crate) use bowed::bowed_string;
 pub(crate) use common::partials;
 pub use drums::berimbau;
 pub use strings::piano;
-pub(crate) use winds::{air_jet, wind_bands};
+pub(crate) use winds::{drifting_swing, played_jet, wind_bands};
 
 /// Every synth mx ships.
 pub fn all() -> Vec<crate::Synth> {

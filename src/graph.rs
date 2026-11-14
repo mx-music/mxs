@@ -61,6 +61,7 @@ const NODES: &[&str] = &[
     "bowed_string",
     "air_jet",
     "wind_bands",
+    "vibrato",
     "saw",
     "square",
     "triangle",
@@ -135,11 +136,7 @@ impl Effect {
                     .eval(&graph)
                     .and_then(signal)
                     .unwrap_or_else(|reason| panic!("{owner}: {reason}"));
-                // Each input in the graph takes the same channel.
-                match build.inputs.unwrap_or(0) {
-                    0 => net(sink()) | sound,
-                    uses => (1..uses).fold(net(pass()), |inputs, _| inputs ^ net(pass())) >> sound,
-                }
+                fed(build.inputs.unwrap_or(0), sound)
             };
             channel() | channel()
         }))
@@ -151,6 +148,14 @@ impl Effect {
 const RED_ZONE: usize = 256 * 1024;
 const GROWTH: usize = 4 * 1024 * 1024;
 
+/// A sound whose input, taken `uses` times, is the same channel each time.
+fn fed(uses: usize, sound: Net) -> Net {
+    match uses {
+        0 => net(sink()) | sound,
+        uses => (1..uses).fold(net(pass()), |inputs, _| inputs ^ net(pass())) >> sound,
+    }
+}
+
 fn calls(graph: &Graph, node: &str) -> bool {
     stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
         Graph::List(items) => items.iter().any(|g| calls(g, node)),
@@ -158,7 +163,15 @@ fn calls(graph: &Graph, node: &str) -> bool {
             name == node
                 || args
                     .iter()
-                    .chain(named.iter().map(|(_, v)| v))
+                    .chain(
+                        named
+                            .iter()
+                            // An air jet's sound and side take the jet's outputs as their input.
+                            .filter(|(k, _)| {
+                                name != "air_jet" || !matches!(k.as_str(), "sound" | "side")
+                            })
+                            .map(|(_, v)| v),
+                    )
                     .any(|g| calls(g, node))
         }
         _ => false,
@@ -290,6 +303,9 @@ impl Build<'_> {
         if let ("follow", [Graph::Option(option)]) = (name, args) {
             return Ok(V::Sig(self.options.follow(option)));
         }
+        if name == "air_jet" {
+            return self.air_jet(named);
+        }
         let mut args: Vec<V> = args
             .iter()
             .map(|g| self.eval(g))
@@ -397,18 +413,16 @@ impl Build<'_> {
                     self.ctx.seed(),
                 )))
             }
-            "air_jet" => {
-                let pitch = signal(take("hz").ok_or("air_jet needs hz:")?)?;
-                let breath = signal(take("breath").ok_or("air_jet needs breath:")?)?;
-                let even = number(
-                    take("even").ok_or("air_jet needs even:")?,
-                    "a jet's even part",
+            "vibrato" => {
+                let depth = number(
+                    take("depth").ok_or("vibrato needs depth:")?,
+                    "a vibrato's depth",
                 )?;
-                Ok(V::Sig(crate::synths::air_jet(
-                    pitch,
-                    breath,
+                let rate = number(take("hz").ok_or("vibrato needs hz:")?, "a vibrato's hz")?;
+                Ok(V::Sig(crate::synths::drifting_swing(
+                    depth,
+                    rate,
                     self.ctx.seed(),
-                    even,
                 )))
             }
             "wind_bands" => {
@@ -581,6 +595,54 @@ impl Build<'_> {
             }
             _ => Err(format!("{name} is not in the vocabulary")),
         }
+    }
+
+    /// The flute's air jet, its figures 0 unless given, with its `sound:` and its `side:`, from 0 to 1, each built on that output as its input.
+    /// It draws its seed before its side and sound draw theirs, as the flute does.
+    fn air_jet(&mut self, named: &[(String, Graph)]) -> Result<V, String> {
+        let given = |key: &str| named.iter().find(|(k, _)| k == key).map(|(_, g)| g);
+        let pitch = signal(self.eval(given("hz").ok_or("air_jet needs hz:")?)?)?;
+        let breath = signal(self.eval(given("breath").ok_or("air_jet needs breath:")?)?)?;
+        let mut figures = [0.0; 6];
+        for (figure, key) in figures
+            .iter_mut()
+            .zip(["even", "wander", "catch", "corner", "tuned", "lift"])
+        {
+            match given(key) {
+                Some(g) => *figure = number(self.eval(g)?, "an air jet's figure")?,
+                None if key == "even" => return Err("air_jet needs even:".to_string()),
+                None => {}
+            }
+        }
+        let [even, wander, catch, corner, tuned, lift] = figures;
+        let jet = crate::synths::played_jet(
+            pitch,
+            breath,
+            self.ctx.seed(),
+            even,
+            wander,
+            catch,
+            corner,
+            tuned,
+            lift,
+        );
+        let side = self.through(given("side"))?;
+        let sound = self.through(given("sound"))?.unwrap_or_else(|| net(pass()));
+        Ok(V::Sig(match side {
+            Some(side) => jet >> (sound | side) >> net(join::<U2>()),
+            None => jet >> (sound | net(sink())),
+        }))
+    }
+
+    /// The sound `graph` makes of its input, when given.
+    fn through(&mut self, graph: Option<&Graph>) -> Result<Option<Net>, String> {
+        let Some(graph) = graph else {
+            return Ok(None);
+        };
+        let outer = self.inputs.replace(0);
+        let sound = self.eval(graph).and_then(signal);
+        let uses = std::mem::replace(&mut self.inputs, outer).unwrap_or(0);
+        Ok(Some(fed(uses, sound?)))
     }
 }
 

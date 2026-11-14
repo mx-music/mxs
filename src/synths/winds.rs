@@ -916,16 +916,19 @@ fn pitch(o: &Options, depth: f64, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, 
 }
 
 /// A vibrato's swing, growing in after the note starts, its depth drifting slowly by about a third either way, as a player's does from note to note, and its rate wandering from cycle to cycle.
-fn drifting_swing(depth: f64, rate: f64, seed: u64) -> Net {
+pub(crate) fn drifting_swing(depth: f64, rate: f64, seed: u64) -> Net {
+    // The flute's vibrato was fitted with these seeds.
+    let seed = seed ^ 0x76;
     let grown = shape(move |t| {
         let grown = ((t - 0.25) / 1.2).clamp(0.0, 1.0);
         depth * grown * grown
     });
+    // A sine given no phase starts where FunDSP's hash of the whole graph puts it, which moves whenever the graph around it does.
     let rates = white_noise(seed ^ 0x9e)
         >> Net::wrap(Box::new(
             lowpass_hz(3.0, 0.5)
                 >> map(move |x: &Frame<f32, U1>| rate as f32 * (1.0 + WANDER * x[0]))
-                >> sine::<f32>(),
+                >> An(Sine::<f32>::with_phase(0.0)),
         ));
     let swing = rates * grown;
     let drift =
@@ -981,14 +984,8 @@ fn voiced(o: &Options, ctx: &mut Context, model: Net, fit: &Fit, centre: f32) ->
         >> Net::wrap(Box::new(An(Bands::new(fit.gains, given, levels))))
 }
 
-/// The flute's air jet as a defsynth plays it, its turbulence drawn from `seed`.
-pub(crate) fn air_jet(pitch: Net, breath: Net, seed: u64, even: f64) -> Net {
-    played_jet(pitch, breath, seed, even, 0.0, 0.0, 0.0, 0.0, 0.0)
-        >> Net::wrap(Box::new(pass() | sink()))
-}
-
 /// The air jet with the breath's `wander` and its `catch` at each slur, its sound and the side the jet flows to.
-fn played_jet(
+pub(crate) fn played_jet(
     pitch: Net,
     breath: Net,
     seed: u64,
@@ -1059,7 +1056,7 @@ fn flute() -> Synth {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
             let pitch = o.follow("note") >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
-            let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed() ^ 0x76) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
+            let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed()) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
             let rise = rise(o, &FLUTE);
             let jet = played_jet(pitch, breath(o, &FLUTE, rise) * throb, ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(3000.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64), o.number("lift"));
             // The breath hisses above 3 kHz where the jet strikes the edge, pulsing as it crosses, after the bands, so they do not colour it.
