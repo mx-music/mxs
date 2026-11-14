@@ -206,7 +206,7 @@ fn surdo() -> Synth {
             let level = 0.05 * (vel / 0.6).powf(1.6);
             Note::rings(
                 (head >> high_shelf(800.0, (vel - 0.6) * 6.0)) * level as f32,
-                3.6,
+                2.0 - 0.8 * mute,
             )
         })
 }

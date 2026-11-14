@@ -163,7 +163,7 @@ fn snare() -> Synth {
                     ) * weight as f32;
             }
             let plain = snares == 1.0 && rim == 0.0 && buzz == 0.0;
-            Note::rings(sound, if plain { 1.5 } else { 2.5 })
+            Note::rings(sound, if plain { 0.8 } else { 2.5 })
         })
 }
 
