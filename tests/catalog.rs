@@ -68,13 +68,16 @@ fn find<'a>(specs: &'a [Spec], name: &str) -> Option<&'a Spec> {
 }
 
 /// One synth's or effect's section: its own options in a table, and its envelope in a sentence when it has the whole of one.
-fn section(name: &str, specs: &[Spec]) -> String {
+fn section(name: &str, doc: &str, specs: &[Spec]) -> String {
     let enveloped = ENVELOPE.iter().all(|e| find(specs, e).is_some());
     let own: Vec<&Spec> = specs
         .iter()
         .filter(|s| !(enveloped && ENVELOPE.contains(&s.name.as_str())))
         .collect();
     let mut out = format!("### `{name}`\n\n");
+    if !doc.is_empty() {
+        out.push_str(&format!("{doc}\n\n"));
+    }
     if !own.is_empty() {
         out.push_str(&table(&own));
         out.push('\n');
@@ -117,7 +120,7 @@ fn synths_catalog() -> String {
     for (family, members) in &families {
         out.push_str(&format!("## {family}\n\n"));
         for synth in members {
-            out.push_str(&section(synth.name(), synth.specs()));
+            out.push_str(&section(synth.name(), synth.doc(), synth.specs()));
         }
     }
     out
@@ -137,7 +140,7 @@ fn effects_catalog() -> String {
     out.push_str(&table(&common.iter().collect::<Vec<_>>()));
     out.push('\n');
     for effect in &all {
-        out.push_str(&section(effect.name(), effect.specs()));
+        out.push_str(&section(effect.name(), "", effect.specs()));
     }
     out
 }
@@ -161,6 +164,19 @@ fn the_synths_catalog_lists_every_synth_with_its_options() {
 #[test]
 fn the_effects_catalog_lists_every_effect_with_its_options() {
     check("docs/effects.md", effects_catalog());
+}
+
+#[test]
+fn every_synth_says_what_it_is() {
+    for synth in synths::all() {
+        assert!(
+            synth.doc().ends_with('.'),
+            "{} has no description",
+            synth.name()
+        );
+    }
+    assert!(!synths::piano().doc().is_empty());
+    assert!(!synths::berimbau().doc().is_empty());
 }
 
 #[test]

@@ -37,6 +37,8 @@ A synth that takes the envelope takes these seven options, with its own defaults
 
 ### `saw`
 
+A sawtooth wave under a resonant low-pass filter.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -46,6 +48,8 @@ A synth that takes the envelope takes these seven options, with its own defaults
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
 ### `square`
+
+A square wave under a resonant low-pass filter.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -57,6 +61,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
 ### `tri`
 
+A triangle wave under a resonant low-pass filter.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -66,6 +72,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
 ### `pulse`
+
+A pulse wave of any width under a resonant low-pass filter.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -78,6 +86,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
 ### `noise`
 
+Noise under a resonant low-pass filter.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -87,6 +97,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
 ### `fm`
+
+A sine wave whose frequency another sine wave swings.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -98,6 +110,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
 ### `pluck`
 
+A plain plucked string, which rings for as long as asked and dulls as it rings.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -107,6 +121,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 It takes the envelope, with a `sustain` of 0 and a `release` of 2 unless given.
 
 ### `supersaw`
+
+Sawtooth waves spread around the note, under a resonant low-pass filter.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -119,6 +135,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
 ### `acid`
 
+An acid bass, a wave under a resonant filter that closes as the note sounds.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -128,6 +146,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 It takes the envelope, with a `sustain` of 0 and a `release` of 0.5 unless given.
 
 ### `brass`
+
+A plain brass sound, brighter the harder it is blown.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -139,6 +159,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.25 unless give
 ## Piano and plucked strings
 
 ### `piano`
+
+A grand piano, fitted to the Steinway B of the Versilian Community Sample Library from A0 to C8: each harmonic a resonator struck once, with the hammer's knock and the sustain pedal.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -154,6 +176,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 1 unless given.
 
 ### `guitar`
 
+A nylon-string guitar fitted to recordings of a real one, down to B1, the low string of a 7-string guitar. A note rings until it fades by itself.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -162,6 +186,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 1 unless given.
 It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless given.
 
 ### `cavaquinho`
+
+A cavaquinho, with steel strings, brighter and shorter than the guitar.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -173,6 +199,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.8 unless given
 
 ### `bandolim`
 
+A bandolim, the Brazilian mandolin, with steel strings and a tremolo.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -183,6 +211,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.8 unless given
 
 ### `harp`
 
+A folk harp, the kind the Paraguayan and llanera harps are, fitted to the folk harp of the Versilian Community Sample Library from C2 to G#6.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -191,6 +221,8 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.8 unless given
 It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless given.
 
 ### `sitar`
+
+A plucked sitar note with its sympathetic strings, fitted to "sitar01.flac" on Freesound.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -201,6 +233,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless give
 It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless given.
 
 ### `tanpura`
+
+A tanpura's drone, four strings plucked in turn with the note as Sa, fitted to "Tanpura 10" by sankalp on Freesound.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -213,6 +247,8 @@ It takes the envelope, with a `sustain` of 16 and a `release` of 4 unless given.
 ## Bowed strings
 
 ### `violin`
+
+A violin, bowed or plucked: the bowed note is a model of a bowed string, so notes slurred in one bow are one note whose pitch changes. Fitted to the University of Iowa's violin from G3 to B7 and VSCO 2's solo violin.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -240,6 +276,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 
 ### `viola`
 
+A viola, bowed or plucked as the violin is, fitted to the University of Iowa's viola from C3 to Bb6.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -266,6 +304,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 
 ### `cello`
 
+A cello, bowed or plucked as the violin is, fitted to the University of Iowa's cello from C2 to Bb5.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -291,6 +331,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given.
 
 ### `double_bass`
+
+A double bass at the pitch it sounds, bowed or plucked as the violin is, fitted to the University of Iowa's double bass from E1 to G4.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -319,6 +361,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 ## Winds
 
 ### `flute`
+
+A flute, a model of an air jet at the end of a bore, so a change of note is a slur on the same breath. Fitted to the University of Iowa's flute from B3 to Db7 and VSCO 2's flute.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -353,6 +397,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
 ### `clarinet`
+
+A Bb clarinet at the pitch it sounds, a model of a reed on a bore, fitted to the University of Iowa's Bb clarinet from D3 to C7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -396,6 +442,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `oboe`
 
+An oboe, a model of a reed on a bore, fitted to the University of Iowa's oboe from Bb3 to Ab6.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
@@ -437,6 +485,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
 ### `bassoon`
+
+A bassoon, a model of a reed on a bore, fitted to the University of Iowa's bassoon from Bb1 to D5.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -480,6 +530,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `tenor_sax`
 
+A tenor saxophone at the pitch it sounds, a model of a reed on a bore, fitted to the tenor saxophone of the Versilian Community Sample Library from Ab2 to E5.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
@@ -521,6 +573,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
 ### `trumpet`
+
+A Bb trumpet at the pitch it sounds, a model of lips on a bore, fitted to the University of Iowa's Bb trumpet from E3 to Eb6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -564,6 +618,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `trombone`
 
+A tenor trombone, a model of lips on a bore, fitted to the University of Iowa's tenor trombone from E2 to C5.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
@@ -606,6 +662,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `horn`
 
+A French horn, a model of lips on a bore, fitted to VSCO 2's F horn from C2 to F5.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
@@ -647,6 +705,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
 ### `tuba`
+
+A tuba, a model of lips on a bore, fitted to VSCO 2's tuba from Bb1 to Bb3.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -692,6 +752,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `organ`
 
+A pipe organ fitted to VSCO 2's organ, with a quiet set, a stopped flute, and a loud one, a principal chorus.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -701,6 +763,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.15 unless give
 
 ### `harmonium`
 
+The reed organ pumped by hand that accompanies Hindustani singing, fitted to the "Harmonium" pack by cabled_mess on Freesound.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -709,6 +773,8 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.15 unless give
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
 ### `accordion`
+
+An accordion's right hand: two reeds a few Hz apart, beating, fitted to "Accordeon master" by hammondman on Freesound.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -722,6 +788,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.15 unless gi
 
 ### `marimba`
 
+A marimba, fitted to the University of Iowa's marimba struck with yarn mallets, from F1 to C7.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -730,6 +798,8 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.15 unless gi
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
 
 ### `vibraphone`
+
+A vibraphone with its motor, fitted to the University of Iowa's vibraphone from C3 to F6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -741,6 +811,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `xylophone`
 
+A xylophone, fitted to the University of Iowa's xylophone struck with rosewood mallets, from F4 to C8.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -750,6 +822,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `glockenspiel`
 
+A glockenspiel, fitted to the University of Iowa's orchestral bells struck with plastic mallets, from C5 to E8.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
@@ -758,6 +832,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
 
 ### `timpani`
+
+A timpani, whose partials are not whole multiples of its note, fitted to the five timpani of VSCO 2.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -770,6 +846,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `berimbau`
 
+The berimbau of capoeira: the string struck by the stick, open, with the coin pressed or buzzed, and swung by the gourd. Fitted to "Berimbau jam without caxixi" by EliasArtista on Freesound.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 39.11 | The open string's pitch. |
@@ -780,6 +858,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `kick`
 
+A kick drum.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 34 | The drum's pitch. |
@@ -787,6 +867,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `beater` | a number, 0 to 1 | 1 | How hard the beater is; 0 is a felt beater, which leaves out the click. |
 
 ### `snare`
+
+A snare drum, fitted to the snare of VSCO 2 with its snares on.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -798,11 +880,15 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `clap`
 
+A hand clap.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 60 | The clap's pitch. |
 
 ### `crash`
+
+A crash cymbal, fitted to the crash cymbal of VSCO 2.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -812,6 +898,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `release` | seconds, 0 or more | 1 | How long the choke takes. |
 
 ### `ride`
+
+A ride cymbal.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -823,6 +911,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `closed_hihat`
 
+A closed hi-hat, fitted to the hi-hat of the Versilian Community Sample Library.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 92 | The drum's pitch. |
@@ -830,6 +920,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `release` | seconds, 0 or more | 0.05 | How long the hat takes to close. |
 
 ### `open_hihat`
+
+An open hi-hat, fitted to the hi-hat of the Versilian Community Sample Library, which a shorter sustain closes as the pedal does.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -840,12 +932,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `low_tom`
 
+A low tom, fitted to the low tom of the Versilian Community Sample Library.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 41.85 | The drum's pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 
 ### `mid_tom`
+
+A middle tom, the high tom tuned between the high and the low one.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -854,6 +950,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `high_tom`
 
+A high tom, fitted to the high tom of the Versilian Community Sample Library.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 45 | The drum's pitch. |
@@ -861,11 +959,15 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `rimshot`
 
+A rimshot.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 74 | The rim's pitch. |
 
 ### `cross_stick`
+
+A cross stick, the stick laid on the snare's head and struck on its rim.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -874,12 +976,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `pedal_hihat`
 
+A hi-hat closed with the pedal.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 60 | The drum's pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 
 ### `cowbell`
+
+A cowbell, open or muted by the hand, fitted to the cowbells of VSCO 2 and the Versilian Community Sample Library.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -889,12 +995,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `clave`
 
+Claves, fitted to those of the Versilian Community Sample Library and VSCO 2.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 95.2 | The drum's pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 
 ### `low_agogo`
+
+The low bell of an agogô, fitted to the agogô of the Versilian Community Sample Library.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -903,12 +1013,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `high_agogo`
 
+The high bell of an agogô, fitted to the agogô of the Versilian Community Sample Library.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 90.07 | The drum's pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 
 ### `ganza`
+
+A ganzá, a small shaker, with a down and an up stroke, fitted to the small shaker of the Versilian Community Sample Library.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -918,6 +1032,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `shaker`
 
+A large shaker, with a down and an up stroke, fitted to the large shaker of the Versilian Community Sample Library.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 103 | The drum's pitch. |
@@ -925,6 +1041,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `up` | a number, 0 to 1 | 0 | 1 shakes upward instead of down. |
 
 ### `low_conga`
+
+The tumba, the low conga, with open, muted and slapped strokes, fitted to VSCO 2's congas.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -936,6 +1054,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `mid_conga`
 
+The conga, the middle drum of the three, with open, muted and slapped strokes, fitted to VSCO 2's congas.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 51.88 | The drum's pitch. |
@@ -945,6 +1065,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `damp` | a number, 0 to 1 | 0 | 1 leaves the hand on the head, which stops the tone. |
 
 ### `high_conga`
+
+The quinto, the high conga, with open, muted and slapped strokes, fitted to VSCO 2's congas.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -956,11 +1078,15 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `low_timbale`
 
+The low timbale.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 62 | The drum's pitch. |
 
 ### `high_timbale`
+
+The high timbale.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -968,11 +1094,15 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `timbale_shell`
 
+A stroke on the timbale's shell, as cáscara is played.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 93 | The shell's pitch. |
 
 ### `guiro`
+
+A güiro, scraped for as long as its sustain, fitted to the University of Iowa's güiro and those of VSCO 2 and the Versilian Community Sample Library.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -981,6 +1111,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `sustain` | seconds, 0.02 or more | 0.25 | How long the scrape lasts. |
 
 ### `triangle`
+
+A triangle, which a hand damps, fitted to the University of Iowa's 6- and 8-inch triangles.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -991,12 +1123,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `tambourine`
 
+A tambourine struck, fitted to the University of Iowa's three tambourines.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 69 | The drum's pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 
 ### `tambourine_shake`
+
+A tambourine shaken for as long as its sustain.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1005,6 +1141,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `sustain` | seconds, 0.02 or more | 0.25 | How long it is shaken. |
 
 ### `cabasa`
+
+A cabasa, struck or turned, fitted to the cabasa of the Versilian Community Sample Library.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1015,6 +1153,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `cajon`
 
+A cajón, from its bass tone to its slap, fitted to the cajón of the Versilian Community Sample Library.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 40 | The drum's pitch. |
@@ -1022,6 +1162,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `slap` | a number, 0 to 1 | 0 | 1 slaps the front plate instead of the bass tone. |
 
 ### `low_bongo`
+
+The low bongo, open or muted, fitted to the bongos of the Versilian Community Sample Library.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1031,6 +1173,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `high_bongo`
 
+The high bongo, open or muted, fitted to the bongos of the Versilian Community Sample Library.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 70 | The drum's pitch. |
@@ -1038,6 +1182,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `muted` | a number, 0 to 1 | 0 | 1 mutes the head with the hand. |
 
 ### `pandeiro`
+
+The pandeiro of choro and samba, whose `stroke` option picks the thumb, the heel, the slap or the jingles, fitted to pandeiro recordings on Freesound.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1048,6 +1194,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `surdo`
 
+The large drum that holds samba's beat, struck with a felt mallet, open or muted, fitted to three loops by plotzki on Freesound.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 36.31 | The drum's pitch. |
@@ -1055,6 +1203,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `muted` | a number, 0 to 1 | 0 | 1 mutes the head with the hand, so it rings higher and shorter. |
 
 ### `cuica`
+
+The friction drum of samba: each stroke is played back from the nearest of 28 strokes measured in reinsamba's pack "Cuica" on Freesound.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1065,6 +1215,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `tamborim`
 
+The small high drum of samba struck with a stick, fitted to "Tamborim Sound.ogg" by Samba-x on Wikimedia Commons.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 72.03 | The drum's pitch. |
@@ -1072,11 +1224,15 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `caxixi`
 
+The woven basket shaker a berimbau player shakes, fitted to "Caxixi.ogg" by Freddythehat on Wikimedia Commons.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is shaken. |
 
 ### `pandeiro_thumb`
+
+The pandeiro's thumb stroke, its low tone.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1086,6 +1242,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `pandeiro_heel`
 
+The pandeiro's heel stroke.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 49 | The drum's pitch. |
@@ -1093,6 +1251,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `muted` | a number, 0 to 1 | 0 | 1 presses a finger of the holding hand on the head from behind, so it rings higher and shorter. |
 
 ### `pandeiro_slap`
+
+The pandeiro's slap.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1102,6 +1262,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `pandeiro_jingles`
 
+The pandeiro's jingles.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 49 | The drum's pitch. |
@@ -1109,6 +1271,8 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 | `muted` | a number, 0 to 1 | 0 | 1 presses a finger of the holding hand on the head from behind, so it rings higher and shorter. |
 
 ### `tabla`
+
+The tabla, whose `bol` option picks the stroke of the dayan or the bayan, fitted to the "tabla bols" pack by mmiron on Freesound.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1118,12 +1282,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `tabla_na`
 
+Na, a stroke of the dayan, the tabla's higher drum.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 | `note` | a MIDI note | 63 | The stroke's pitch. |
 
 ### `tabla_tun`
+
+Tun, a stroke of the dayan, the tabla's higher drum.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1132,12 +1300,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `tabla_te`
 
+Te, a stroke of the dayan, the tabla's higher drum.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 | `note` | a MIDI note | 63 | The stroke's pitch. |
 
 ### `tabla_tas`
+
+Tas, a stroke of the dayan, the tabla's higher drum.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1146,12 +1318,16 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `tabla_ghe`
 
+Ghe, a stroke of the bayan, the tabla's lower drum, which a change of note bends as the palm does.
+
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 | `note` | a MIDI note | 42.25 | The stroke's pitch. |
 
 ### `tabla_ke`
+
+Ke, a stroke of the bayan, the tabla's lower drum.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|

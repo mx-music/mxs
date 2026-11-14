@@ -14,6 +14,7 @@ type Tail = dyn Fn(&Options) -> f64 + Send + Sync;
 #[derive(Clone)]
 pub struct Synth {
     pub(crate) name: String,
+    pub(crate) doc: String,
     pub(crate) specs: Vec<Spec>,
     pub(crate) build: Arc<BuildNote>,
 }
@@ -21,6 +22,7 @@ pub struct Synth {
 /// A synth being declared, until `build` gives it its sound.
 pub struct SynthDecl {
     name: String,
+    doc: String,
     specs: Vec<Spec>,
 }
 
@@ -30,6 +32,7 @@ impl Synth {
     pub fn new(name: &str) -> SynthDecl {
         SynthDecl {
             name: name.to_string(),
+            doc: String::new(),
             specs: Vec::new(),
         }
     }
@@ -39,6 +42,11 @@ impl Synth {
         &self.name
     }
 
+    /// What the synth is, in a sentence or two, or nothing when its declaration gave none.
+    pub fn doc(&self) -> &str {
+        &self.doc
+    }
+
     /// The options the synth takes.
     pub fn specs(&self) -> &[Spec] {
         &self.specs
@@ -46,6 +54,12 @@ impl Synth {
 }
 
 impl SynthDecl {
+    /// What the synth is, for whoever chooses one.
+    pub fn doc(mut self, doc: &str) -> Self {
+        self.doc = doc.to_string();
+        self
+    }
+
     /// Declares one option.
     pub fn option(mut self, spec: Spec) -> Self {
         self.specs.push(spec);
@@ -65,6 +79,7 @@ impl SynthDecl {
     {
         Synth {
             name: self.name,
+            doc: self.doc,
             specs: self.specs,
             build: Arc::new(build),
         }
