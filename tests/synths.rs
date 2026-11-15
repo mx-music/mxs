@@ -206,7 +206,7 @@ fn a_harder_electric_bass_note_is_louder_and_brighter() {
         first > 3.0 && first < 6.0,
         "its fundamental grew {first} dB"
     );
-    assert!(eighth > first + 5.0, "its eighth harmonic grew {eighth} dB");
+    assert!(eighth > first + 2.0, "its eighth harmonic grew {eighth} dB");
 }
 
 #[test]

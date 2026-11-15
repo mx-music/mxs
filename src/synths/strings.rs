@@ -114,77 +114,143 @@ fn guitar() -> Synth {
 }
 
 /// The bands the electric bass's figures are given at, in Hz, a third of an octave apart.
-const BASS_BANDS: [f64; 19] = [
+const BASS_BANDS: [f64; 22] = [
     40.0, 50.0, 63.0, 80.0, 101.0, 127.0, 160.0, 202.0, 254.0, 320.0, 403.0, 508.0, 640.0, 806.0,
-    1016.0, 1280.0, 1613.0, 2032.0, 2560.0,
+    1016.0, 1280.0, 1613.0, 2032.0, 2560.0, 3225.0, 4064.0, 5120.0,
 ];
-/// A harmonic's level at each band, in dB against a low note's fundamental, with a row for each of the harmonics 1 to 4 and one for those above.
-const BASS_LEVELS: [[f64; 19]; 5] = [
+/// A note's fundamental at each band, in dB against the lowest note's, which brings every note to the same peak, as the recordings are.
+const BASS_OWN: [f64; 22] = [
+    0.0, 0.4, 0.7, -0.1, -0.7, 1.7, 4.8, 7.8, 10.8, 12.2, 12.4, 12.4, 12.4, 12.4, 12.4, 12.4, 12.4,
+    12.4, 12.4, 12.4, 12.4, 12.4,
+];
+/// A harmonic's level as the finger lets go, at each band, in dB against the note's fundamental, with a row for each of the harmonics 1 to 10, and for 11 to 12, 13 to 15, 16 to 20, 21 to 30, and 31 up.
+const BASS_LEVELS: [[f64; 22]; 15] = [
     [
-        -1.0, 0.0, 0.0, -1.0, -2.0, -3.0, -2.0, 0.0, -1.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0,
-        -2.0, -2.0, -2.0, -2.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0,
     ],
     [
-        3.0, 3.0, 3.0, 3.0, 3.0, 0.0, 2.0, -2.0, -2.0, -9.0, -5.0, -12.0, -22.0, -35.0, -44.0,
-        -53.0, -62.0, -71.0, -80.0,
+        4.3, 4.3, 4.3, 4.3, 4.6, 4.6, 4.1, 5.2, 2.2, 3.8, 1.0, -3.0, -5.9, -14.9, -23.9, -32.9,
+        -41.9, -50.9, -59.9, -68.9, -77.9, -86.9,
     ],
     [
-        -1.0, -1.0, -1.0, -1.0, -1.0, -4.0, -3.0, 0.0, 2.0, -6.0, -3.0, -10.0, -28.0, -41.0, -59.0,
-        -68.0, -77.0, -86.0, -95.0,
+        2.8, 2.8, 2.8, 2.8, 2.8, 2.8, 4.5, 4.5, 4.6, 6.7, 1.8, 0.6, -8.4, -20.3, -31.3, -40.3,
+        -49.3, -58.3, -67.3, -76.3, -85.3, -94.3,
     ],
     [
-        -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 0.0, -4.0, -4.0, -2.0, -2.0, -12.0, -23.0, -46.0,
-        -54.0, -59.0, -68.0, -77.0, -86.0,
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 1.2, 2.4, 0.5, 5.9, -1.0, -2.8, -18.9, -27.9, -21.8,
+        -30.8, -39.8, -48.8, -57.8, -66.8, -75.8,
     ],
     [
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -2.2, -9.4, -6.0, -8.0, -16.0, -32.0, -41.0,
-        -50.0, -59.0, -68.0, -77.0,
+        -1.2, -1.2, -1.2, -1.2, -1.2, -1.2, -1.2, -2.0, -3.2, -3.3, -1.0, 0.2, -4.9, -14.1, -21.7,
+        -26.1, -31.3, -39.7, -48.7, -57.7, -66.7, -73.4,
+    ],
+    [
+        -9.9, -9.9, -9.9, -9.9, -9.9, -9.9, -9.9, -9.9, -11.3, -12.9, -12.5, -9.7, -9.2, -14.9,
+        -19.7, -23.1, -33.3, -48.6, -60.9, -69.9, -78.9, -85.6,
+    ],
+    [
+        -18.0, -18.0, -18.0, -18.0, -18.0, -18.0, -18.0, -18.0, -18.0, -16.6, -15.6, -17.3, -16.0,
+        -13.7, -15.0, -17.8, -28.4, -44.0, -55.5, -64.5, -73.5, -80.3,
+    ],
+    [
+        -17.8, -17.8, -17.8, -17.8, -17.8, -17.8, -17.8, -17.8, -17.8, -16.0, -12.4, -12.2, -15.5,
+        -17.2, -15.6, -16.8, -28.8, -40.6, -40.7, -43.1, -52.1, -58.8,
+    ],
+    [
+        -11.5, -11.5, -11.5, -11.5, -11.5, -11.5, -11.5, -11.5, -11.5, -11.5, -10.5, -8.6, -8.6,
+        -12.9, -17.0, -18.8, -27.0, -35.9, -38.1, -43.0, -52.0, -58.7,
+    ],
+    [
+        -18.9, -18.9, -18.9, -18.9, -18.9, -18.9, -18.9, -18.9, -18.9, -18.9, -16.4, -10.3, -6.3,
+        -8.2, -11.9, -14.4, -22.2, -34.9, -44.1, -51.7, -60.7, -67.4,
+    ],
+    [
+        -17.9, -17.9, -17.9, -17.9, -17.9, -17.9, -17.9, -17.9, -17.9, -17.9, -17.9, -16.7, -14.5,
+        -12.4, -10.4, -12.7, -23.0, -35.8, -42.1, -42.7, -47.4, -54.2,
+    ],
+    [
+        -23.8, -23.8, -23.8, -23.8, -23.8, -23.8, -23.8, -23.8, -23.8, -23.8, -23.8, -24.7, -26.4,
+        -28.5, -28.8, -25.8, -27.1, -34.7, -41.9, -49.6, -58.6, -65.3,
+    ],
+    [
+        -30.6, -30.6, -30.6, -30.6, -30.6, -30.6, -30.6, -30.6, -30.6, -30.6, -30.6, -30.6, -31.4,
+        -32.8, -31.8, -27.9, -25.2, -27.8, -34.9, -42.0, -49.7, -56.5,
+    ],
+    [
+        -27.3, -27.3, -27.3, -27.3, -27.3, -27.3, -27.3, -27.3, -27.3, -27.3, -27.3, -27.3, -27.3,
+        -27.3, -29.6, -32.3, -31.8, -30.9, -34.6, -44.3, -55.1, -61.8,
+    ],
+    [
+        -37.9, -37.9, -37.9, -37.9, -37.9, -37.9, -37.9, -37.9, -37.9, -37.9, -37.9, -37.9, -37.9,
+        -37.9, -37.9, -37.9, -37.9, -34.8, -29.3, -29.9, -37.5, -44.2,
     ],
 ];
-/// The bands the pluck's figures are given at, in Hz.
-const PLUCK_BANDS: [f64; 8] = [400.0, 500.0, 630.0, 800.0, 1250.0, 2000.0, 3200.0, 5000.0];
-/// The level of the pluck at each band, in dB against a low note's fundamental, for the tenth harmonic of E2.
-const PLUCK_LEVELS: [f64; 8] = [-14.0, -14.0, -21.0, -18.0, -20.5, -30.0, -35.0, -55.0];
-/// The seconds the pluck takes to fade 60 dB at each band, on E2.
-const PLUCK_FADES: [f64; 8] = [0.6, 0.6, 0.7, 0.6, 0.34, 0.25, 0.11, 0.06];
-/// What a harmonic's number adds to its level, in dB, from the fundamental; the last holds for the harmonics above.
-const BASS_NUMBERS: [f64; 16] = [
-    0.0, 0.0, 0.0, 0.0, -4.2, -11.1, -17.1, -21.5, -23.3, -24.5, -26.0, -27.8, -30.0, -32.0, -34.0,
-    -36.0,
-];
-/// The seconds a harmonic at each band takes to fade 60 dB, with a row for the harmonics 1, 2, 3, 4, 5 to 6, 7 to 9, and 10 up.
-const BASS_FADES: [[f64; 19]; 7] = [
+/// The seconds a harmonic at each band takes to fade 60 dB, with the same rows.
+const BASS_FADES: [[f64; 22]; 15] = [
     [
-        12.0, 16.2, 16.9, 10.3, 9.7, 6.0, 4.6, 4.4, 2.3, 1.9, 1.6, 1.3, 1.0, 0.9, 0.8, 0.8, 0.8,
-        0.8, 0.8,
+        16.28, 16.57, 16.13, 9.89, 6.02, 1.29, 3.68, 3.38, 2.05, 1.67, 1.67, 1.67, 1.67, 1.67,
+        1.67, 1.67, 1.67, 1.67, 1.67, 1.67, 1.67, 1.67,
     ],
     [
-        15.0, 15.0, 15.0, 12.0, 7.0, 5.0, 6.5, 6.3, 3.8, 1.6, 1.6, 0.9, 0.8, 0.8, 0.8, 0.8, 0.8,
-        0.8, 0.8,
+        12.33, 12.33, 12.33, 12.33, 6.94, 3.49, 8.63, 6.05, 3.54, 1.37, 1.26, 0.82, 0.59, 0.59,
+        0.59, 0.59, 0.59, 0.59, 0.59, 0.59, 0.59, 0.59,
     ],
     [
-        4.1, 4.1, 4.1, 4.1, 4.1, 3.4, 3.2, 4.7, 5.5, 3.1, 2.4, 1.4, 1.0, 0.9, 0.8, 0.8, 0.8, 0.8,
-        0.8,
+        2.95, 2.95, 2.95, 2.95, 2.95, 2.95, 2.36, 4.63, 8.26, 2.33, 1.98, 1.03, 0.53, 0.53, 0.41,
+        0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41,
     ],
     [
-        4.5, 4.5, 4.5, 4.5, 4.5, 4.2, 5.0, 3.9, 3.6, 4.3, 3.5, 1.7, 1.4, 0.9, 0.8, 0.8, 0.8, 0.8,
-        0.8,
+        5.75, 5.75, 5.75, 5.75, 5.75, 5.75, 5.75, 3.77, 3.41, 4.08, 2.50, 1.15, 0.90, 0.64, 0.38,
+        0.32, 0.32, 0.32, 0.32, 0.32, 0.32, 0.32,
     ],
     [
-        4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.4, 3.2, 2.3, 2.6, 2.8, 1.5, 0.9, 0.9, 0.8, 0.8, 0.8,
-        0.8,
+        4.13, 4.13, 4.13, 4.13, 4.13, 4.13, 4.13, 3.68, 2.82, 2.51, 2.43, 1.71, 0.99, 0.68, 0.48,
+        0.31, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
     ],
     [
-        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 2.7, 2.8, 2.1, 2.1, 1.4, 0.9, 0.7, 0.7, 0.7,
-        0.7,
+        3.15, 3.15, 3.15, 3.15, 3.15, 3.15, 3.15, 3.15, 2.86, 2.22, 1.91, 1.81, 1.29, 0.72, 0.39,
+        0.24, 0.23, 0.32, 0.40, 0.40, 0.40, 0.40,
     ],
     [
-        2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.9, 2.5, 2.1, 1.4, 1.2, 1.0, 0.8, 0.8,
-        0.8,
+        2.28, 2.28, 2.28, 2.28, 2.28, 2.28, 2.28, 2.28, 2.28, 2.21, 1.74, 1.43, 1.41, 1.04, 0.59,
+        0.32, 0.24, 0.28, 0.32, 0.32, 0.32, 0.32,
+    ],
+    [
+        1.43, 1.43, 1.43, 1.43, 1.43, 1.43, 1.43, 1.43, 1.43, 1.38, 1.16, 1.05, 1.13, 0.89, 0.54,
+        0.34, 0.28, 0.24, 0.12, 0.08, 0.08, 0.08,
+    ],
+    [
+        0.83, 0.83, 0.83, 0.83, 0.83, 0.83, 0.83, 0.83, 0.83, 0.83, 0.78, 0.61, 0.54, 0.72, 0.74,
+        0.39, 0.25, 0.19, 0.11, 0.08, 0.08, 0.08,
+    ],
+    [
+        1.18, 1.18, 1.18, 1.18, 1.18, 1.18, 1.18, 1.18, 1.18, 1.18, 0.99, 0.62, 0.47, 0.56, 0.58,
+        0.36, 0.24, 0.19, 0.13, 0.10, 0.10, 0.10,
+    ],
+    [
+        0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.42, 0.40, 0.39, 0.44,
+        0.37, 0.24, 0.25, 0.22, 0.11, 0.08, 0.08,
+    ],
+    [
+        0.56, 0.56, 0.56, 0.56, 0.56, 0.56, 0.56, 0.56, 0.56, 0.56, 0.56, 0.50, 0.41, 0.41, 0.45,
+        0.42, 0.39, 0.31, 0.20, 0.15, 0.15, 0.15,
+    ],
+    [
+        0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.41, 0.36, 0.28, 0.26,
+        0.27, 0.24, 0.18, 0.14, 0.12, 0.12, 0.12,
+    ],
+    [
+        0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.18,
+        0.19, 0.16, 0.14, 0.14, 0.17, 0.20, 0.20,
+    ],
+    [
+        0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
+        0.25, 0.25, 0.20, 0.11, 0.07, 0.07, 0.07,
     ],
 ];
 
-/// An electric bass played with the fingers: a level and a fade for each harmonic, read from its number and its frequency, as measured from the notes of NSynth's bass_electronic_018.
+/// An electric bass played with the fingers: a level and a fade for each harmonic, read from its number and its frequency, and the finger's drag on the string before it lets go, as measured from the notes of NSynth's bass_electronic_018.
 fn electric_bass() -> Synth {
     Synth::new("electric_bass")
         .option(Spec::note("note").default(33.0).doc("The pitch."))
@@ -200,63 +266,70 @@ fn electric_bass() -> Synth {
             let note = o.number("note");
             let freq = hz(note);
             let hard = ((vel - 0.6) / 0.4).clamp(-1.0, 0.5);
-            let harmonics: Vec<(usize, f64)> = (1..=24)
+            let harmonics: Vec<(usize, f64)> = (1..=60)
                 .map(|n| (n, freq * n as f64))
-                .filter(|(_, f)| *f < 3000.0)
+                .filter(|(_, f)| *f < 5000.0)
                 .collect();
             let row = |n: usize| match n {
-                1..=4 => n - 1,
-                5..=6 => 4,
-                7..=9 => 5,
-                _ => 6,
+                1..=10 => n - 1,
+                11..=12 => 10,
+                13..=15 => 11,
+                16..=20 => 12,
+                21..=30 => 13,
+                _ => 14,
             };
-            let bright = |n: usize| match n {
-                1..=5 => 0.0,
-                6 => 3.0,
-                7 => 5.0,
-                _ => 7.0,
+            let bright = |n: usize| if n >= 5 { 3.0 } else { 0.0 };
+            // The longer-ringing resonator beside each harmonic slows its fall, so the first is shorter than the fade measured.
+            let first = |n: usize| match n {
+                1..=4 => 0.92,
+                5..=6 => 0.85,
+                _ => 0.8,
             };
-            let soft = 2f64.powf(0.35 * hard.min(0.0));
+            let soft = 2f64.powf(0.15 * hard.min(0.0));
+            let own = along(&BASS_BANDS, &BASS_OWN, freq);
+            let low = ((note - 40.0) / 7.0).clamp(-1.0, 0.0);
             let pitches: Vec<f64> = harmonics.iter().map(|(_, f)| *f).collect();
             let levels: Vec<f64> = harmonics
                 .iter()
                 .map(|(n, f)| {
-                    let number = BASS_NUMBERS[Ord::min(*n - 1, BASS_NUMBERS.len() - 1)];
-                    let level = along(&BASS_BANDS, &BASS_LEVELS[Ord::min(*n - 1, 4)], *f);
-                    db(level + number + hard * bright(*n))
+                    db(own + along(&BASS_BANDS, &BASS_LEVELS[row(*n)], *f) + hard * bright(*n))
                 })
                 .collect();
             let fades: Vec<f64> = harmonics
                 .iter()
-                .map(|(n, f)| along(&BASS_BANDS, &BASS_FADES[row(*n)], *f) * soft)
-                .collect();
-            // The pluck: the harmonics from 400 Hz up ring bright as the finger lets go and die within a fraction of a second, sooner on a lower note.
-            let low = ((note - 40.0) / 7.0).clamp(-1.0, 0.0);
-            let plucked: Vec<f64> = (1..=60)
-                .map(|n| freq * n as f64)
-                .filter(|f| (400.0..5000.0).contains(f))
-                .collect();
-            let pluck_log2: Vec<f64> = PLUCK_FADES.iter().map(|f| f.log2()).collect();
-            let pluck_levels: Vec<f64> = plucked
-                .iter()
-                .map(|f| {
-                    let closer = 10.0 * (10.0 * freq / f).log10();
-                    db(along(&PLUCK_BANDS, &PLUCK_LEVELS, *f) + closer + low * -4.0 + hard * 5.0)
+                .map(|(n, f)| {
+                    // The harmonics from the sixteenth up die sooner on the notes below E2 than the fades fitted, which could only be read on the notes above.
+                    let sooner = if *n >= 16 { 2f64.powf(low) } else { 1.0 };
+                    along(&BASS_BANDS, &BASS_FADES[row(*n)], *f) * soft * first(*n) * sooner
                 })
                 .collect();
-            let pluck_fades: Vec<f64> = plucked
+            let gain = 0.04 * vel.sqrt();
+            // Each recorded harmonic falls fast at first and slower later: a fainter resonator beside each rings longer.
+            let late = |n: usize| {
+                if n <= 6 {
+                    (db(-21.0), 2.5)
+                } else {
+                    (db(-25.0), 4.0)
+                }
+            };
+            let late_levels: Vec<f64> = harmonics
                 .iter()
-                .map(|f| 2f64.powf(along(&PLUCK_BANDS, &pluck_log2, *f) + low * 1.6))
+                .zip(&levels)
+                .map(|((n, _), l)| l * late(*n).0)
                 .collect();
-            let gain = 0.05 * vel.sqrt();
+            let late_fades: Vec<f64> = harmonics
+                .iter()
+                .zip(&fades)
+                .map(|((n, _), f)| f * late(*n).1)
+                .collect();
+            let string = modes(clicks(vec![(0.03, 1.0)]), &pitches, &levels, &fades)
+                + modes(
+                    clicks(vec![(0.03, 1.0)]),
+                    &pitches,
+                    &late_levels,
+                    &late_fades,
+                );
             // The finger: it drags on the string for 0.03 seconds before it lets go, and the note starts then.
-            let string = modes(clicks(vec![(0.03, 1.0)]), &pitches, &levels, &fades);
-            let pluck = modes(
-                clicks(vec![(0.03, 1.0)]),
-                &plucked,
-                &pluck_levels,
-                &pluck_fades,
-            );
             let finger =
                 (white_noise(ctx.seed()) >> lowpass_hz(500.0, 0.707) >> lowpole_hz(1200.0))
                     * segments(
@@ -264,10 +337,15 @@ fn electric_bass() -> Synth {
                         &[0.003, 0.03 - 0.003, 0.004],
                         &[0.0, 0.0, 0.0],
                     )
-                    * db(12.0 + low * -6.0) as f32;
+                    * db(16.0 + own + low * -8.0) as f32;
             let rise = segments(&[0.0, 0.0, 1.0], &[0.03, 0.0007], &[0.0, 0.0]);
-            Note::envelope(((string + pluck) * rise + finger) * gain as f32, o)
-                .within(0.03 + silent_after(&levels, &fades, gain))
+            Note::envelope((string * rise + finger) * gain as f32, o).within(
+                0.03 + silent_after(&levels, &fades, gain).max(silent_after(
+                    &late_levels,
+                    &late_fades,
+                    gain,
+                )),
+            )
         })
 }
 
