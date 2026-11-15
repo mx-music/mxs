@@ -2,7 +2,8 @@
 
 use super::common::{along, bpf, hpf, lpf, net, partials, silent_after, sine_from, struck};
 use crate::nodes::{
-    db, decay2, hit, hz, modes, perc, segment_at, segments, shape, struck_gliding, white_noise,
+    clicks, db, decay2, hit, hz, modes, perc, segment_at, segments, shape, struck_gliding,
+    white_noise,
 };
 use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
@@ -194,7 +195,7 @@ fn electric_bass() -> Synth {
                 .doc("How hard the string is plucked."),
         )
         .options(Spec::envelope(1000.0, 0.1))
-        .build(|o, _ctx| {
+        .build(|o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let note = o.number("note");
             let freq = hz(note);
@@ -248,10 +249,25 @@ fn electric_bass() -> Synth {
                 .map(|f| 2f64.powf(along(&PLUCK_BANDS, &pluck_log2, *f) + low * 1.6))
                 .collect();
             let gain = 0.05 * vel.sqrt();
-            let string = modes(net(impulse::<U1>()), &pitches, &levels, &fades);
-            let pluck = modes(net(impulse::<U1>()), &plucked, &pluck_levels, &pluck_fades);
-            Note::envelope((string + pluck) * gain as f32, o)
-                .within(silent_after(&levels, &fades, gain))
+            // The finger: it drags on the string for 0.03 seconds before it lets go, and the note starts then.
+            let string = modes(clicks(vec![(0.03, 1.0)]), &pitches, &levels, &fades);
+            let pluck = modes(
+                clicks(vec![(0.03, 1.0)]),
+                &plucked,
+                &pluck_levels,
+                &pluck_fades,
+            );
+            let finger =
+                (white_noise(ctx.seed()) >> lowpass_hz(500.0, 0.707) >> lowpole_hz(1200.0))
+                    * segments(
+                        &[0.0, 0.5, 1.0, 0.0],
+                        &[0.003, 0.03 - 0.003, 0.004],
+                        &[0.0, 0.0, 0.0],
+                    )
+                    * db(12.0 + low * -6.0) as f32;
+            let rise = segments(&[0.0, 0.0, 1.0], &[0.03, 0.0007], &[0.0, 0.0]);
+            Note::envelope(((string + pluck) * rise + finger) * gain as f32, o)
+                .within(0.03 + silent_after(&levels, &fades, gain))
         })
 }
 
