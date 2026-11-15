@@ -149,3 +149,85 @@ fn a_hundred_caxixi_shakes_leave_nothing_sounding_once_they_end() {
         "a shake still sounds after the last one's ring ends"
     );
 }
+
+fn electric_bass(options: &[(&str, f64)], seconds: f64) -> Vec<f32> {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    engine
+        .play(&[(0.0, Event::note(None, "electric_bass", options))])
+        .unwrap();
+    engine.render(seconds).unwrap().0
+}
+
+#[test]
+fn the_electric_bass_plays_its_lowest_and_highest_notes_at_their_pitch() {
+    for note in [22.0, 63.0] {
+        let sound = electric_bass(&[("note", note)], 2.0);
+        let period = RATE / (440.0 * 2f64.powf((note - 69.0) / 12.0));
+        let window = &sound[4800..52_800];
+        let alike = |lag: usize| -> f64 {
+            window[lag..]
+                .iter()
+                .zip(window)
+                .map(|(a, b)| (a * b) as f64)
+                .sum::<f64>()
+                / (window.len() - lag) as f64
+        };
+        let lags = (period / 2.5) as usize..(period * 2.5) as usize;
+        let best = lags.max_by(|a, b| alike(*a).total_cmp(&alike(*b))).unwrap();
+        let (before, at, after) = (alike(best - 1), alike(best), alike(best + 1));
+        let lag = best as f64 + 0.5 * (before - after) / (before - 2.0 * at + after);
+        let hz = RATE / lag;
+        let cents = 1200.0 * (hz / (440.0 * 2f64.powf((note - 69.0) / 12.0))).log2();
+        assert!(cents.abs() < 5.0, "note {note} is {cents} cents off");
+    }
+}
+
+#[test]
+fn a_harder_electric_bass_note_is_louder_and_brighter() {
+    let level = |sound: &[f32], hz: f64| {
+        let turn = |i: usize| std::f64::consts::TAU * hz * i as f64 / RATE;
+        let (re, im) = sound[..24_000]
+            .iter()
+            .enumerate()
+            .fold((0.0, 0.0), |(re, im), (i, x)| {
+                (
+                    re + *x as f64 * turn(i).cos(),
+                    im + *x as f64 * turn(i).sin(),
+                )
+            });
+        re.hypot(im)
+    };
+    let soft = electric_bass(&[("note", 33.0), ("vel", 0.3)], 1.0);
+    let hard = electric_bass(&[("note", 33.0), ("vel", 1.0)], 1.0);
+    let grew = |hz: f64| 20.0 * (level(&hard, hz) / level(&soft, hz)).log10();
+    let (first, eighth) = (grew(55.0), grew(440.0));
+    assert!(
+        first > 3.0 && first < 6.0,
+        "its fundamental grew {first} dB"
+    );
+    assert!(eighth > first + 5.0, "its eighth harmonic grew {eighth} dB");
+}
+
+#[test]
+fn a_hundred_electric_bass_notes_leave_nothing_sounding_once_they_end() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let notes: Vec<_> = (0..100)
+        .map(|i| {
+            let options = [("note", 28.0 + (i % 30) as f64), ("sustain", 0.3)];
+            (
+                i as f64 * 0.02,
+                Event::note(None, "electric_bass", &options),
+            )
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    engine.render(2.0).unwrap();
+    assert!(engine.sounding());
+    engine.render(1.0).unwrap();
+    assert!(
+        !engine.sounding(),
+        "a note still sounds after its release ends"
+    );
+}

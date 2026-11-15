@@ -1,7 +1,7 @@
 # mxs
 
 mxs is a sound engine in Rust, built on [FunDSP](https://github.com/SamiPerttu/fundsp).
-It comes with 88 synths, most of them fitted to recordings of real instruments, and 17 effects.
+It comes with 89 synths, most of them fitted to recordings of real instruments, and 17 effects.
 You give it notes, each stamped with a time in seconds, and it plays them on the sound card or renders them offline.
 
 mxs is the engine of [mx](https://github.com/mx-music/mx), a library for writing music in Elixir, and it works without mx: everything mx plays goes through the API described here.
@@ -73,7 +73,7 @@ The example `salsa` writes them to a WAV file.
 
 | Family | Synths |
 |---|---|
-| Piano and plucked strings | piano, guitar, cavaquinho, bandolim, harp, sitar, tanpura |
+| Piano and plucked strings | piano, guitar, electric_bass, cavaquinho, bandolim, harp, sitar, tanpura |
 | Bowed strings | violin, viola, cello, double_bass |
 | Winds | flute, clarinet, oboe, bassoon, tenor_sax, trumpet, trombone, horn, tuba |
 | Organs and reeds | organ, harmonium, accordion |

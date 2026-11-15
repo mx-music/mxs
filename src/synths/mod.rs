@@ -75,6 +75,9 @@ fn about(name: &str) -> &'static str {
         "guitar" => {
             "A nylon-string guitar fitted to recordings of a real one, down to B1, the low string of a 7-string guitar. A note rings until it fades by itself."
         }
+        "electric_bass" => {
+            "An electric bass played with the fingers, fitted to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself."
+        }
         "cavaquinho" => "A cavaquinho, with steel strings, brighter and shorter than the guitar.",
         "bandolim" => "A bandolim, the Brazilian mandolin, with steel strings and a tremolo.",
         "harp" => {

@@ -12,6 +12,7 @@ use std::f64::consts::PI;
 pub fn all() -> Vec<Synth> {
     vec![
         guitar(),
+        electric_bass(),
         plucked("cavaquinho", 0.1, 1.2, 1.05, &[420.0, 1100.0], &[1.0]),
         plucked("bandolim", 0.12, 1.6, 1.1, &[380.0, 900.0], &[1.0, 1.0025]),
         harp(),
@@ -108,6 +109,122 @@ fn guitar() -> Synth {
                 .map(|(l, r)| r * (20.0 * (l * 0.075 / 1e-4).log10()) / 60.0)
                 .fold(0.1, f64::max);
             Note::envelope((fast + slow) * 0.075 + pick, o).within(rings)
+        })
+}
+
+/// The bands the electric bass's figures are given at, in Hz, a third of an octave apart.
+const BASS_BANDS: [f64; 19] = [
+    40.0, 50.0, 63.0, 80.0, 101.0, 127.0, 160.0, 202.0, 254.0, 320.0, 403.0, 508.0, 640.0, 806.0,
+    1016.0, 1280.0, 1613.0, 2032.0, 2560.0,
+];
+/// A harmonic's level at each band, in dB against a low note's fundamental, with a row for each of the harmonics 1 to 4 and one for those above.
+const BASS_LEVELS: [[f64; 19]; 5] = [
+    [
+        -1.0, 0.0, 0.0, -1.0, -2.0, -3.0, -2.0, 0.0, -1.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0,
+        -2.0, -2.0, -2.0, -2.0,
+    ],
+    [
+        3.0, 3.0, 3.0, 3.0, 3.0, 0.0, 2.0, -2.0, -2.0, -9.0, -5.0, -12.0, -22.0, -35.0, -44.0,
+        -53.0, -62.0, -71.0, -80.0,
+    ],
+    [
+        -1.0, -1.0, -1.0, -1.0, -1.0, -4.0, -3.0, 0.0, 2.0, -6.0, -3.0, -10.0, -28.0, -41.0, -59.0,
+        -68.0, -77.0, -86.0, -95.0,
+    ],
+    [
+        -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 0.0, -4.0, -4.0, -2.0, -2.0, -12.0, -23.0, -46.0,
+        -54.0, -59.0, -68.0, -77.0, -86.0,
+    ],
+    [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -2.2, -9.4, -6.0, -8.0, -16.0, -32.0, -41.0,
+        -50.0, -59.0, -68.0, -77.0,
+    ],
+];
+/// What a harmonic's number adds to its level, in dB, from the fundamental; the last holds for the harmonics above.
+const BASS_NUMBERS: [f64; 16] = [
+    0.0, 0.0, 0.0, 0.0, -4.2, -11.1, -17.1, -21.5, -23.3, -24.5, -26.0, -27.8, -30.0, -32.0, -34.0,
+    -36.0,
+];
+/// The seconds a harmonic at each band takes to fade 60 dB, with a row for the harmonics 1, 2, 3, 4, 5 to 6, 7 to 9, and 10 up.
+const BASS_FADES: [[f64; 19]; 7] = [
+    [
+        12.0, 16.2, 16.9, 10.3, 9.7, 6.0, 4.6, 4.4, 2.3, 1.9, 1.6, 1.3, 1.0, 0.9, 0.8, 0.8, 0.8,
+        0.8, 0.8,
+    ],
+    [
+        15.0, 15.0, 15.0, 12.0, 7.0, 5.0, 6.5, 6.3, 3.8, 1.6, 1.6, 0.9, 0.8, 0.8, 0.8, 0.8, 0.8,
+        0.8, 0.8,
+    ],
+    [
+        4.1, 4.1, 4.1, 4.1, 4.1, 3.4, 3.2, 4.7, 5.5, 3.1, 2.4, 1.4, 1.0, 0.9, 0.8, 0.8, 0.8, 0.8,
+        0.8,
+    ],
+    [
+        4.5, 4.5, 4.5, 4.5, 4.5, 4.2, 5.0, 3.9, 3.6, 4.3, 3.5, 1.7, 1.4, 0.9, 0.8, 0.8, 0.8, 0.8,
+        0.8,
+    ],
+    [
+        4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.4, 3.2, 2.3, 2.6, 2.8, 1.5, 0.9, 0.9, 0.8, 0.8, 0.8,
+        0.8,
+    ],
+    [
+        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 2.7, 2.8, 2.1, 2.1, 1.4, 0.9, 0.7, 0.7, 0.7,
+        0.7,
+    ],
+    [
+        2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.9, 2.5, 2.1, 1.4, 1.2, 1.0, 0.8, 0.8,
+        0.8,
+    ],
+];
+
+/// An electric bass played with the fingers: a level and a fade for each harmonic, read from its number and its frequency, as measured from the notes of NSynth's bass_electronic_018.
+fn electric_bass() -> Synth {
+    Synth::new("electric_bass")
+        .option(Spec::note("note").default(33.0).doc("The pitch."))
+        .option(
+            Spec::float("vel")
+                .default(0.6)
+                .range(0.0, 1.0)
+                .doc("How hard the string is plucked."),
+        )
+        .options(Spec::envelope(1000.0, 0.1))
+        .build(|o, _ctx| {
+            let vel = o.number("vel").clamp(0.0, 1.0);
+            let freq = hz(o.number("note"));
+            let hard = ((vel - 0.6) / 0.4).clamp(-1.0, 0.5);
+            let harmonics: Vec<(usize, f64)> = (1..=24)
+                .map(|n| (n, freq * n as f64))
+                .filter(|(_, f)| *f < 3000.0)
+                .collect();
+            let row = |n: usize| match n {
+                1..=4 => n - 1,
+                5..=6 => 4,
+                7..=9 => 5,
+                _ => 6,
+            };
+            let bright = |n: usize| match n {
+                1..=5 => 0.0,
+                6 => 3.0,
+                7 => 5.0,
+                _ => 7.0,
+            };
+            let soft = 2f64.powf(0.35 * hard.min(0.0));
+            let pitches: Vec<f64> = harmonics.iter().map(|(_, f)| *f).collect();
+            let levels: Vec<f64> = harmonics
+                .iter()
+                .map(|(n, f)| {
+                    let number = BASS_NUMBERS[Ord::min(*n - 1, BASS_NUMBERS.len() - 1)];
+                    let level = along(&BASS_BANDS, &BASS_LEVELS[Ord::min(*n - 1, 4)], *f);
+                    db(level + number + hard * bright(*n))
+                })
+                .collect();
+            let fades: Vec<f64> = harmonics
+                .iter()
+                .map(|(n, f)| along(&BASS_BANDS, &BASS_FADES[row(*n)], *f) * soft)
+                .collect();
+            let gain = 0.05 * vel.sqrt();
+            let string = modes(net(impulse::<U1>()), &pitches, &levels, &fades);
+            Note::envelope(string * gain as f32, o).within(silent_after(&levels, &fades, gain))
         })
 }
 
