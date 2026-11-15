@@ -140,6 +140,12 @@ const BASS_LEVELS: [[f64; 19]; 5] = [
         -50.0, -59.0, -68.0, -77.0,
     ],
 ];
+/// The bands the pluck's figures are given at, in Hz.
+const PLUCK_BANDS: [f64; 8] = [400.0, 500.0, 630.0, 800.0, 1250.0, 2000.0, 3200.0, 5000.0];
+/// The level of the pluck at each band, in dB against a low note's fundamental, for the tenth harmonic of E2.
+const PLUCK_LEVELS: [f64; 8] = [-14.0, -14.0, -21.0, -18.0, -20.5, -30.0, -35.0, -55.0];
+/// The seconds the pluck takes to fade 60 dB at each band, on E2.
+const PLUCK_FADES: [f64; 8] = [0.6, 0.6, 0.7, 0.6, 0.34, 0.25, 0.11, 0.06];
 /// What a harmonic's number adds to its level, in dB, from the fundamental; the last holds for the harmonics above.
 const BASS_NUMBERS: [f64; 16] = [
     0.0, 0.0, 0.0, 0.0, -4.2, -11.1, -17.1, -21.5, -23.3, -24.5, -26.0, -27.8, -30.0, -32.0, -34.0,
@@ -190,7 +196,8 @@ fn electric_bass() -> Synth {
         .options(Spec::envelope(1000.0, 0.1))
         .build(|o, _ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
-            let freq = hz(o.number("note"));
+            let note = o.number("note");
+            let freq = hz(note);
             let hard = ((vel - 0.6) / 0.4).clamp(-1.0, 0.5);
             let harmonics: Vec<(usize, f64)> = (1..=24)
                 .map(|n| (n, freq * n as f64))
@@ -222,9 +229,29 @@ fn electric_bass() -> Synth {
                 .iter()
                 .map(|(n, f)| along(&BASS_BANDS, &BASS_FADES[row(*n)], *f) * soft)
                 .collect();
+            // The pluck: the harmonics from 400 Hz up ring bright as the finger lets go and die within a fraction of a second, sooner on a lower note.
+            let low = ((note - 40.0) / 7.0).clamp(-1.0, 0.0);
+            let plucked: Vec<f64> = (1..=60)
+                .map(|n| freq * n as f64)
+                .filter(|f| (400.0..5000.0).contains(f))
+                .collect();
+            let pluck_log2: Vec<f64> = PLUCK_FADES.iter().map(|f| f.log2()).collect();
+            let pluck_levels: Vec<f64> = plucked
+                .iter()
+                .map(|f| {
+                    let closer = 10.0 * (10.0 * freq / f).log10();
+                    db(along(&PLUCK_BANDS, &PLUCK_LEVELS, *f) + closer + low * -4.0 + hard * 5.0)
+                })
+                .collect();
+            let pluck_fades: Vec<f64> = plucked
+                .iter()
+                .map(|f| 2f64.powf(along(&PLUCK_BANDS, &pluck_log2, *f) + low * 1.6))
+                .collect();
             let gain = 0.05 * vel.sqrt();
             let string = modes(net(impulse::<U1>()), &pitches, &levels, &fades);
-            Note::envelope(string * gain as f32, o).within(silent_after(&levels, &fades, gain))
+            let pluck = modes(net(impulse::<U1>()), &plucked, &pluck_levels, &pluck_fades);
+            Note::envelope((string + pluck) * gain as f32, o)
+                .within(silent_after(&levels, &fades, gain))
         })
 }
 
