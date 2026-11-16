@@ -160,7 +160,7 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.25 unless give
 
 ### `piano`
 
-A grand piano, fitted to the Steinway B of the Versilian Community Sample Library from A0 to C8: each harmonic a resonator struck once, with the hammer's knock and the sustain pedal.
+A grand piano, fitted to the Steinway B of the Versilian Community Sample Library from A0 to C8: each harmonic a resonator struck once, with the hammer's knock and the sustain pedal. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partners that ring beside them as a slow stage or a beating twin, the thump of the strike and the knock through the soundboard.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
