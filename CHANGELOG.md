@@ -1,5 +1,11 @@
 # Changelog for mxs v0.1
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [synths] Refit `electric_piano` partial by partial to each of keyboard_electronic_098's 99 recordings, with the tine's bell, the strike's noise and every partial up to 8 kHz; a note or velocity not recorded takes the recordings nearest it, across velocity first; it is no longer an alpha version
+
 ## v0.1.2 (2026-11-17)
 
 ### 1. Enhancements

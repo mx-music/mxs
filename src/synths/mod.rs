@@ -31,6 +31,7 @@ mod bowed;
 mod common;
 mod drums;
 mod electric;
+mod figures;
 mod organs;
 mod strings;
 mod tuned;
