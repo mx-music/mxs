@@ -46,7 +46,7 @@ fn electric_piano() -> Synth {
                 .map(|(_, level)| db(own + level - fall))
                 .collect();
             let bell_fades = vec![(300.0 / freq).clamp(0.3, 8.0); bell.len()];
-            let gain = 0.04 * vel.sqrt();
+            let gain = 0.04 * vel.powf(0.4) * EPIANO.loudness(freq, vel);
             let tine = modes(clicks(vec![(0.0, 1.0)]), &pitches, &levels, &fades)
                 + modes(
                     clicks(vec![(0.0, 1.0)]),
