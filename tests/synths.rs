@@ -442,6 +442,15 @@ fn a_harder_electric_guitar_note_is_louder() {
     }
 }
 
+/// The alpha version's A2 at vel 1, in mxs 0.1.2, measured -35.4 dB in its left channel over 3.2 seconds.
+#[test]
+fn the_electric_guitar_plays_a2_at_vel_1_as_loud_as_its_alpha_version() {
+    let sound = electric_guitar(&[("note", 45.0), ("vel", 1.0)], 3.2);
+    let rms = (sound.iter().map(|x| (*x as f64).powi(2)).sum::<f64>() / sound.len() as f64).sqrt();
+    let level = 20.0 * rms.log10();
+    assert!((level + 35.4).abs() < 1.0, "A2 plays at {level} dB");
+}
+
 #[test]
 fn a_hundred_electric_guitar_notes_leave_nothing_sounding_once_they_end() {
     let mut engine = Engine::offline(RATE);

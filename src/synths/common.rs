@@ -197,21 +197,4 @@ impl Fitted {
             .collect();
         (own, pitches, levels, fades)
     }
-
-    /// How much to scale a note at vel so that its harmonics carry as much energy over its first half second as at vel 1: the recordings are each brought to the same peak, so their levels say how bright a velocity is but not how loud.
-    pub fn loudness(&self, freq: f64, vel: f64) -> f64 {
-        let energy = |vel: f64| {
-            let (_, _, levels, fades) = self.harmonics(freq, vel);
-            // Each harmonic's energy over the first half second, as it fades 60 dB in its fade time.
-            levels
-                .iter()
-                .zip(&fades)
-                .map(|(l, fade)| {
-                    let tau = fade / 6.91;
-                    l * l * tau * (1.0 - (-1.0 / tau).exp())
-                })
-                .sum::<f64>()
-        };
-        (energy(1.0) / energy(vel)).sqrt()
-    }
 }
