@@ -1,5 +1,11 @@
 # Changelog for mxs v0.1
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [synths] Add `deep_bass`, a dark bass played with the fingers, fitted to NSynth's bass_electronic_025 and bass_electronic_027
+
 ## v0.1.1 (2026-11-16)
 
 ### 1. Enhancements

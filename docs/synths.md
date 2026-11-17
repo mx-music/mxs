@@ -3,7 +3,7 @@
 | Family | Synths |
 |---|---|
 | Basic waveforms | [`saw`](#saw), [`square`](#square), [`tri`](#tri), [`pulse`](#pulse), [`noise`](#noise), [`fm`](#fm), [`pluck`](#pluck), [`supersaw`](#supersaw), [`acid`](#acid), [`brass`](#brass) |
-| Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura) |
+| Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`deep_bass`](#deep_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura) |
 | Bowed strings | [`violin`](#violin), [`viola`](#viola), [`cello`](#cello), [`double_bass`](#double_bass) |
 | Winds | [`flute`](#flute), [`clarinet`](#clarinet), [`oboe`](#oboe), [`bassoon`](#bassoon), [`tenor_sax`](#tenor_sax), [`trumpet`](#trumpet), [`trombone`](#trombone), [`horn`](#horn), [`tuba`](#tuba) |
 | Organs and reeds | [`organ`](#organ), [`harmonium`](#harmonium), [`accordion`](#accordion) |
@@ -188,6 +188,17 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless give
 ### `electric_bass`
 
 An electric bass played with the fingers, fitted to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 33 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the string is plucked. |
+
+It takes the envelope, with a `sustain` of 1000 and a `release` of 0.1 unless given.
+
+### `deep_bass`
+
+A dark bass played with the fingers, fitted to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
