@@ -81,6 +81,9 @@ fn about(name: &str) -> &'static str {
         "electric_bass" => {
             "An electric bass played with the fingers, fitted to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself."
         }
+        "electric_guitar" => {
+            "A solid-body electric guitar picked clean, fitted to the notes of the guitar_electronic_028 instrument of Google's NSynth dataset from E2 to D6. A note rings until it fades by itself."
+        }
         "electric_piano" => {
             "An electric piano whose hammers strike tines, fitted to the notes of the keyboard_electronic_098 instrument of Google's NSynth dataset from E1 to E6. A note rings while the key is held until it fades by itself."
         }

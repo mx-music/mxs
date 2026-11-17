@@ -390,3 +390,77 @@ fn a_hundred_electric_piano_notes_leave_nothing_sounding_once_they_end() {
         "a note still sounds after its release ends"
     );
 }
+
+fn electric_guitar(options: &[(&str, f64)], seconds: f64) -> Vec<f32> {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    engine
+        .play(&[(0.0, Event::note(None, "electric_guitar", options))])
+        .unwrap();
+    engine.render(seconds).unwrap().0
+}
+
+#[test]
+fn the_electric_guitar_plays_its_lowest_and_highest_notes_at_their_pitch() {
+    for note in [40.0, 86.0] {
+        let sound = electric_guitar(&[("note", note)], 2.0);
+        let period = RATE / (440.0 * 2f64.powf((note - 69.0) / 12.0));
+        let window = &sound[4800..52_800];
+        let alike = |lag: usize| -> f64 {
+            window[lag..]
+                .iter()
+                .zip(window)
+                .map(|(a, b)| (a * b) as f64)
+                .sum::<f64>()
+                / (window.len() - lag) as f64
+        };
+        let lags = (period / 2.5) as usize..(period * 2.5) as usize;
+        let best = lags.max_by(|a, b| alike(*a).total_cmp(&alike(*b))).unwrap();
+        let (before, at, after) = (alike(best - 1), alike(best), alike(best + 1));
+        let lag = best as f64 + 0.5 * (before - after) / (before - 2.0 * at + after);
+        let hz = RATE / lag;
+        let cents = 1200.0 * (hz / (440.0 * 2f64.powf((note - 69.0) / 12.0))).log2();
+        assert!(cents.abs() < 5.0, "note {note} is {cents} cents off");
+    }
+}
+
+#[test]
+fn a_harder_electric_guitar_note_is_louder() {
+    let rms = |sound: &[f32]| {
+        (sound[..24_000]
+            .iter()
+            .map(|x| (*x as f64).powi(2))
+            .sum::<f64>()
+            / 24_000.0)
+            .sqrt()
+    };
+    for note in [40.0, 52.0, 64.0, 76.0] {
+        let soft = electric_guitar(&[("note", note), ("vel", 0.3)], 1.0);
+        let hard = electric_guitar(&[("note", note), ("vel", 1.0)], 1.0);
+        let louder = 20.0 * (rms(&hard) / rms(&soft)).log10();
+        assert!(louder > 3.0 && louder < 6.0, "note {note} grew {louder} dB");
+    }
+}
+
+#[test]
+fn a_hundred_electric_guitar_notes_leave_nothing_sounding_once_they_end() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let notes: Vec<_> = (0..100)
+        .map(|i| {
+            let options = [("note", 40.0 + (i % 46) as f64), ("sustain", 0.3)];
+            (
+                i as f64 * 0.02,
+                Event::note(None, "electric_guitar", &options),
+            )
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    engine.render(2.0).unwrap();
+    assert!(engine.sounding());
+    engine.render(1.0).unwrap();
+    assert!(
+        !engine.sounding(),
+        "a note still sounds after its release ends"
+    );
+}

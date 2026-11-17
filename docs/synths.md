@@ -3,7 +3,7 @@
 | Family | Synths |
 |---|---|
 | Basic waveforms | [`saw`](#saw), [`square`](#square), [`tri`](#tri), [`pulse`](#pulse), [`noise`](#noise), [`fm`](#fm), [`pluck`](#pluck), [`supersaw`](#supersaw), [`acid`](#acid), [`brass`](#brass) |
-| Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`deep_bass`](#deep_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura), [`electric_piano`](#electric_piano) |
+| Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`deep_bass`](#deep_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura), [`electric_piano`](#electric_piano), [`electric_guitar`](#electric_guitar) |
 | Bowed strings | [`violin`](#violin), [`viola`](#viola), [`cello`](#cello), [`double_bass`](#double_bass) |
 | Winds | [`flute`](#flute), [`clarinet`](#clarinet), [`oboe`](#oboe), [`bassoon`](#bassoon), [`tenor_sax`](#tenor_sax), [`trumpet`](#trumpet), [`trombone`](#trombone), [`horn`](#horn), [`tuba`](#tuba) |
 | Organs and reeds | [`organ`](#organ), [`harmonium`](#harmonium), [`accordion`](#accordion) |
@@ -276,6 +276,17 @@ An electric piano whose hammers strike tines, fitted to the notes of the keyboar
 | `vel` | a number, 0 to 1 | 0.6 | How hard the key is struck. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.15 unless given.
+
+### `electric_guitar`
+
+A solid-body electric guitar picked clean, fitted to the notes of the guitar_electronic_028 instrument of Google's NSynth dataset from E2 to D6. A note rings until it fades by itself.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the string is picked. |
+
+It takes the envelope, with a `sustain` of 1000 and a `release` of 0.08 unless given.
 
 ## Bowed strings
 
