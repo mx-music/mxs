@@ -832,7 +832,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.15 unless gi
 
 ### `marimba`
 
-A marimba, fitted to the University of Iowa's marimba struck with yarn mallets, from F1 to C7.
+A marimba, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets, from C2 to C7, and played down to F1.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|

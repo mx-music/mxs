@@ -473,3 +473,23 @@ fn a_hundred_electric_guitar_notes_leave_nothing_sounding_once_they_end() {
         "a note still sounds after its release ends"
     );
 }
+
+#[test]
+fn a_hundred_marimba_notes_leave_nothing_sounding_once_they_end() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let notes: Vec<_> = (0..100)
+        .map(|i| {
+            let options = [("note", 29.0 + (i % 67) as f64), ("sustain", 0.3)];
+            (i as f64 * 0.02, Event::note(None, "marimba", &options))
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    engine.render(2.0).unwrap();
+    assert!(engine.sounding());
+    engine.render(1.0).unwrap();
+    assert!(
+        !engine.sounding(),
+        "a note still sounds after its release ends"
+    );
+}

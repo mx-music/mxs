@@ -164,6 +164,16 @@ impl Figures {
             .collect()
     }
 
+    /// The softest velocity recorded, as vel from 0 to 1.
+    pub fn softest(&self) -> f64 {
+        self.recordings
+            .iter()
+            .map(|r| r.velocity)
+            .min()
+            .unwrap_or(127) as f64
+            / 127.0
+    }
+
     /// What a note at vel plays, from the recordings nearest it.
     /// A partial takes each recording's level of it at its weight, in dB, quieter by the weight of the recordings that lack it.
     pub fn voice(&self, note: f64, vel: f64) -> Voice {

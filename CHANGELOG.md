@@ -6,6 +6,7 @@
 
   * [synths] Refit `electric_piano` partial by partial to each of keyboard_electronic_098's 99 recordings, with the tine's bell, the strike's noise and every partial up to 8 kHz; a note or velocity not recorded takes the recordings nearest it, across velocity first; it is no longer an alpha version
   * [synths] Refit `electric_guitar` the same way to guitar_electronic_028's 97 recordings, as loud at A2 as before; it is no longer an alpha version
+  * [synths] Refit `marimba` partial by partial to the University of Iowa's 183 yarn recordings at pp, mf and ff, its loudness by velocity following theirs, as loud at C4 at vel 1 as before
 
 ## v0.1.2 (2026-11-17)
 

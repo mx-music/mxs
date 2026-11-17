@@ -1,10 +1,12 @@
 //! mx's tuned percussion: the marimba, the vibraphone, the xylophone, the glockenspiel and the timpani.
 
 use super::common::{above, bpf, hpf, lpf, net, silent_after, struck};
+use super::figures::Figures;
 use crate::nodes::{between, db, hit, hz, modes, shape, white_noise};
-use crate::{Note, Spec, Synth};
+use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
+use std::sync::OnceLock;
 
 /// Every synth of this family mx ships.
 pub fn all() -> Vec<Synth> {
@@ -18,62 +20,26 @@ pub fn all() -> Vec<Synth> {
 }
 
 fn marimba() -> Synth {
-    struck("marimba", 0.3).build(|o, ctx| {
-        let vel = o.number("vel").clamp(0.05, 1.0);
-        let note = o.number("note");
-        let freq = hz(note);
-        let ring =
-            4.6 * 2f64.powf((note - 36.0) / -17.0) * 2f64.powf((note - 78.0).max(0.0) / -16.0);
-        let swell = 0.45 * 2f64.powf((note - 36.0) / -18.0);
-        let ratios = [1.0, 1.0, 4.0, 10.0, 19.0, 30.0, 3.0, 5.0, 7.0, 9.0];
-        let mallet =
-            |f: f64, corner: f64, slope: f64| slope * above(f, corner) + 24.0 * above(f, 3000.0);
-        let fourth = -12.0
-            - mallet(freq * 4.0, 600.0, 57.0 * (1.0 - vel))
-            - 10.0 * above(freq * 4.0, 900.0)
-            - 20.0 * (370.0 / (freq * 4.0)).log2().max(0.0);
-        let overtone =
-            |n: f64| 10.0 + 14.5 * vel.log2() - mallet(freq * n, 1100.0, 33.4 - 11.4 * vel);
-        let low_tube = -22.0 - 60.0 * (((note < 46.0) as u8 + (note > 62.0) as u8) as f64);
-        let tube = [(3.0, low_tube), (5.0, -26.0), (7.0, -26.0), (9.0, -26.0)]
-            .map(|(n, l)| l - mallet(freq * n, 600.0, 12.0 + 45.0 * (1.0 - vel)));
-        let mut levels = vec![1.25, -1.0];
-        levels.extend(
-            [
-                fourth,
-                overtone(10.0),
-                overtone(19.0) - 8.0,
-                overtone(30.0) - 12.0,
-            ]
-            .into_iter()
-            .chain(tube)
-            .map(db),
-        );
-        let levels: Vec<f64> = levels
-            .iter()
-            .zip(ratios)
-            .map(|(l, r)| if freq * r < 15_000.0 { *l } else { 0.0 })
-            .collect();
-        let mut fades = vec![ring, swell];
-        fades.extend(
-            [0.3, 0.1, 0.08, 0.06, 0.35, 0.35, 0.35, 0.35]
-                .iter()
-                .zip(&ratios[2..])
-                .map(|(k, n)| ring * k * (1500.0 / (freq * n)).min(1.0).powf(0.8)),
-        );
-        let hz_: Vec<f64> = ratios.iter().map(|r| freq * r).collect();
-        let bar = modes(net(impulse::<U1>()), &hz_, &levels, &fades);
-        let low_tap =
-            (white_noise(ctx.seed()) >> lpf(2200.0) >> lpf(2200.0) >> lpf(2200.0) >> hpf(1000.0))
-                * hit(0.0005, 0.12, -4.0)
-                * 0.55;
-        let high_tap = (white_noise(ctx.seed()) >> lpf(4000.0) >> lpf(4000.0) >> hpf(2500.0))
-            * hit(0.0005, 0.05, -4.0)
-            * 0.3;
-        let gain = 0.1 * (vel / 0.6).powf(1.9);
-        let sound = (bar + (low_tap + high_tap) * (vel / 0.6).sqrt() as f32) * gain as f32;
-        Note::envelope(sound, o).within(silent_after(&levels, &fades, gain))
-    })
+    struck("marimba", 0.3).build(|o, _ctx| kept(marimba_figures(), MARIMBA_LEVEL, o))
+}
+
+/// The marimba's figures, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets.
+fn marimba_figures() -> &'static Figures {
+    static FIGURES: OnceLock<Figures> = OnceLock::new();
+    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/marimba.mxf")))
+}
+
+/// The marimba's gain, as loud at C4 at vel 1 as the version measured band by band.
+const MARIMBA_LEVEL: f64 = 1.53;
+
+/// A note played from figures fitted to recordings that keep their levels from one velocity to the next, so the figures carry its loudness.
+/// Below the softest velocity recorded, a note is quieter in proportion to vel.
+fn kept(figures: &Figures, level: f64, o: &Options) -> Note {
+    let vel = o.number("vel").clamp(0.0, 1.0);
+    let voice = figures.voice(o.number("note"), vel);
+    let gain = (level * (vel / figures.softest()).min(1.0)).max(1e-9);
+    let end = voice.silent_after();
+    Note::envelope(voice.sound() * gain as f32, o).within(end)
 }
 
 fn vibraphone() -> Synth {

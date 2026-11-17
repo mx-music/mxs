@@ -149,7 +149,7 @@ fn about(name: &str) -> &'static str {
             "An accordion's right hand: two reeds a few Hz apart, beating, fitted to \"Accordeon master\" by hammondman on Freesound."
         }
         "marimba" => {
-            "A marimba, fitted to the University of Iowa's marimba struck with yarn mallets, from F1 to C7."
+            "A marimba, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets, from C2 to C7, and played down to F1."
         }
         "vibraphone" => {
             "A vibraphone with its motor, fitted to the University of Iowa's vibraphone from C3 to F6."
