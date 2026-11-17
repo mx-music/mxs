@@ -93,7 +93,7 @@ fn electric_guitar() -> Synth {
                 })
                 .collect();
             let pick_fades = vec![0.3; pick_pitches.len()];
-            let gain = 0.04 * vel.powf(0.4) * EGUITAR.loudness(freq, vel);
+            let gain = 0.005 * vel.powf(0.4) * EGUITAR.loudness(freq, vel);
             let string = modes(clicks(vec![(0.0, 1.0)]), &pitches, &levels, &fades)
                 + modes(
                     clicks(vec![(0.0, 1.0)]),
