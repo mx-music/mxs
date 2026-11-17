@@ -1,6 +1,6 @@
 //! What the synths share: sines, band-passes, additive partials and the swell of a held note.
 
-use crate::nodes::segments;
+use crate::nodes::{db, segments};
 use crate::{Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -149,4 +149,52 @@ pub(super) fn along(centres: &[f64], values: &[f64], f: f64) -> f64 {
                     * ((x - low) / (high - low)).clamp(if i == 0 { -2.0 } else { 0.0 }, 1.0)
             })
             .sum::<f64>()
+}
+
+/// An instrument fitted to recordings at five velocities: each note's fundamental by band against the lowest note's, and each harmonic's level against the fundamental and fade, by harmonic and band.
+pub(super) struct Fitted {
+    pub bands: &'static [f64; 22],
+    pub vels: [f64; 5],
+    pub own: &'static [[f64; 22]; 5],
+    pub levels: &'static [[[f64; 22]; 15]; 5],
+    pub fades: &'static [[[f64; 22]; 15]; 5],
+}
+
+impl Fitted {
+    /// A note's fundamental level in dB, and its harmonics below 5 kHz as their pitches, levels and fades, read between the two recorded velocities around vel.
+    pub fn harmonics(&self, freq: f64, vel: f64) -> (f64, Vec<f64>, Vec<f64>, Vec<f64>) {
+        let upper = Ord::max(self.vels.iter().position(|v| *v >= vel).unwrap_or(4), 1);
+        let lower = upper - 1;
+        let mix =
+            ((vel - self.vels[lower]) / (self.vels[upper] - self.vels[lower])).clamp(0.0, 1.0);
+        let row = |n: usize| match n {
+            1..=10 => n - 1,
+            11..=12 => 10,
+            13..=15 => 11,
+            16..=20 => 12,
+            21..=30 => 13,
+            _ => 14,
+        };
+        let at = |table: &[[[f64; 22]; 15]; 5], n: usize, f: f64| {
+            along(self.bands, &table[lower][row(n)], f) * (1.0 - mix)
+                + along(self.bands, &table[upper][row(n)], f) * mix
+        };
+        let own = along(self.bands, &self.own[lower], freq) * (1.0 - mix)
+            + along(self.bands, &self.own[upper], freq) * mix;
+        let harmonics: Vec<(usize, f64)> = (1..=60)
+            .map(|n| (n, freq * n as f64))
+            .filter(|(_, f)| *f < 5000.0)
+            .collect();
+        let pitches = harmonics.iter().map(|(_, f)| *f).collect();
+        let levels = harmonics
+            .iter()
+            .map(|(n, f)| db(own + at(self.levels, *n, *f)))
+            .collect();
+        let fades = harmonics
+            .iter()
+            // A resonator reads longer than the fade it is given once the measure takes its harmonics' medians by band, so each starts shorter.
+            .map(|(n, f)| (at(self.fades, *n, *f) * 0.75).max(0.05))
+            .collect();
+        (own, pitches, levels, fades)
+    }
 }

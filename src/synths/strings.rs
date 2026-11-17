@@ -1,6 +1,6 @@
 //! mx's strings, plucked and struck: the guitar, the cavaquinho and bandolim, the harp, the sitar, the tanpura and the piano.
 
-use super::common::{along, bpf, hpf, lpf, net, partials, silent_after, sine_from, struck};
+use super::common::{Fitted, along, bpf, hpf, lpf, net, partials, silent_after, sine_from, struck};
 use crate::nodes::{
     clicks, db, decay2, hit, hz, modes, perc, segment_at, segments, shape, struck_gliding,
     white_noise,
@@ -1004,6 +1004,13 @@ const DEEP_FADES: [[[f64; 22]; 15]; 5] = [
 const DEEP_PLUCK: f64 = -25.0;
 /// The recordings' velocities, 25, 50, 75, 100 and 127, as vel.
 const DEEP_VELS: [f64; 5] = [0.2, 0.39, 0.59, 0.79, 1.0];
+const DEEP: Fitted = Fitted {
+    bands: &BASS_BANDS,
+    vels: DEEP_VELS,
+    own: &DEEP_OWN,
+    levels: &DEEP_LEVELS,
+    fades: &DEEP_FADES,
+};
 
 /// A deep bass played with the fingers: a level and a fade for each harmonic, read from its number and its frequency at the note's vel, as measured from the notes of NSynth's bass_electronic_025 and bass_electronic_027.
 fn deep_bass() -> Synth {
@@ -1019,42 +1026,7 @@ fn deep_bass() -> Synth {
         .build(|o, _ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let freq = hz(o.number("note"));
-            // The two recorded velocities around vel, and how far vel lies from the lower to the upper.
-            let upper = Ord::max(DEEP_VELS.iter().position(|v| *v >= vel).unwrap_or(4), 1);
-            let lower = upper - 1;
-            let mix =
-                ((vel - DEEP_VELS[lower]) / (DEEP_VELS[upper] - DEEP_VELS[lower])).clamp(0.0, 1.0);
-            let blend = |table: &[[f64; 22]; 5], f: f64| {
-                along(&BASS_BANDS, &table[lower], f) * (1.0 - mix)
-                    + along(&BASS_BANDS, &table[upper], f) * mix
-            };
-            let row = |n: usize| match n {
-                1..=10 => n - 1,
-                11..=12 => 10,
-                13..=15 => 11,
-                16..=20 => 12,
-                21..=30 => 13,
-                _ => 14,
-            };
-            let at = |table: &[[[f64; 22]; 15]; 5], n: usize, f: f64| {
-                along(&BASS_BANDS, &table[lower][row(n)], f) * (1.0 - mix)
-                    + along(&BASS_BANDS, &table[upper][row(n)], f) * mix
-            };
-            let own = blend(&DEEP_OWN, freq);
-            let harmonics: Vec<(usize, f64)> = (1..=60)
-                .map(|n| (n, freq * n as f64))
-                .filter(|(_, f)| *f < 5000.0)
-                .collect();
-            let pitches: Vec<f64> = harmonics.iter().map(|(_, f)| *f).collect();
-            let levels: Vec<f64> = harmonics
-                .iter()
-                .map(|(n, f)| db(own + at(&DEEP_LEVELS, *n, *f)))
-                .collect();
-            let fades: Vec<f64> = harmonics
-                .iter()
-                // A resonator reads longer than the fade it is given once the measure takes its harmonics' medians by band, so each starts shorter.
-                .map(|(n, f)| (at(&DEEP_FADES, *n, *f) * 0.75).max(0.05))
-                .collect();
+            let (own, pitches, levels, fades) = DEEP.harmonics(freq, vel);
             // The pluck: as the finger lets go, the harmonics from 600 Hz up ring for a tenth of a second, which the fades read over whole notes miss.
             let pluck_pitches: Vec<f64> = (1..=200)
                 .map(|n| freq * n as f64)

@@ -3,7 +3,7 @@
 | Family | Synths |
 |---|---|
 | Basic waveforms | [`saw`](#saw), [`square`](#square), [`tri`](#tri), [`pulse`](#pulse), [`noise`](#noise), [`fm`](#fm), [`pluck`](#pluck), [`supersaw`](#supersaw), [`acid`](#acid), [`brass`](#brass) |
-| Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`deep_bass`](#deep_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura) |
+| Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`deep_bass`](#deep_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura), [`electric_piano`](#electric_piano) |
 | Bowed strings | [`violin`](#violin), [`viola`](#viola), [`cello`](#cello), [`double_bass`](#double_bass) |
 | Winds | [`flute`](#flute), [`clarinet`](#clarinet), [`oboe`](#oboe), [`bassoon`](#bassoon), [`tenor_sax`](#tenor_sax), [`trumpet`](#trumpet), [`trombone`](#trombone), [`horn`](#horn), [`tuba`](#tuba) |
 | Organs and reeds | [`organ`](#organ), [`harmonium`](#harmonium), [`accordion`](#accordion) |
@@ -265,6 +265,17 @@ A tanpura's drone, four strings plucked in turn with the note as Sa, fitted to "
 | `gap` | seconds, 0.05 or more | 0.8 | The time between plucks; a cycle of the four strings takes six gaps. |
 
 It takes the envelope, with a `sustain` of 16 and a `release` of 4 unless given.
+
+### `electric_piano`
+
+An electric piano whose hammers strike tines, fitted to the notes of the keyboard_electronic_098 instrument of Google's NSynth dataset from E1 to E6. A note rings while the key is held until it fades by itself.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 60 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the key is struck. |
+
+It takes the envelope, with a `sustain` of 1000 and a `release` of 0.15 unless given.
 
 ## Bowed strings
 

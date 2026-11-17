@@ -5,6 +5,7 @@
 ### 1. Enhancements
 
   * [synths] Add `deep_bass`, a dark bass played with the fingers, fitted to NSynth's bass_electronic_025 and bass_electronic_027
+  * [synths] Add `electric_piano`, an electric piano whose hammers strike tines, fitted to NSynth's keyboard_electronic_098
 
 ## v0.1.1 (2026-11-16)
 

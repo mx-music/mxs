@@ -30,6 +30,7 @@ mod basic;
 mod bowed;
 mod common;
 mod drums;
+mod electric;
 mod organs;
 mod strings;
 mod tuned;
@@ -79,6 +80,9 @@ fn about(name: &str) -> &'static str {
         }
         "electric_bass" => {
             "An electric bass played with the fingers, fitted to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself."
+        }
+        "electric_piano" => {
+            "An electric piano whose hammers strike tines, fitted to the notes of the keyboard_electronic_098 instrument of Google's NSynth dataset from E1 to E6. A note rings while the key is held until it fades by itself."
         }
         "deep_bass" => {
             "A dark bass played with the fingers, fitted to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself."
@@ -265,6 +269,7 @@ fn about(name: &str) -> &'static str {
 pub fn families() -> Vec<(&'static str, Vec<crate::Synth>)> {
     let mut plucked = vec![strings::piano()];
     plucked.extend(strings::all());
+    plucked.extend(electric::all());
     let mut struck = vec![drums::berimbau()];
     struck.extend(drums::all());
     let families = vec![
@@ -289,6 +294,7 @@ pub fn all() -> Vec<crate::Synth> {
     synths.extend(drums::all());
     synths.extend(bowed::all());
     synths.extend(strings::all());
+    synths.extend(electric::all());
     synths.extend(tuned::all());
     synths.extend(organs::all());
     synths.extend(winds::all());
