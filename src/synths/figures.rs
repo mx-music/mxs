@@ -3,6 +3,7 @@
 //! The strike's noise is white noise through each band's filter, its power in straight lines between the same times.
 
 use crate::nodes::hz;
+use crate::{Note, Options};
 use fundsp::prelude::*;
 
 /// The seconds over which a sine rises at its start.
@@ -246,6 +247,55 @@ impl Figures {
     }
 }
 
+/// A note played from figures fitted to recordings.
+/// The recordings are each brought to the same peak, so a velocity carries the energy vel 1 has over the first half second, and plays louder by vel alone, as vel to the power `growth`.
+pub(super) fn fitted(figures: &Figures, level: f64, growth: f64, o: &Options) -> Note {
+    let vel = o.number("vel").clamp(0.0, 1.0);
+    let note = o.number("note");
+    let voice = figures.voice(note, vel);
+    let loudness = (figures.voice(note, 1.0).energy() / voice.energy()).sqrt();
+    let gain = (level * vel.powf(growth) * loudness).max(1e-9);
+    let end = voice.silent_after();
+    Note::envelope(voice.sound() * gain as f32, o).within(end)
+}
+
+/// A note played from figures fitted to recordings that keep their levels from one velocity to the next, so the figures carry its loudness.
+pub(super) fn kept(figures: &Figures, level: f64, o: &Options) -> Note {
+    let note = o.number("note");
+    let vel = o.number("vel").clamp(0.0, 1.0);
+    played(figures, note, vel, kept_gain(figures, level, note, vel), o)
+}
+
+/// The gain of a note played as `kept` plays it: below the softest velocity recorded, a note is quieter in proportion to vel.
+pub(super) fn kept_gain(figures: &Figures, level: f64, _note: f64, vel: f64) -> f64 {
+    (level * (vel / figures.softest()).min(1.0)).max(1e-9)
+}
+
+/// A note played from figures fitted to recordings that keep their levels from one velocity to the next, but not from one note to the next.
+pub(super) fn evened(figures: &Figures, level: f64, o: &Options) -> Note {
+    let note = o.number("note");
+    let vel = o.number("vel").clamp(0.0, 1.0);
+    played(
+        figures,
+        note,
+        vel,
+        evened_gain(figures, level, note, vel),
+        o,
+    )
+}
+
+/// The gain of a note played as `evened` plays it: every note at vel 1 carries the same energy over the first half second, its noise's with its partials', and a softer velocity is as much quieter as the recordings at that note.
+pub(super) fn evened_gain(figures: &Figures, level: f64, note: f64, vel: f64) -> f64 {
+    let even = figures.voice(note, 1.0).whole_energy().sqrt();
+    (level * (vel / figures.softest()).min(1.0) / even).max(1e-9)
+}
+
+fn played(figures: &Figures, note: f64, vel: f64, gain: f64, o: &Options) -> Note {
+    let voice = figures.voice(note, vel);
+    let end = voice.silent_after();
+    Note::envelope(voice.sound() * gain as f32, o).within(end)
+}
+
 impl Shape {
     fn at(&self, times: &[f64], t: f64) -> f64 {
         let last = times.len() - 1;
@@ -288,6 +338,28 @@ impl Voice {
             .sum::<f64>()
             * 0.5
             / steps as f64
+    }
+
+    /// The energy of the partials and the noise over the first half second.
+    pub fn whole_energy(&self) -> f64 {
+        let steps = 100;
+        // A sine's energy counts its amplitude squared, twice its power; white noise from -1 to 1 has a power of 1/3, and the filters pass the sum of their response squared of it.
+        let noise = self
+            .noise
+            .iter()
+            .map(|((low, high), shape)| {
+                let passed = response_energy(band_filter(*low, *high, DEFAULT_SR));
+                (0..steps)
+                    .map(|i| shape.power_at(&self.times, (i as f64 + 0.5) * 0.5 / steps as f64))
+                    .sum::<f64>()
+                    * 2.0
+                    / 3.0
+                    * passed
+            })
+            .sum::<f64>()
+            * 0.5
+            / steps as f64;
+        self.energy() + noise
     }
 
     /// The seconds until every partial falls 100 dB under the loudest, where the recordings reach their noise floor.
@@ -371,6 +443,22 @@ impl Band {
         }
         x
     }
+}
+
+/// The sum of the squares of the filters' response to an impulse.
+fn response_energy(filter: [[f64; 5]; 4]) -> f64 {
+    let mut state = [[0.0; 4]; 4];
+    (0..8192)
+        .map(|i| {
+            let mut x = if i == 0 { 1.0 } else { 0.0 };
+            for (s, [b0, b1, b2, a1, a2]) in state.iter_mut().zip(&filter) {
+                let y = b0 * x + b1 * s[0] + b2 * s[1] - a1 * s[2] - a2 * s[3];
+                *s = [x, s[0], y, s[2]];
+                x = y;
+            }
+            x * x
+        })
+        .sum()
 }
 
 /// Four band-pass sections with a peak gain of 1 at the band's centre and its width as their bandwidth, as `mix mx.fit` fits the noise through.

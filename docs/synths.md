@@ -176,7 +176,7 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 1 unless given.
 
 ### `guitar`
 
-A nylon-string guitar fitted to recordings of a real one, down to B1, the low string of a 7-string guitar. A note rings until it fades by itself.
+A nylon-string guitar fitted partial by partial to the University of Iowa's guitar from E2 to B5, and played down to B1, the low string of a 7-string guitar. A note rings until it fades by itself.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -187,7 +187,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless give
 
 ### `electric_bass`
 
-An electric bass played with the fingers, fitted to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself.
+An electric bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -198,7 +198,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.1 unless gi
 
 ### `deep_bass`
 
-A dark bass played with the fingers, fitted to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself.
+A dark bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -233,7 +233,7 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.8 unless given
 
 ### `harp`
 
-A folk harp, the kind the Paraguayan and llanera harps are, fitted to the folk harp of the Versilian Community Sample Library from C2 to G#6.
+A folk harp, the kind the Paraguayan and llanera harps are, fitted partial by partial to the folk harp of the Versilian Community Sample Library from C2 to G#6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -843,7 +843,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `vibraphone`
 
-A vibraphone with its motor, fitted to the University of Iowa's vibraphone from C3 to F6.
+A vibraphone with its motor, fitted partial by partial to the University of Iowa's vibraphone played with the motor off, from C3 to F6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -855,7 +855,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `xylophone`
 
-A xylophone, fitted to the University of Iowa's xylophone struck with rosewood mallets, from F4 to C8.
+A xylophone, fitted partial by partial to the University of Iowa's xylophone struck with rosewood mallets, from F4 to C8.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -866,7 +866,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `glockenspiel`
 
-A glockenspiel, fitted to the University of Iowa's orchestral bells struck with plastic mallets, from C5 to E8.
+A glockenspiel, fitted partial by partial to the University of Iowa's orchestral bells struck with plastic mallets, from C5 to E8.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -877,7 +877,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `timpani`
 
-A timpani, whose partials are not whole multiples of its note, fitted to the five timpani of VSCO 2.
+A timpani, whose partials are not whole multiples of its note, fitted partial by partial to the five timpani of VSCO 2, from 92 to 153 Hz.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|

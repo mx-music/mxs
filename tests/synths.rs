@@ -493,3 +493,36 @@ fn a_hundred_marimba_notes_leave_nothing_sounding_once_they_end() {
         "a note still sounds after its release ends"
     );
 }
+
+#[test]
+fn a_hundred_notes_of_each_struck_synth_played_from_figures_leave_nothing_sounding_once_they_end() {
+    for (synth, lowest, span) in [
+        ("harp", 36.0, 57),
+        ("guitar", 35.0, 49),
+        ("vibraphone", 48.0, 42),
+        ("xylophone", 65.0, 44),
+        ("glockenspiel", 72.0, 41),
+        ("timpani", 40.0, 16),
+    ] {
+        let mut engine = Engine::offline(RATE);
+        synths::all().into_iter().for_each(|s| engine.register(s));
+        let notes: Vec<_> = (0..100)
+            .map(|i| {
+                let options = [
+                    ("note", lowest + (i % span) as f64),
+                    ("sustain", 0.3),
+                    ("release", 0.2),
+                ];
+                (i as f64 * 0.02, Event::note(None, synth, &options))
+            })
+            .collect();
+        engine.play(&notes).unwrap();
+        engine.render(2.0).unwrap();
+        assert!(engine.sounding(), "{synth} is silent");
+        engine.render(1.0).unwrap();
+        assert!(
+            !engine.sounding(),
+            "a {synth} note still sounds after its release ends"
+        );
+    }
+}

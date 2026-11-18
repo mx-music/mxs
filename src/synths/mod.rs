@@ -77,10 +77,10 @@ fn about(name: &str) -> &'static str {
             "A grand piano, fitted to the Steinway B of the Versilian Community Sample Library from A0 to C8: each harmonic a resonator struck once, with the hammer's knock and the sustain pedal. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partners that ring beside them as a slow stage or a beating twin, the thump of the strike and the knock through the soundboard."
         }
         "guitar" => {
-            "A nylon-string guitar fitted to recordings of a real one, down to B1, the low string of a 7-string guitar. A note rings until it fades by itself."
+            "A nylon-string guitar fitted partial by partial to the University of Iowa's guitar from E2 to B5, and played down to B1, the low string of a 7-string guitar. A note rings until it fades by itself."
         }
         "electric_bass" => {
-            "An electric bass played with the fingers, fitted to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself."
+            "An electric bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself."
         }
         "electric_guitar" => {
             "A solid-body electric guitar picked clean, fitted to the notes of the guitar_electronic_028 instrument of Google's NSynth dataset from E2 to D6. A note rings until it fades by itself."
@@ -89,12 +89,12 @@ fn about(name: &str) -> &'static str {
             "An electric piano whose hammers strike tines, fitted to the notes of the keyboard_electronic_098 instrument of Google's NSynth dataset from E1 to E6. A note rings while the key is held until it fades by itself."
         }
         "deep_bass" => {
-            "A dark bass played with the fingers, fitted to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself."
+            "A dark bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself."
         }
         "cavaquinho" => "A cavaquinho, with steel strings, brighter and shorter than the guitar.",
         "bandolim" => "A bandolim, the Brazilian mandolin, with steel strings and a tremolo.",
         "harp" => {
-            "A folk harp, the kind the Paraguayan and llanera harps are, fitted to the folk harp of the Versilian Community Sample Library from C2 to G#6."
+            "A folk harp, the kind the Paraguayan and llanera harps are, fitted partial by partial to the folk harp of the Versilian Community Sample Library from C2 to G#6."
         }
         "sitar" => {
             "A plucked sitar note with its sympathetic strings, fitted to \"sitar01.flac\" on Freesound."
@@ -152,16 +152,16 @@ fn about(name: &str) -> &'static str {
             "A marimba, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets, from C2 to C7, and played down to F1."
         }
         "vibraphone" => {
-            "A vibraphone with its motor, fitted to the University of Iowa's vibraphone from C3 to F6."
+            "A vibraphone with its motor, fitted partial by partial to the University of Iowa's vibraphone played with the motor off, from C3 to F6."
         }
         "xylophone" => {
-            "A xylophone, fitted to the University of Iowa's xylophone struck with rosewood mallets, from F4 to C8."
+            "A xylophone, fitted partial by partial to the University of Iowa's xylophone struck with rosewood mallets, from F4 to C8."
         }
         "glockenspiel" => {
-            "A glockenspiel, fitted to the University of Iowa's orchestral bells struck with plastic mallets, from C5 to E8."
+            "A glockenspiel, fitted partial by partial to the University of Iowa's orchestral bells struck with plastic mallets, from C5 to E8."
         }
         "timpani" => {
-            "A timpani, whose partials are not whole multiples of its note, fitted to the five timpani of VSCO 2."
+            "A timpani, whose partials are not whole multiples of its note, fitted partial by partial to the five timpani of VSCO 2, from 92 to 153 Hz."
         }
         "berimbau" => {
             "The berimbau of capoeira: the string struck by the stick, open, with the coin pressed or buzzed, and swung by the gourd. Fitted to \"Berimbau jam without caxixi\" by EliasArtista on Freesound."

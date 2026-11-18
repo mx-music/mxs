@@ -7,6 +7,10 @@
   * [synths] Refit `electric_piano` partial by partial to each of keyboard_electronic_098's 99 recordings, with the tine's bell, the strike's noise and every partial up to 8 kHz; a note or velocity not recorded takes the recordings nearest it, across velocity first; it is no longer an alpha version
   * [synths] Refit `electric_guitar` the same way to guitar_electronic_028's 97 recordings, as loud at A2 as before; it is no longer an alpha version
   * [synths] Refit `marimba` partial by partial to the University of Iowa's 183 yarn recordings at pp, mf and ff, its loudness by velocity following theirs, as loud at C4 at vel 1 as before
+  * [synths] Refit `electric_bass` and `deep_bass` partial by partial to their NSynth recordings from E1 to D#4, as loud at A1 as before and growing as much louder with vel
+  * [synths] Refit `harp` partial by partial to the folk harp's 57 recordings, each string as loud as the next at vel 1 since the recordings' strings stand up to 24 dB apart, and its velocities as far apart as the recordings', as loud at C4 at vel 1 as before
+  * [synths] Refit `guitar` partial by partial to the University of Iowa's guitar at pp, mf and ff, each pitch from the string a player uses in first position, its loudness following the recordings, as loud at E3 at vel 1 as before
+  * [synths] Refit `vibraphone`, `xylophone`, `glockenspiel` and `timpani` partial by partial to the recordings they were fitted to, their loudness following the recordings; `motor` pulses the fitted note
 
 ## v0.1.2 (2026-11-17)
 
