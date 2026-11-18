@@ -795,9 +795,12 @@ pub(super) fn held_note(
     }
     let hold = o.number("attack") + o.number("decay") + o.number("sustain");
     let falls = voice.falls();
+    let under = voice.loudest() - 100.0;
     let gate = shared(1.0);
     let node = Sustained {
         voice,
+        falls,
+        under,
         base: note,
         hold,
         gate: gate.clone(),
@@ -820,15 +823,17 @@ pub(super) fn held_note(
 }
 
 impl Voice {
-    /// The seconds every partial and band takes, once let go from its last level, to fall 100 dB under the loudest partial, at most 5.
-    fn falls(&self) -> f64 {
-        let loudest = self
-            .partials
+    fn loudest(&self) -> f64 {
+        self.partials
             .iter()
             .flat_map(|(_, s)| s.levels.iter())
             .cloned()
-            .fold(f64::MIN, f64::max);
-        let under = loudest - 100.0;
+            .fold(f64::MIN, f64::max)
+    }
+
+    /// The seconds every partial and band takes, once let go from its last level, to fall 100 dB under the loudest partial, at most 5.
+    fn falls(&self) -> f64 {
+        let under = self.loudest() - 100.0;
         self.partials
             .iter()
             .map(|(_, s)| s)
@@ -849,6 +854,8 @@ impl Voice {
 #[derive(Clone)]
 struct Sustained {
     voice: Voice,
+    falls: f64,
+    under: f64,
     base: f64,
     hold: f64,
     gate: Shared,
@@ -877,7 +884,12 @@ impl Sustained {
             }
         };
         match self.let_go {
-            Some(go) if t > go => at(go + self.skip) + shape.tail * (t - go),
+            Some(go) if t > go => {
+                // A slope too slow to reach the floor before the note ends, as `falls` is at most 5 seconds, is steepened to reach it then.
+                let from = at(go + self.skip);
+                let tail = shape.tail.min(-(from - self.under).max(0.0) / self.falls);
+                from + tail * (t - go)
+            }
             _ => at(t + self.skip),
         }
     }

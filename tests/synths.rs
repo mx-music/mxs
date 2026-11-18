@@ -611,3 +611,36 @@ fn a_violin_note_held_twice_as_long_as_its_recordings_holds_its_level_then_falls
     let after = level(&sound, 11.5, 12.0);
     assert!(late - after > 20.0, "{late} dB held, {after} dB after");
 }
+
+#[test]
+fn a_held_violin_or_cello_note_fades_out_rather_than_being_cut_when_it_ends() {
+    for (synth, note) in [
+        ("violin", 55.0),
+        ("violin", 69.0),
+        ("violin", 96.0),
+        ("cello", 36.0),
+        ("cello", 57.0),
+    ] {
+        for vel in [0.3, 1.0] {
+            let mut engine = Engine::offline(RATE);
+            synths::all().into_iter().for_each(|s| engine.register(s));
+            let options = [
+                ("note", note),
+                ("vel", vel),
+                ("sustain", 1.0),
+                ("vibrato", 0.0),
+            ];
+            engine
+                .play(&[(0.0, Event::note(None, synth, &options))])
+                .unwrap();
+            let sound = engine.render(8.0).unwrap().0;
+            let last = sound.iter().rposition(|x| *x != 0.0).unwrap() as f64 / RATE;
+            let held = level(&sound, 0.5, 1.0);
+            let end = level(&sound, last - 0.05, last);
+            assert!(
+                held - end > 60.0,
+                "{synth} {note} at vel {vel}: {held} dB held, {end} dB as it ends at {last} s"
+            );
+        }
+    }
+}
