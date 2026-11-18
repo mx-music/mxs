@@ -243,3 +243,28 @@ fn an_engine_started_on_a_named_output_stays_on_it_when_the_default_changes() {
     assert_eq!(outputs, vec![Some(BLACKHOLE.to_string())]);
     assert_eq!(clicks(&heard(&mut engine, &path)).len(), 1);
 }
+
+/// Run by hand with headphones as the default output, and unplug them or turn them off within 30 seconds of the start.
+#[test]
+#[ignore]
+fn unplugging_the_default_output_moves_the_engine_to_the_new_default() {
+    let mut engine = engine(&Settings::default());
+    let reports = engine.subscribe(&[Topic::Output]);
+    let mut devices = vec![];
+    let waiting = Instant::now();
+    while devices.len() < 2 && waiting.elapsed() < Duration::from_secs(30) {
+        if let Some(Report::Output { device, .. }) = reports.wait(Duration::from_millis(100)) {
+            println!("playing to {device:?}");
+            devices.push(device);
+        }
+    }
+    assert_eq!(
+        devices.len(),
+        2,
+        "no other output was reported: {devices:?}"
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    let at = engine.now() + 0.1;
+    let note = Event::note(None, "tri", &[("note", 69.0), ("amp", 0.005)]);
+    assert!(engine.play(&[(at, note)]).is_ok());
+}
