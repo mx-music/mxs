@@ -1,4 +1,4 @@
-//! mx's own synths, by family, each with the options it takes.
+//! The synths that come with the crate, by family, each with the options it takes.
 //!
 //! An engine plays the synths registered on it, by name, and checks each note's options against what the synth declares:
 //!
@@ -19,8 +19,8 @@
 //! }
 //! ```
 //!
-//! A time is in seconds.
-//! A song of mx writes the envelope's times and the slides in beats, and mx turns them into seconds before they reach the engine.
+//! A time is in seconds when a note is handed to [`Engine::play`](crate::Engine::play).
+//! In a pass, handed to [`Engine::pass`](crate::Engine::pass), the envelope's times and the slides are in beats.
 //! Almost every synth takes `note`, and most take `vel`, how hard the note is played.
 //! A later change of an option glides over the seconds its partner ending in `_slide` gives, such as `note_slide`.
 //!
@@ -272,7 +272,7 @@ fn about(name: &str) -> &'static str {
     }
 }
 
-/// mx's synths by family, each a name and its synths; together they are the synths of `all`.
+/// The crate's synths by family, each a name and its synths; together they are the synths of [`all`].
 pub fn families() -> Vec<(&'static str, Vec<crate::Synth>)> {
     let mut plucked = vec![strings::piano()];
     plucked.extend(strings::all());
@@ -294,7 +294,7 @@ pub fn families() -> Vec<(&'static str, Vec<crate::Synth>)> {
         .collect()
 }
 
-/// Every synth mx ships.
+/// Every synth that comes with the crate.
 pub fn all() -> Vec<crate::Synth> {
     let mut synths = vec![strings::piano(), drums::berimbau()];
     synths.extend(basic::all());

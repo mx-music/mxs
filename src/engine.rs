@@ -30,7 +30,7 @@ const LATE: f64 = 0.25;
 const TICK: Duration = Duration::from_millis(2);
 /// Seconds of silence a note's end fades over, so a note cut at its end does not click.
 const END_FADE: f64 = 0.01;
-/// How many notes sound at once unless the caller sets another limit: what one core fills in time with the berimbau, mx's costliest struck instrument.
+/// How many notes sound at once unless the caller sets another limit: what one core fills in time with the berimbau, the costliest of the crate's struck instruments.
 pub const VOICES: usize = 48;
 
 /// What a change applies to.
@@ -45,6 +45,7 @@ pub enum Target {
 }
 
 /// Something to play at a time.
+/// [The guide to events](crate::guide::events) follows a note from the call that hands it over to the end of its sound.
 #[derive(Clone, Debug)]
 pub enum Event {
     /// A note of a synth; `id` lets a later change reach it, and `chain` is the effect chain it plays into.
@@ -58,11 +59,11 @@ pub enum Event {
         /// The effect chain the note plays into, if any.
         chain: Option<u64>,
     },
-    /// A sample `load_sample` returned, with the sample player's options.
+    /// A sample [`Engine::load_sample`] returned, with the sample player's options.
     Sample {
         /// What a later change reaches the sample by.
         id: Option<u64>,
-        /// The sample, as `load_sample` returned it.
+        /// The sample, as [`Engine::load_sample`] returned it.
         sample: u64,
         /// The options of the sample player.
         options: Vec<(String, Value)>,
@@ -101,32 +102,41 @@ pub enum Event {
     },
 }
 
-/// A stretch of a part's music, with its events at their beats.
+/// A stretch of a part's music, with its events at their beats, which [`Engine::pass`] hands to the part.
+/// [The guide to time](crate::guide::time) shows a program that hands a part one pass after another.
 #[derive(Clone, Debug, Default)]
 pub struct Pass {
     /// The beat it starts at.
     pub from: f64,
     /// The beat it ends at.
     pub to: f64,
-    /// A number of the caller's choosing: a `Report::PassStarted` says when the first event of a pass starts whose label is another than that of the pass handed to the part before it.
+    /// A number of the caller's choosing: a [`Report::PassStarted`] says when the first event of a pass starts whose label is another than that of the pass handed to the part before it.
     pub label: u64,
-    /// How many beats before `to` a `Report::PassEnding` is sent, unless another pass was handed to the part by then; none for no report.
+    /// How many beats before `to` a [`Report::PassEnding`] is sent, unless another pass was handed to the part by then; none for no report.
     pub notice: Option<f64>,
     /// Each event and its beat; the `chain` an event names is left aside, as the event plays into the pass's part.
     pub events: Vec<(f64, Event)>,
 }
 
-/// What `record` writes to its file.
+/// What [`Engine::record`] writes to its file.
 #[derive(Clone, Copy, Debug)]
 pub enum Source {
     /// One channel of the sound card's input, numbered from 0.
     Input(usize),
-    /// A sample `load_sample` returned, played once in place of the input.
+    /// A sample [`Engine::load_sample`] returned, played once in place of the input.
     Sample(u64),
 }
 
 impl Event {
     /// A note of `synth` with number options and no effect chain; `id` lets a later change reach it.
+    ///
+    /// ```
+    /// use mxs::Event;
+    ///
+    /// let middle_c = Event::note(None, "piano", &[("note", 60.0), ("vel", 0.8)]);
+    /// let held = Event::note(Some(1), "organ", &[("note", 48.0), ("sustain", 600.0)]);
+    /// let let_go = Event::Release { ids: vec![1] };
+    /// ```
     pub fn note(id: Option<u64>, synth: &str, options: &[(&str, f64)]) -> Event {
         let options = options
             .iter()
@@ -282,6 +292,38 @@ struct Recording {
 type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
 
 /// The engine, live on an output device or offline.
+///
+/// An engine plays the synths and effects registered on it, by name, from events that each carry a time.
+/// [`Engine::live`] plays through a sound card and [`Engine::offline`] renders into memory; every other call is the same for both.
+///
+/// ```
+/// use mxs::{Engine, Event, RATE, synths};
+///
+/// fn main() -> Result<(), mxs::Error> {
+///     let mut engine = Engine::offline(RATE);
+///     synths::all().into_iter().for_each(|s| engine.register(s));
+///
+///     let note = Event::note(None, "cello", &[("note", 48.0), ("sustain", 1.0)]);
+///     engine.play(&[(0.0, note)])?;
+///     let (left, right) = engine.render(2.0)?;
+///     assert_eq!(left.len(), right.len());
+///     Ok(())
+/// }
+/// ```
+///
+/// # What an engine does
+///
+/// | To | Call | Guide |
+/// | --- | --- | --- |
+/// | Make one | [`live`](Engine::live), [`live_with`](Engine::live_with), [`live_with_input`](Engine::live_with_input), [`offline`](Engine::offline) | [Playing live](crate::guide::live), [How the engine is built](crate::guide::architecture) |
+/// | Say what it can play | [`register`](Engine::register), [`register_effect`](Engine::register_effect), [`synths`](Engine::synths), [`effects`](Engine::effects), [`note_specs`](Engine::note_specs), [`sample_specs`](Engine::sample_specs), [`effect_specs`](Engine::effect_specs) | [A synth or an effect of your own](crate::guide::building) |
+/// | Play | [`play`](Engine::play), [`play_at`](Engine::play_at), [`play_at_frames`](Engine::play_at_frames), [`sounding`](Engine::sounding), [`set_voice_limit`](Engine::set_voice_limit) | [Events and the life of a note](crate::guide::events) |
+/// | Use effects and parts | [`start_effects`](Engine::start_effects), [`stop_effects`](Engine::stop_effects), [`start_part`](Engine::start_part), [`start_part_in_beats`](Engine::start_part_in_beats), [`part`](Engine::part), [`stop_part`](Engine::stop_part), [`set_gain`](Engine::set_gain), [`mute`](Engine::mute), [`solo`](Engine::solo) | [Effects, parts and the signal path](crate::guide::signal_path) |
+/// | Read the clock | [`now`](Engine::now), [`clock`](Engine::clock), [`seconds_at`](Engine::seconds_at), [`latency`](Engine::latency), [`rate`](Engine::rate) | [Frames, seconds and beats](crate::guide::time) |
+/// | Play in beats | [`place_beats`](Engine::place_beats), [`set_tempo`](Engine::set_tempo), [`pass`](Engine::pass), [`cut`](Engine::cut), [`beat`](Engine::beat), [`beat_at`](Engine::beat_at), [`beat_seconds`](Engine::beat_seconds) | [Frames, seconds and beats](crate::guide::time) |
+/// | Render offline | [`render`](Engine::render), [`fill`](Engine::fill) | [How the engine is built](crate::guide::architecture) |
+/// | Hear how it is doing | [`subscribe`](Engine::subscribe), [`warnings`](Engine::warnings), [`load`](Engine::load), [`behind`](Engine::behind) | [What the engine reports](crate::guide::reports), [Playing live](crate::guide::live) |
+/// | Play files and the input, and record | [`load_sample`](Engine::load_sample), [`load_sample_bytes`](Engine::load_sample_bytes), [`sample_channels`](Engine::sample_channels), [`inputs`](Engine::inputs), [`record_output`](Engine::record_output), [`stop_recording_output`](Engine::stop_recording_output), [`record`](Engine::record), [`stop_recording`](Engine::stop_recording) | [Samples, live input and recording](crate::guide::samples) |
 pub struct Engine {
     rate: f64,
     synths: HashMap<String, Registered<Synth>>,
@@ -666,7 +708,7 @@ impl Engine {
     }
 
     /// Seconds the engine's clock has fallen behind the system's since it started: gaps in the sound, and the drift between the two clocks; a live engine knows it, an offline one does not.
-    /// After a gap, `seconds_at` catches up by at most a millisecond a second, so until then an event given a system time plays late by what is left of the gap.
+    /// After a gap, [`Engine::seconds_at`] catches up by at most a millisecond a second, so until then an event given a system time plays late by what is left of the gap.
     pub fn behind(&self) -> Option<f64> {
         self.timing().and_then(|t| t.behind())
     }
@@ -690,6 +732,21 @@ impl Engine {
     }
 
     /// Starts an effect chain of `effects`, each a name and its options, in order, and returns the chain notes name to play into.
+    ///
+    /// ```
+    /// use mxs::{Engine, RATE, Value, effects};
+    ///
+    /// fn main() -> Result<(), mxs::Error> {
+    ///     let mut engine = Engine::offline(RATE);
+    ///     effects::all().into_iter().for_each(|e| engine.register_effect(e));
+    ///
+    ///     let echo = ("echo".to_string(), vec![("phase".to_string(), Value::Number(0.25))]);
+    ///     let reverb = ("reverb".to_string(), vec![]);
+    ///     let chain = engine.start_effects(&[echo, reverb])?;
+    ///     engine.stop_effects(chain, 4.0)?;
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn start_effects(
         &mut self,
         effects: &[(String, Vec<(String, Value)>)],
@@ -697,7 +754,7 @@ impl Engine {
         self.start_chain(None, effects, false)
     }
 
-    /// Starts a part by a name, with `effects` as `start_effects` takes them, none for a part without effects, and returns what a note, a sample or an input names as its `chain` to play into the part.
+    /// Starts a part by a name, with `effects` as [`Engine::start_effects`] takes them, none for a part without effects, and returns what a note, a sample or an input names as its `chain` to play into the part.
     /// A part's gain, mute and solo apply after its effects, so an effect's tail is turned down with the part.
     pub fn start_part(
         &mut self,
@@ -710,7 +767,7 @@ impl Engine {
         self.start_chain(Some(name), effects, false)
     }
 
-    /// Starts a part as `start_part` does, with the options its effects declare in beats given in beats, the ones left out too.
+    /// Starts a part as [`Engine::start_part`] does, with the options its effects declare in beats given in beats, the ones left out too.
     /// Each lasts those beats at the tempo of the beat the engine is playing, and those an effect lets change while it runs, such as the time between an echo's repeats, follow the tempo as it changes.
     pub fn start_part_in_beats(
         &mut self,
@@ -868,7 +925,7 @@ impl Engine {
         book.send(Command::StopChain { key: chain, at })
     }
 
-    /// Records `source` to a stereo 24-bit WAV file at `path` from `at` seconds, apart from the main output, until `stop_recording`.
+    /// Records `source` to a stereo 24-bit WAV file at `path` from `at` seconds, apart from the main output, until [`Engine::stop_recording`].
     /// It replaces a recording already running.
     pub fn record(&mut self, path: impl AsRef<Path>, source: Source, at: f64) -> Result<(), Error> {
         self.check_running()?;
@@ -895,7 +952,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Records the main output to a stereo 32-bit float WAV file at `path` from `at` seconds, until `stop_recording_output`.
+    /// Records the main output to a stereo 32-bit float WAV file at `path` from `at` seconds, until [`Engine::stop_recording_output`].
     /// It runs beside a recording of an input, and replaces a recording of the output already running.
     pub fn record_output(&mut self, path: impl AsRef<Path>, at: f64) -> Result<(), Error> {
         self.check_running()?;
@@ -1009,8 +1066,8 @@ impl Engine {
 
     /// Plays events, each at its seconds on the engine's clock; an event whose time has passed plays at once.
     /// Every event is checked before any is sent, so a batch with a mistake plays nothing.
-    /// A live engine builds the notes' voices on a thread of its own, in the order they were handed over, so the call returns once the events are checked; a note handed over with less time than its voice takes to build starts late, and `warnings` counts it.
-    /// One mistake shows only as a voice is built, a synth whose sound has neither 1 nor 2 channels: an offline engine still refuses the batch, and a live one leaves that note out and says so in `warnings`.
+    /// A live engine builds the notes' voices on a thread of its own, in the order they were handed over, so the call returns once the events are checked; a note handed over with less time than its voice takes to build starts late, and [`Engine::warnings`] counts it.
+    /// One mistake shows only as a voice is built, a synth whose sound has neither 1 nor 2 channels: an offline engine still refuses the batch, and a live one leaves that note out and says so in [`Engine::warnings`].
     pub fn play(&mut self, events: &[(f64, Event)]) -> Result<(), Error> {
         self.check_running()?;
         let mut drafts = Vec::with_capacity(events.len());
@@ -1128,7 +1185,7 @@ impl Engine {
 
     /// Hands a part a pass: events at their beats, which the engine places at the frames those beats fall on by the tempo map, 150 ms before each sounds.
     /// An option a synth or an effect declares in beats, and every `_slide`, is given in beats, and lasts as long as those beats last at the tempo of the event's beat.
-    /// An event whose beat has passed plays at once when it is less than a quarter of a beat late, and is dropped otherwise; `warnings` counts both.
+    /// An event whose beat has passed plays at once when it is less than a quarter of a beat late, and is dropped otherwise; [`Engine::warnings`] counts both.
     /// Every event is checked before any is kept, so a pass with a mistake plays nothing.
     pub fn pass(&mut self, part: &str, pass: &Pass) -> Result<(), Error> {
         self.check_running()?;
@@ -1218,13 +1275,13 @@ impl Engine {
     }
 
     /// Fills `left` and `right`, of one length, with the next frames of an offline engine.
-    /// It is the layer under the tempo map and needs neither the map nor a sound card: it plays the events handed over at frames or at seconds, and of the events in beats only those `render` has already placed.
+    /// It is the layer under the tempo map and needs neither the map nor a sound card: it plays the events handed over at frames or at seconds, and of the events in beats only those [`Engine::render`] has already placed.
     pub fn fill(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<(), Error> {
         let frames = Ord::min(left.len(), right.len());
         self.fill_from(&mut left[..frames], &mut right[..frames], false)
     }
 
-    /// Plays events, each at a frame of the engine's clock, as `play` does at seconds.
+    /// Plays events, each at a frame of the engine's clock, as [`Engine::play`] does at seconds.
     pub fn play_at_frames(&mut self, events: &[(u64, Event)]) -> Result<(), Error> {
         let rate = self.rate;
         let timed = |(frame, event): &(u64, Event)| (*frame as f64 / rate, event.clone());
@@ -1539,7 +1596,7 @@ struct Book {
     voices: Arc<Voices>,
     next: Arc<AtomicU64>,
     clock: Arc<AtomicU64>,
-    /// Where what the builder thread has to say goes, until `warnings` is asked.
+    /// Where what the builder thread has to say goes, until [`Engine::warnings`] is asked.
     hub: Arc<Hub>,
 }
 

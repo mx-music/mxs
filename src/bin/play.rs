@@ -1,4 +1,4 @@
-//! Plays a short phrase through the default output through the engine, or writes it to the WAV file given: play [synth] [out.wav]
+//! Plays a short phrase through the default output through the engine, or writes it to the WAV file given: `play [synth] [out.wav]`
 //! The piano plays it in chords, the berimbau plays four bars of the toque of Angola, and any other synth plays the phrase's top line an octave down.
 
 use mxs::{Engine, Event, RATE, Value, synths};

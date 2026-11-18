@@ -11,6 +11,7 @@ type BuildEffect = dyn Fn(&Options, &mut Context) -> Net + Send + Sync;
 type Tail = dyn Fn(&Options) -> f64 + Send + Sync;
 
 /// A synth: a name, its options, and how it builds one note's sound.
+/// [`Synth::new`] starts declaring one in Rust, and [`Synth::graph`] builds one from data; [the guide to building a synth](crate::guide::building) shows both.
 #[derive(Clone)]
 pub struct Synth {
     pub(crate) name: String,
@@ -141,6 +142,7 @@ impl Note {
 }
 
 /// An effect: a name, its options, how long it sounds on after its input stops, and how it builds a stereo sound from a stereo input.
+/// [`Effect::new`] starts declaring one, as [the guide to building a synth](crate::guide::building) shows.
 #[derive(Clone)]
 pub struct Effect {
     pub(crate) name: String,

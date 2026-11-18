@@ -1,4 +1,4 @@
-//! Renders one note of one of mx's synths to a stereo 48 kHz float WAV: render <synth> <seconds> <out.wav> [name=value ...]
+//! Renders one note of a synth to a stereo 48 kHz float WAV: `render <synth> <seconds> <out.wav> [name=value ...]`
 
 use mxs::{Engine, Event, RATE, Value, synths};
 

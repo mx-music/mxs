@@ -21,7 +21,7 @@ impl From<&str> for Value {
     }
 }
 
-/// What an option measures, which says how a song writes it and how mx checks it.
+/// What an option measures, which says how a note gives it and how the engine checks it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     /// A MIDI note, fractions allowed.
@@ -32,7 +32,7 @@ pub enum Kind {
     Db,
     /// A time in seconds.
     Seconds,
-    /// A time a song writes in beats: given in beats in a pass, and in seconds to `play`.
+    /// A time that follows the tempo: given in beats in a pass, and in seconds to [`Engine::play`](crate::Engine::play).
     Beats,
     /// Any number.
     Float,
@@ -94,7 +94,7 @@ impl Spec {
         Self::new(name, Kind::Seconds)
     }
 
-    /// An option a song writes in beats: given in beats in a pass, and in seconds to `play`.
+    /// An option that is a time that follows the tempo: given in beats in a pass, and in seconds to [`Engine::play`](crate::Engine::play).
     pub fn beats(name: &str) -> Self {
         Self::new(name, Kind::Beats)
     }

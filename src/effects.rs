@@ -1,7 +1,7 @@
-//! mx's effects, each a stereo sound in and out, with options that glide as the song changes them.
-//! Times such as phase and decay come in seconds; mx turns its beats into seconds before it starts an effect.
+//! The effects that come with the crate, each a stereo sound in and out, with options that glide when they are changed while it runs.
+//! Times such as phase and decay are in seconds, or in beats in a part started by [`Engine::start_part_in_beats`](crate::Engine::start_part_in_beats).
 //!
-//! Notes play into a chain of effects, which `Engine::start_effects` makes from names and options, in order:
+//! Notes play into a chain of effects, which [`Engine::start_effects`](crate::Engine::start_effects) makes from names and options, in order:
 //!
 //! ```
 //! use mxs::{Engine, Event, RATE, Value, effects, synths};
@@ -35,7 +35,7 @@ use crate::synth::Effect;
 use fundsp::prelude::*;
 use std::f32::consts::{FRAC_PI_4, TAU};
 
-/// Every effect mx has.
+/// Every effect that comes with the crate.
 pub fn all() -> Vec<Effect> {
     vec![
         level(),

@@ -6,7 +6,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 /// An output or input device, with every channel count, sample rate and buffer size it supports.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Device {
-    /// The name `Settings` picks the device by.
+    /// The name [`Settings`] picks the device by.
     pub name: String,
     /// Whether it is an output device, and not an input one.
     pub output: bool,
@@ -18,7 +18,7 @@ pub struct Device {
     pub buffers: Option<(u32, u32)>,
 }
 
-/// How a live engine starts; what is left out falls back to the device's defaults.
+/// How a live engine starts, for [`Engine::live_with`](crate::Engine::live_with); what is left out falls back to the device's defaults.
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     /// The output device, by name; the default output when none is given.

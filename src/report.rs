@@ -15,7 +15,7 @@ pub const FLOOR: f32 = -120.0;
 
 /// How many reports wait for a subscriber before the oldest are dropped.
 const WAITING: usize = 64;
-/// How many warnings wait for `Engine::warnings` before the oldest are dropped.
+/// How many warnings wait for [`Engine::warnings`](crate::Engine::warnings) before the oldest are dropped.
 const SAID: usize = 1024;
 /// How many levels reports a second.
 const LEVELS_A_SECOND: f64 = 20.0;
@@ -33,7 +33,7 @@ pub enum Topic {
     Voices,
     /// The output device, at once and whenever it changes.
     Output,
-    /// What `Engine::warnings` gives, as it is noticed: at once for a value held to its range, and within a second for the counts of late events, stolen notes and late buffers.
+    /// What [`Engine::warnings`](crate::Engine::warnings) gives, as it is noticed: at once for a value held to its range, and within a second for the counts of late events, stolen notes and late buffers.
     Warnings,
     /// Where the beat is: a beat, its tempo and when it is heard, at once and whenever the tempo changes, every quarter beat while it moves.
     Beats,
@@ -69,9 +69,9 @@ pub struct Levels {
     pub rms: [f32; 2],
     /// Whether a sample of either channel reached full scale.
     pub full_scale: bool,
-    /// The wave of both channels mixed to one, as the sample furthest from 0 in each of `WAVE` equal stretches, held to -1 to 1.
+    /// The wave of both channels mixed to one, as the sample furthest from 0 in each of [`WAVE`] equal stretches, held to -1 to 1.
     pub wave: [f32; WAVE],
-    /// The RMS level in dB of both channels mixed to one, in each of `BANDS` bands, over the last 8192 frames; `Levels::band` gives a band's edges, and a band with no sound reads `FLOOR`.
+    /// The RMS level in dB of both channels mixed to one, in each of [`BANDS`] bands, over the last 8192 frames; [`Levels::band`] gives a band's edges, and a band with no sound reads [`FLOOR`].
     pub bands: [f32; BANDS],
     /// The level of each part that has a name, in the order of their names.
     pub parts: Vec<PartLevels>,
@@ -86,6 +86,7 @@ impl Levels {
 }
 
 /// What the engine says to a subscriber.
+/// [The guide to reports](crate::guide::reports) says when each is sent.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Report {
     /// The sound card plays the engine's `seconds` at the time `system`, which is `delay` seconds after the engine fills them.
@@ -117,7 +118,7 @@ pub enum Report {
         /// Milliseconds from filling a frame to the device playing it, when the device says.
         delay_ms: Option<f64>,
     },
-    /// A warning, as `Engine::warnings` words it.
+    /// A warning, as [`Engine::warnings`](crate::Engine::warnings) words it.
     Warning {
         /// The engine's seconds the warning was noticed at.
         seconds: f64,
@@ -217,7 +218,7 @@ struct Inner {
     stopped: bool,
 }
 
-/// Where reports go: each subscriber's queue, and the warnings kept for `Engine::warnings`.
+/// Where reports go: each subscriber's queue, and the warnings kept for [`Engine::warnings`](crate::Engine::warnings).
 pub(crate) struct Hub {
     wanted: AtomicU8,
     inner: Mutex<Inner>,
@@ -267,7 +268,7 @@ impl Hub {
         }
     }
 
-    /// Keeps a warning for `Engine::warnings`, and sends it to whoever subscribes to warnings.
+    /// Keeps a warning for [`Engine::warnings`](crate::Engine::warnings), and sends it to whoever subscribes to warnings.
     pub fn warn(&self, seconds: f64, message: String) {
         let mut inner = lock(&self.inner);
         if inner.said.len() == SAID {
@@ -347,8 +348,8 @@ impl Hub {
     }
 }
 
-/// A subscription to the engine's reports, which ends when this is dropped.
-/// Reports wait here until they are taken, 64 at most: past that the oldest are dropped, and a `Report::Dropped` says how many.
+/// A subscription to the engine's reports, from [`Engine::subscribe`](crate::Engine::subscribe), which ends when this is dropped.
+/// Reports wait here until they are taken, 64 at most: past that the oldest are dropped, and a [`Report::Dropped`] says how many.
 pub struct Reports {
     hub: Arc<Hub>,
     sink: Arc<Sink>,

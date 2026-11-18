@@ -1,4 +1,7 @@
 //! Playing one instrument from MIDI messages: a key starts a note at its pitch and loudness, letting it up lets the note go, the sustain pedal holds what is sounding, and the pitch bend wheel bends it.
+//!
+//! A [`Keyboard`] takes the bytes of each message and returns the events to hand to [`Engine::play`](crate::Engine::play), so it works with whatever reads the MIDI port.
+//! [The guide to playing live](crate::guide::live) has a program, and the `keys` program of the repository reads a port with the `midir` crate.
 
 use crate::{Event, Synth, Target};
 use std::collections::HashMap;

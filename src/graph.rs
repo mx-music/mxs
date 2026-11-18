@@ -1,11 +1,81 @@
-//! Synths described as data, as mx's defsynth traces them: each clause a graph of calls on the note's options, which the engine builds into a sound when a note starts.
+//! Synths and effects described as data: each a graph of calls on the note's options, which the engine builds into a sound when a note starts, with no compiling.
 //! An option is read once, when the note starts; arithmetic on options and numbers is worked out then, and a node whose level works out to 0 is left out.
+//!
+//! [`Synth::graph`] and [`Effect::graph`] build from a [`Graph`], a tree of calls to the functions listed here.
+//! A program that lets its users write synths, in a language of its own or in a file, turns what they wrote into a `Graph`.
+//! [The guide to building a synth](crate::guide::building) has a program that does.
+//!
+//! # The vocabulary
+//!
+//! A call takes arguments by position and by name.
+//! Below, `sound` is an argument by position that is a sound or a number, and an argument written `name:` is given by name.
+//!
+//! ## Sources
+//!
+//! | Call | What it makes |
+//! | --- | --- |
+//! | `impulse()` | One sample at 1 when the note starts, then silence. |
+//! | `sine(hz:, phase:)` | A sine wave; `phase` is in radians, and 0 unless given. |
+//! | `saw(hz:)`, `square(hz:)`, `triangle(hz:)` | The wave named. |
+//! | `pulse(hz:, width:)` | A pulse wave; `width` is the part of each cycle that is up, and a half unless given. |
+//! | `noise(colour)` | Noise; `colour` is the name `white` or `pink`. |
+//! | `time()` | The seconds since the note started. |
+//! | `follow(option)` | An option as a signal, which glides to each new value it is given while the note sounds. |
+//! | `input()` | In an effect, the channel coming in. |
+//!
+//! ## Filters
+//!
+//! | Call | What it does to `sound` |
+//! | --- | --- |
+//! | `lowpass(sound, hz:, q:, poles:)`, `highpass`, `bandpass` | Filters it; `q` is 0.707 and `poles` is 2 unless given, and `hz` is held from 20 to 20000. |
+//! | `lowshelf(sound, hz:, q:, db:)`, `highshelf`, `peak` | Raises or lowers it by `db` below, above or around `hz`. |
+//! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; all three are known when the note starts. |
+//! | `delay(sound, seconds:, max:)` | Delays it by `seconds`, which may change up to `max`. |
+//! | `dc_block(sound)` | Takes its constant offset away. |
+//!
+//! ## Levels
+//!
+//! | Call | What it makes |
+//! | --- | --- |
+//! | `envelope(points)` | A level that moves from silence through each of `points`, a list of `[seconds, level]`, of `[seconds, level, curve]` bent as [`segments`](crate::nodes::segments) bends, or of `[seconds, level, exp]`, exponential. |
+//! | `perc(attack:, release:)` | A level that rises over `attack` seconds and falls over `release`. |
+//! | `envelope(sound, points)`, `perc(sound, attack:, release:)` | The sound, scaled by that level. |
+//! | `gain(sound, level)` | The sound, scaled. |
+//! | `mix(list)` | The sounds of a list, added up. |
+//!
+//! ## How the note ends
+//!
+//! A synth's graph ends in one of these, as a synth written in Rust ends in a [`Note`].
+//!
+//! | Call | What it makes |
+//! | --- | --- |
+//! | `rings(sound, seconds:)` | A note that fades by itself and is silent after `seconds`. |
+//! | `note_envelope(sound)` | A note shaped by its envelope options, which falls silent over its release when let go. |
+//!
+//! ## Arithmetic
+//!
+//! Each works on numbers when the note starts, and on sounds at every sample.
+//!
+//! | Calls | What they give |
+//! | --- | --- |
+//! | `add`, `sub`, `mul`, `div`, `pow`, `min`, `max` | Of two values. |
+//! | `neg`, `abs`, `log2`, `exp`, `sin`, `cos` | Of one value. |
+//! | `hz`, `db` | The frequency of a MIDI note, and the gain of a level in decibels. |
+//! | `clamp(x, low, high)` | `x` held from `low` to `high`. |
+//! | `lt`, `gt`, `le`, `ge`, `eq`, `ne` | 1 when the comparison of two values holds, and 0 otherwise. |
+//! | `select(condition, then, otherwise)` | `then` when `condition` is not 0, and `otherwise` when it is. |
+//! | `or_else(option, fallback)` | An option's value when the note gave one, and `fallback` otherwise. |
+//!
+//! ## The instruments' models
+//!
+//! `partials`, `bowed_string`, `air_jet`, `wind_bands` and `vibrato` are the models the crate's own strings and winds are built from.
+//! Their arguments are in this module's source.
 
 use crate::nodes::{self, db, hz};
 use crate::{Context, Effect, Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
 
-/// A traced value: a number, a name such as a noise's colour, one of the note's options, a list, or a call of the vocabulary.
+/// A value of a graph: a number, a name such as a noise's colour, one of the note's options, a list, or a call of the vocabulary.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Graph {
     /// A number.
@@ -27,12 +97,12 @@ pub enum Graph {
     },
 }
 
-/// One clause of a synth: the values of options it matches, and the graph it traces to.
+/// One clause of a synth: the values of options it matches, and the graph a note is then built from.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Clause {
     /// The values the note's options must have for the clause to apply.
     pub matches: Vec<(String, Value)>,
-    /// What the clause traces to.
+    /// The graph a note that matches is built from.
     pub graph: Graph,
 }
 
@@ -118,7 +188,7 @@ impl Synth {
 }
 
 impl Effect {
-    /// An effect traced by defeffect: `graph` is one channel's sound, its `input` that channel coming in, and it is built once for each channel.
+    /// An effect built from a graph: `graph` is one channel's sound, its `input` that channel coming in, and it is built once for each channel.
     pub fn graph(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, String> {
         known(&graph).map_err(|reason| format!("{name}: {reason}"))?;
         let owner = name.to_string();

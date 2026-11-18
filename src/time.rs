@@ -1,6 +1,6 @@
 //! Musical time: a tempo map, which says at which of the engine's seconds each beat falls.
 
-/// The tempo from a beat on.
+/// The tempo from a beat on, for [`Engine::set_tempo`](crate::Engine::set_tempo).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tempo {
     /// Held at this many beats a minute.

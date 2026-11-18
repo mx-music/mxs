@@ -1,4 +1,4 @@
-//! The bowed string of mx's violin, viola, cello and double bass: a waveguide after the bowed-string model of McIntyre, Schumacher and Woodhouse, "On the oscillations of musical instruments", JASA 74, 1983, and Julius O. Smith III's digital waveguides, https://ccrma.stanford.edu/~jos/pasp/Bowed_Strings.html.
+//! The bowed string of mx's violin, viola, cello and double bass: a waveguide after the bowed-string model of McIntyre, Schumacher and Woodhouse, "On the oscillations of musical instruments", JASA 74, 1983, and Julius O. Smith III's digital waveguides, <https://ccrma.stanford.edu/~jos/pasp/Bowed_Strings.html>.
 //! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, and the swell in.
 
 use super::common::{harmonics, net, silent_after};

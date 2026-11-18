@@ -46,13 +46,13 @@ impl SampleData {
     }
 }
 
-/// The length in seconds of the file at `path`, reading only its headers, or why mx cannot play it.
+/// The length in seconds of the file at `path`, reading only its headers, or why it cannot be played.
 pub fn check(path: &Path) -> Result<f64, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     check_bytes(&bytes)
 }
 
-/// The length in seconds of the file whose bytes these are, reading only its headers, or why mx cannot play it.
+/// The length in seconds of the file whose bytes these are, reading only its headers, or why it cannot be played.
 pub fn check_bytes(bytes: &[u8]) -> Result<f64, String> {
     match Format::of(bytes) {
         Some(Format::Flac) => {
@@ -247,7 +247,7 @@ fn wav(bytes: &[u8]) -> Result<Pcm, String> {
         (3, 4 | 8) => Encoding::Float { bytes: width },
         _ => {
             return Err(format!(
-                "it holds format {tag} in {width}-byte samples, where mx reads PCM in 1 to 4 bytes and float in 4 or 8"
+                "it holds format {tag} in {width}-byte samples, where mxs reads PCM in 1 to 4 bytes and float in 4 or 8"
             ));
         }
     };
@@ -302,7 +302,7 @@ fn aiff(bytes: &[u8]) -> Result<Pcm, String> {
         b"fl64" | b"FL64" => (Encoding::Float { bytes: 8 }, true),
         _ => {
             return Err(format!(
-                "it holds {}-bit samples compressed as {}, which mx does not read",
+                "it holds {}-bit samples compressed as {}, which mxs does not read",
                 bits,
                 String::from_utf8_lossy(kind)
             ));

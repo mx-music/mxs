@@ -1,5 +1,5 @@
 //! The winds' physical models: an air jet for the flute, a reed for the clarinet, oboe, bassoon and tenor sax, and the lips for the brass.
-//! Each is a digital waveguide after Julius O. Smith III, "Physical Audio Signal Processing", https://ccrma.stanford.edu/~jos/pasp/, and Perry R. Cook, "A meta-wind-instrument physical model", ICMC 1992.
+//! Each is a digital waveguide after Julius O. Smith III, "Physical Audio Signal Processing", <https://ccrma.stanford.edu/~jos/pasp/>, and Perry R. Cook, "A meta-wind-instrument physical model", ICMC 1992.
 //! The bore is a delay line as long as the note's period, so a change of note carries the same column of air to the new pitch, and the breath's pressure follows vel while the note holds.
 //! After the model come a peak at each band mx measures, its gain fitted to each instrument's recordings at pp, mf and ff and following vel between them.
 

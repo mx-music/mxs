@@ -1,5 +1,6 @@
-//! The engine's vocabulary of nodes, which mx's synths are made of and a synth written in Rust can use.
+//! The nodes the crate's synths are made of, for a synth of your own to use.
 //! Each is a FunDSP unit, so they combine with FunDSP's own through its operators.
+//! [The guide to building a synth](crate::guide::building) groups them by what they are for.
 
 use fundsp::prelude::*;
 
@@ -18,7 +19,7 @@ pub fn mode(hz: f64, phase: f64, level: f64, fade: f64) -> Net {
     Net::wrap(Box::new(An(Mode::new(hz, phase, level, fade))))
 }
 
-/// A resonator as mx's designs' resonators on scsynth answer, measured from their renders: an impulse rings it at 2 cos(w / 2) times `level`, half a sample late, w being its frequency in radians per sample, and it fades 60 dB over `fade` seconds.
+/// A resonator that answers as those of scsynth, SuperCollider's server, do, measured from their renders: an impulse rings it at 2 cos(w / 2) times `level`, half a sample late, w being its frequency in radians per sample, and it fades 60 dB over `fade` seconds.
 pub fn struck(hz: f64, level: f64, fade: f64) -> Net {
     let mut resonator = Mode::new(hz, 0.0, level, fade);
     resonator.like_scsynth = true;
@@ -26,7 +27,7 @@ pub fn struck(hz: f64, level: f64, fade: f64) -> Net {
     Net::wrap(Box::new(An(resonator)))
 }
 
-/// `struck`, at the frequency its second input gives at each sample, so it glides as the note does.
+/// [`struck`], at the frequency its second input gives at each sample, so it glides as the note does.
 pub fn struck_gliding(level: f64, fade: f64) -> Net {
     Net::wrap(Box::new(An(Gliding {
         level,
@@ -62,7 +63,7 @@ where
     })))
 }
 
-/// `shape` as a node rather than a `Net`, for inside a `feedback` loop; unlike FunDSP's `envelope`, it does not depend on where it sits in a graph.
+/// [`shape`](fn@shape) as a node rather than a `Net`, for inside a `feedback` loop; unlike FunDSP's `envelope`, it does not depend on where it sits in a graph.
 pub fn shape_node<F>(f: F) -> An<impl AudioNode<Inputs = U0, Outputs = U1>>
 where
     F: Fn(f64) -> f64 + Clone + Send + Sync + 'static,
@@ -105,7 +106,7 @@ pub fn segments(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
     shape(move |t| segment_at(&levels, &times, &curves, t))
 }
 
-/// A level moving through `levels` over `times` as `segments` does, until its input falls to 0: from then it falls from where it is to silence over the last of `times`, along the last of `curves`.
+/// A level moving through `levels` over `times` as [`segments`] does, until its input falls to 0: from then it falls from where it is to silence over the last of `times`, along the last of `curves`.
 pub fn gated(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
     let (levels, times, curves) = (levels.to_vec(), times.to_vec(), curves.to_vec());
     Net::wrap(Box::new(An(Gated {
@@ -118,7 +119,7 @@ pub fn gated(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
     })))
 }
 
-/// The level of `segments` at `t` seconds.
+/// The level of [`segments`] at `t` seconds.
 pub fn segment_at(levels: &[f64], times: &[f64], curves: &[f64], t: f64) -> f64 {
     let mut start = 0.0;
     for (k, &time) in times.iter().enumerate() {
@@ -153,13 +154,13 @@ pub fn exp_segments(levels: &[f64], times: &[f64]) -> Net {
     })
 }
 
-/// A percussive level: a rise over `attack` and a fall over `decay` seconds, each bent by `curve` as in `segments`.
+/// A percussive level: a rise over `attack` and a fall over `decay` seconds, each bent by `curve` as in [`segments`].
 pub fn hit(attack: f64, decay: f64, curve: f64) -> Net {
     segments(&[0.0, 1.0, 0.0], &[attack, decay], &[curve, curve])
 }
 
 /// Resonators set ringing by `exciter`, one at each of `hz`, with its level and the seconds it takes to fade 60 dB; those above 20 kHz are left out.
-/// Each is `struck`.
+/// Each is [`struck`].
 pub fn modes(exciter: Net, hz: &[f64], levels: &[f64], rings: &[f64]) -> Net {
     let mut bank: Option<Net> = None;
     for ((&f, &level), &ring) in hz.iter().zip(levels).zip(rings) {
@@ -218,7 +219,7 @@ pub fn white_noise(seed: u64) -> Net {
     Net::wrap(Box::new(white().seed(seed)))
 }
 
-/// Pink noise drawn from `seed`, as loud in each band as scsynth's pink noise, which mx's designs were made with; FunDSP's measures 4.3 dB louder from 100 Hz to 8 kHz.
+/// Pink noise drawn from `seed`, as loud in each band as the pink noise of scsynth, SuperCollider's server, which the crate's synths were designed against; FunDSP's measures 4.3 dB louder from 100 Hz to 8 kHz.
 pub fn pink_noise(seed: u64) -> Net {
     Net::wrap(Box::new(pink::<f64>().seed(seed))) * db(-4.3) as f32
 }
@@ -292,7 +293,7 @@ impl AudioNode for Mode {
     }
 }
 
-/// The response of `struck`, written out: level (1 + cos w)(1 - r z^-1) / (1 - 2 r cos w z^-1 + r^2 z^-2).
+/// The response of [`struck`], written out: level (1 + cos w)(1 - r z^-1) / (1 - 2 r cos w z^-1 + r^2 z^-2).
 #[derive(Clone)]
 struct Gliding {
     level: f64,

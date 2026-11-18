@@ -5,7 +5,7 @@ use fundsp::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// A note's options: the values a song gave, checked and held to their ranges, and the declared defaults for the rest.
+/// A note's options: the values the note was given, checked and held to their ranges, and the declared defaults for the rest.
 pub struct Options {
     pub(crate) owner: Arc<str>,
     pub(crate) specs: Arc<[Spec]>,
@@ -95,7 +95,7 @@ impl Options {
         }
     }
 
-    /// An option's value when the song gave one, for an option declared without a default.
+    /// An option's value when the note gave one, for an option declared without a default.
     pub fn given(&self, name: &str) -> Option<f64> {
         if !self.specs.iter().any(|s| s.name == name) {
             panic!(
@@ -109,7 +109,7 @@ impl Options {
         }
     }
 
-    /// A signal of an option's value, which glides to each new value the song gives while the note sounds, over the option's `_slide` seconds.
+    /// A signal of an option's value, which glides to each new value a change gives while the note sounds, over the option's `_slide` seconds.
     pub fn follow(&self, name: &str) -> Net {
         let start = self.number(name) as f32;
         let slide = self
