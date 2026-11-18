@@ -2,6 +2,7 @@
 //! It allocates and frees nothing while filling audio: notes and chains come built over one ring buffer, and go back over another to be freed by the engine.
 
 use crate::options::Control;
+use crate::report::Tap;
 use fundsp::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -22,9 +23,10 @@ pub(crate) enum Out {
     Tap,
 }
 
-/// How many notes may sound at once, how many the mixer has stolen to keep to it, and how many events reached it after their time, by up to how many frames.
+/// How many notes may sound at once, how many sound in the block being filled, how many the mixer has stolen to keep to the limit, and how many events reached it after their time, by up to how many frames.
 pub(crate) struct Voices {
     pub limit: AtomicUsize,
+    pub sounding: AtomicUsize,
     pub stolen: AtomicU64,
     pub late: AtomicU64,
     pub most_late: AtomicU64,
@@ -34,6 +36,7 @@ impl Voices {
     pub fn new(limit: usize) -> Arc<Voices> {
         Arc::new(Voices {
             limit: AtomicUsize::new(limit),
+            sounding: AtomicUsize::new(0),
             stolen: AtomicU64::new(0),
             late: AtomicU64::new(0),
             most_late: AtomicU64::new(0),
@@ -124,6 +127,7 @@ pub(crate) struct Mixer {
     now: u64,
     clock: Arc<AtomicU64>,
     limit: Arc<Voices>,
+    reports: Option<Tap>,
 }
 
 impl Mixer {
@@ -149,11 +153,18 @@ impl Mixer {
             now: clock.load(Ordering::Acquire),
             clock,
             limit,
+            reports: None,
         }
+    }
+
+    /// Copies what `render` fills into `tap`, for the levels reports of a live engine.
+    pub fn report_to(&mut self, tap: Tap) {
+        self.reports = Some(tap);
     }
 
     /// Fills `left` and `right` with the next frames.
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let first = self.now;
         let mut done = 0;
         while done < left.len() {
             self.receive();
@@ -169,6 +180,9 @@ impl Mixer {
             }
             self.block(&mut left[done..done + n], &mut right[done..done + n]);
             done += n;
+        }
+        if let Some(tap) = &mut self.reports {
+            tap.push(first, left, right);
         }
     }
 
@@ -398,6 +412,7 @@ impl Mixer {
             self.limit.stolen.fetch_add(1, Ordering::Relaxed);
             count -= 1;
         }
+        self.limit.sounding.store(count, Ordering::Relaxed);
     }
 
     /// The frames every running recording has room for before its ring is full.

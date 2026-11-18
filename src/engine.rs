@@ -7,6 +7,7 @@ use crate::mixer::{
     CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices,
 };
 use crate::options::{Context, Control, Options};
+use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Spec, Value};
 use crate::synth::{BuildNote, Effect, Note, Synth};
@@ -264,7 +265,11 @@ pub struct Engine {
     builder: Option<Builder>,
     next: Arc<AtomicU64>,
     warned: HashSet<(String, String)>,
-    warnings: Vec<String>,
+    hub: Arc<Hub>,
+    analyser: Analyser,
+    /// The whole second an offline engine last reported its voices in.
+    voiced: Option<u64>,
+    reporter: Option<JoinHandle<()>>,
     clock: Arc<AtomicU64>,
     voices: Arc<Voices>,
     meter: Arc<Meter>,
@@ -291,6 +296,7 @@ impl Engine {
             voices,
             Meter::new(),
             Arc::new(AtomicBool::new(false)),
+            Hub::new(),
             Output::Offline(Box::new(mixer)),
         )
     }
@@ -319,6 +325,7 @@ impl Engine {
             voices,
             Meter::new(),
             Arc::new(AtomicBool::new(false)),
+            Hub::new(),
             output,
         );
         engine.inputs = channels;
@@ -355,10 +362,13 @@ impl Engine {
         let limiting = voices.clone();
         let meter = Meter::new();
         let metering = meter.clone();
+        let hub = Hub::new();
+        let tapping = hub.clone();
         // cpal's streams cannot move between threads on every platform, so one thread owns them until the engine is dropped.
         std::thread::spawn(move || {
             match open(
-                receiving, returning, mixing, limiting, metering, failing, losing, &settings,
+                receiving, returning, mixing, limiting, metering, failing, losing, tapping,
+                &settings,
             ) {
                 Ok((streams, opened)) => {
                     let _ = ready.send(Ok(opened));
@@ -382,6 +392,7 @@ impl Engine {
             voices,
             meter,
             failed,
+            hub,
             Output::Live { stop },
         );
         engine.inputs = opened.inputs;
@@ -389,6 +400,13 @@ impl Engine {
         engine.device = opened.name;
         engine.timing = Some(opened.timing);
         engine.builder = Some(Builder::start(engine.book.clone(), opened.rate));
+        engine.hub.set_output(Report::Output {
+            seconds: engine.now(),
+            device: Some(engine.device.clone()),
+            rate: engine.rate,
+            delay_ms: engine.latency().map(|seconds| seconds * 1000.0),
+        });
+        engine.reporter = Some(report(&engine, opened.tapped));
         Ok(engine)
     }
 
@@ -400,11 +418,18 @@ impl Engine {
         voices: Arc<Voices>,
         meter: Arc<Meter>,
         failed: Arc<AtomicBool>,
+        hub: Arc<Hub>,
         output: Output,
     ) -> Engine {
         let sampler = Arc::from("sample");
         let next = Arc::new(AtomicU64::new(0));
         let sampler_specs: Vec<Spec> = sample_specs().into_iter().chain(placing_specs()).collect();
+        hub.set_output(Report::Output {
+            seconds: 0.0,
+            device: None,
+            rate,
+            delay_ms: None,
+        });
         Engine {
             rate,
             synths: HashMap::new(),
@@ -425,12 +450,15 @@ impl Engine {
                 chains: HashMap::new(),
                 next: next.clone(),
                 clock: clock.clone(),
-                warnings: Vec::new(),
+                hub: hub.clone(),
             })),
             builder: None,
             next,
             warned: HashSet::new(),
-            warnings: Vec::new(),
+            hub,
+            analyser: Analyser::new(rate),
+            voiced: None,
+            reporter: None,
             clock,
             voices,
             meter,
@@ -589,46 +617,15 @@ impl Engine {
 
     /// Values held to their ranges since the last call, once for each option, how many notes were stolen to keep to the voice limit, how many events arrived after their time, and how many buffers reached the sound card late.
     pub fn warnings(&mut self) -> Vec<String> {
-        let (buffers, over) = self.meter.take_late();
-        if buffers > 0 {
-            let reached = if buffers == 1 {
-                "buffer reached"
-            } else {
-                "buffers reached"
-            };
-            let ms = over * 1000.0;
-            self.warnings.push(format!(
-                "{buffers} {reached} the sound card late, by up to {ms:.1} ms"
-            ));
-        }
-        let late = self.voices.late.swap(0, Ordering::Relaxed);
-        let most = self.voices.most_late.swap(0, Ordering::Relaxed);
-        if late > 0 {
-            let events = if late == 1 {
-                "event arrived"
-            } else {
-                "events arrived"
-            };
-            let ms = most as f64 / self.rate * 1000.0;
-            self.warnings.push(format!(
-                "{late} {events} after their time, by up to {ms:.1} ms, and played at once"
-            ));
-        }
-        let stolen = self.voices.stolen.swap(0, Ordering::Relaxed);
-        if stolen > 0 {
-            let limit = self.voices.limit.load(Ordering::Relaxed);
-            let notes = if stolen == 1 {
-                "note was"
-            } else {
-                "notes were"
-            };
-            self.warnings.push(format!(
-                "{stolen} {notes} stolen to keep to {limit} at once"
-            ));
-        }
-        let mut built = std::mem::take(&mut self.book().warnings);
-        self.warnings.append(&mut built);
-        std::mem::take(&mut self.warnings)
+        count_warnings(&self.hub, &self.meter, &self.voices, self.rate, self.now());
+        self.hub.take_said()
+    }
+
+    /// Subscribes to kinds of report, which the engine then sends without being asked; the subscription ends when what is returned is dropped.
+    /// A live engine works its reports out on a thread of its own, and an offline one as it renders, the same ones on every run.
+    /// Subscribing changes no sample of the output, and a kind nobody subscribes to is not worked out.
+    pub fn subscribe(&self, topics: &[Topic]) -> Reports {
+        self.hub.subscribe(topics)
     }
 
     /// Sets how many notes sound at once; a note past it takes the place of the quietest, which fades out over 10 ms.
@@ -920,6 +917,8 @@ impl Engine {
         self.check_running()?;
         let frames = self.frames(seconds) as usize;
         let (meter, rate) = (self.meter.clone(), self.rate);
+        let (hub, clock, voices) = (self.hub.clone(), self.clock.clone(), self.voices.clone());
+        let (analyser, voiced) = (&mut self.analyser, &mut self.voiced);
         let Output::Offline(mixer) = &mut self.output else {
             return Err(Error::Live);
         };
@@ -933,11 +932,27 @@ impl Engine {
                 while mixer.recording_room() < left.len() {
                     std::thread::sleep(Duration::from_millis(1));
                 }
+                let first = clock.load(Ordering::Acquire);
                 let began = Instant::now();
                 mixer.render(left, right);
                 meter.record(began.elapsed(), left.len(), rate, false);
+                if hub.wants(Topic::Levels) {
+                    analyser.feed(first, left, right, |levels| {
+                        hub.send(Report::Levels(Box::new(levels)))
+                    });
+                }
+                let seconds = (first + left.len() as u64) as f64 / rate;
+                let whole = seconds.floor() as u64;
+                if hub.wants(Topic::Voices) && *voiced != Some(whole) {
+                    *voiced = Some(whole);
+                    let sounding = voices.sounding.load(Ordering::Relaxed);
+                    hub.send(Report::Voices { seconds, sounding });
+                }
             }
         }));
+        if self.hub.wants(Topic::Warnings) {
+            count_warnings(&self.hub, &self.meter, &self.voices, rate, self.now());
+        }
         self.book().drain();
         match rendered {
             Ok(()) => Ok((left, right)),
@@ -972,7 +987,7 @@ impl Engine {
         let (values, held) = checked(owner, specs, given)?;
         for name in held {
             if self.warned.insert((owner.to_string(), name.clone())) {
-                self.warnings.push(held_warning(owner, specs, &name));
+                self.hub.warn(self.now(), held_warning(owner, specs, &name));
             }
         }
         Ok(values)
@@ -1146,8 +1161,8 @@ struct Book {
     chains: HashMap<u64, Vec<HashMap<String, Control>>>,
     next: Arc<AtomicU64>,
     clock: Arc<AtomicU64>,
-    /// What the builder thread has to say, until `warnings` is asked.
-    warnings: Vec<String>,
+    /// Where what the builder thread has to say goes, until `warnings` is asked.
+    hub: Arc<Hub>,
 }
 
 impl Book {
@@ -1342,6 +1357,118 @@ impl Book {
     }
 }
 
+/// Words what the audio thread counted since this was last called as warnings: late buffers, late events and stolen notes.
+fn count_warnings(hub: &Hub, meter: &Meter, voices: &Voices, rate: f64, seconds: f64) {
+    let (buffers, over) = meter.take_late();
+    if buffers > 0 {
+        let reached = if buffers == 1 {
+            "buffer reached"
+        } else {
+            "buffers reached"
+        };
+        let ms = over * 1000.0;
+        hub.warn(
+            seconds,
+            format!("{buffers} {reached} the sound card late, by up to {ms:.1} ms"),
+        );
+    }
+    let late = voices.late.swap(0, Ordering::Relaxed);
+    let most = voices.most_late.swap(0, Ordering::Relaxed);
+    if late > 0 {
+        let events = if late == 1 {
+            "event arrived"
+        } else {
+            "events arrived"
+        };
+        let ms = most as f64 / rate * 1000.0;
+        hub.warn(
+            seconds,
+            format!("{late} {events} after their time, by up to {ms:.1} ms, and played at once"),
+        );
+    }
+    let stolen = voices.stolen.swap(0, Ordering::Relaxed);
+    if stolen > 0 {
+        let limit = voices.limit.load(Ordering::Relaxed);
+        let notes = if stolen == 1 {
+            "note was"
+        } else {
+            "notes were"
+        };
+        hub.warn(
+            seconds,
+            format!("{stolen} {notes} stolen to keep to {limit} at once"),
+        );
+    }
+}
+
+/// Starts a live engine's thread that works its reports out and sends them, asleep while nobody subscribes.
+fn report(engine: &Engine, mut tapped: Tapped) -> JoinHandle<()> {
+    let (hub, rate) = (engine.hub.clone(), engine.rate);
+    let (clock, voices, meter) = (
+        engine.clock.clone(),
+        engine.voices.clone(),
+        engine.meter.clone(),
+    );
+    let timing = engine.timing.clone();
+    std::thread::Builder::new()
+        .name("mxs reports".to_string())
+        .spawn(move || {
+            let mut analyser = Analyser::new(rate);
+            let mut seen = None;
+            let mut mapped: Option<(f64, Instant)> = None;
+            let mut second = None;
+            while let Some(changes) = hub.wait() {
+                let fresh = seen.replace(changes) != Some(changes);
+                let now = clock.load(Ordering::Acquire) as f64 / rate;
+                tapped.read(|first, left, right| {
+                    if hub.wants(Topic::Levels) {
+                        analyser.feed(first, left, right, |levels| {
+                            hub.send(Report::Levels(Box::new(levels)))
+                        });
+                    }
+                });
+                let read = timing
+                    .as_ref()
+                    .filter(|_| hub.wants(Topic::Clock))
+                    .and_then(|timing| {
+                        let timing = timing.lock().unwrap_or_else(|e| e.into_inner());
+                        Some((timing.system(now)?, timing.latency.unwrap_or(0.0)))
+                    });
+                if let Some((filled, delay)) = read {
+                    let offset = filled + delay - now;
+                    let moved = mapped.is_none_or(|(sent, at)| {
+                        (offset - sent).abs() > 0.002 || at.elapsed() >= Duration::from_secs(1)
+                    });
+                    if fresh || moved {
+                        mapped = Some((offset, Instant::now()));
+                        hub.send(Report::Clock {
+                            seconds: now,
+                            system: SystemTime::UNIX_EPOCH
+                                + Duration::from_secs_f64(filled + delay),
+                            delay,
+                        });
+                    }
+                }
+                let whole = now.floor() as u64;
+                if fresh || second != Some(whole) {
+                    second = Some(whole);
+                    if hub.wants(Topic::Voices) {
+                        let sounding = voices.sounding.load(Ordering::Relaxed);
+                        hub.send(Report::Voices {
+                            seconds: now,
+                            sounding,
+                        });
+                    }
+                    if hub.wants(Topic::Warnings) {
+                        count_warnings(&hub, &meter, &voices, rate, now);
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        })
+        .expect("the reports thread starts")
+}
+
 /// A live engine's thread that builds voices, so that neither the caller nor the audio thread waits for them.
 struct Builder {
     drafts: Option<mpsc::Sender<Vec<Draft>>>,
@@ -1359,7 +1486,7 @@ impl Builder {
             .name("mxs builder".to_string())
             .spawn(move || {
                 for batch in handed {
-                    let mut said = Vec::new();
+                    let mut said: Vec<String> = Vec::new();
                     let mut items = Vec::with_capacity(batch.len());
                     for draft in batch {
                         match draft {
@@ -1386,7 +1513,9 @@ impl Builder {
                     if let Err(error) = book.commit(items) {
                         said.push(format!("{error}, so some events did not play"));
                     }
-                    book.warnings.append(&mut said);
+                    let now = book.clock.load(Ordering::Acquire) as f64 / book.rate;
+                    said.into_iter()
+                        .for_each(|message| book.hub.warn(now, message));
                     drop(book);
                     let (count, settled) = &*counting;
                     *count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
@@ -1433,6 +1562,10 @@ impl Drop for Engine {
         let _ = self.stop_recording_output();
         if let Output::Live { stop, .. } = &self.output {
             let _ = stop.send(());
+        }
+        self.hub.stop();
+        if let Some(reporter) = self.reporter.take() {
+            let _ = reporter.join();
         }
     }
 }
@@ -1482,6 +1615,7 @@ fn open(
     meter: Arc<Meter>,
     failed: Arc<AtomicBool>,
     lost: Arc<AtomicBool>,
+    hub: Arc<Hub>,
     settings: &Settings,
 ) -> Result<(Streams, Opened), String> {
     let host = cpal::default_host();
@@ -1507,7 +1641,9 @@ fn open(
     };
     let inputs = input.as_ref().map_or(0, |i| i.channels);
     let frames = clock.clone();
-    let mixer = Mixer::new(commands, garbage, clock, voices, input);
+    let mut mixer = Mixer::new(commands, garbage, clock, voices, input);
+    let (tap, tapped) = report::tap(hub, chosen.rate as f64);
+    mixer.report_to(tap);
     let timing = Arc::new(Mutex::new(Timing::new(chosen.rate as f64)));
     let live = Live {
         mixer,
@@ -1552,6 +1688,7 @@ fn open(
             inputs,
             name,
             timing,
+            tapped,
         },
     ))
 }
@@ -1562,6 +1699,7 @@ struct Opened {
     inputs: usize,
     name: String,
     timing: Arc<Mutex<Timing>>,
+    tapped: Tapped,
 }
 
 /// What the output callback owns.

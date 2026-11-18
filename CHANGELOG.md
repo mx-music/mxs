@@ -4,6 +4,7 @@
 
 ### 1. Enhancements
 
+  * [engine] Add `Engine::subscribe`, which sends reports without being asked: the clock against the system's, the levels, wave and spectrum of the output twenty times a second, how many notes sound, the output device, and the warnings; a live engine works them out on a thread of its own, and an offline one as it renders
   * [engine] A live engine builds voices on a thread of its own, so `play` returns once its events are checked; a synth whose sound has neither 1 nor 2 channels is then left out and named in `warnings`, where an offline engine still refuses the batch
   * [engine] Add `Engine::load`, the time filling audio took as a share of the time it lasts and how many buffers reached the sound card late, and `Engine::behind`, how far the engine's clock has fallen behind the system's; `warnings` also says how many buffers were late
   * [synths] Refit `electric_piano` partial by partial to each of keyboard_electronic_098's 99 recordings, with the tine's bell, the strike's noise and every partial up to 8 kHz; a note or velocity not recorded takes the recordings nearest it, across velocity first; it is no longer an alpha version

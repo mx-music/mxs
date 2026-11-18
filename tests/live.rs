@@ -1,7 +1,7 @@
 //! Checks of a live engine, which need BlackHole 2ch, a virtual sound card, so that nothing is heard, and a release build, as a debug one fills too slowly; run them with `cargo test --release --test live -- --ignored --test-threads 1`.
 
 use fundsp::prelude::*;
-use mxs::{Engine, Error, Event, Note, Settings, Spec, Synth, Target, synths};
+use mxs::{Engine, Error, Event, Note, Report, Settings, Spec, Synth, Target, Topic, synths};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -275,4 +275,149 @@ fn a_sound_of_three_channels_is_left_out_and_named_while_the_rest_of_its_batch_p
         engine.warnings(),
         vec!["three made a sound of 3 channels, not 1 or 2, so its note did not play".to_string()]
     );
+}
+
+#[test]
+#[ignore]
+fn levels_reports_arrive_twenty_times_a_second_and_stop_once_unsubscribed() {
+    let mut engine = live(512);
+    let reports = engine.subscribe(&[Topic::Levels]);
+    let start = engine.now() + 0.2;
+    let notes: Vec<(f64, Event)> = (0..16)
+        .map(|i| {
+            let at = start + i as f64 * 0.125;
+            (at, Event::note(None, "piano", &[("note", 60.0)]))
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    let began = Instant::now();
+    let mut arrived = Vec::new();
+    while began.elapsed() < Duration::from_secs(2) {
+        if let Some(Report::Levels(levels)) = reports.wait(Duration::from_millis(100)) {
+            arrived.push((engine.now() - levels.seconds, levels));
+        }
+    }
+    let a_second = arrived.len() as f64 / 2.0;
+    println!("{a_second} levels reports a second");
+    assert!((18.0..=22.0).contains(&a_second), "{a_second}");
+    assert!(arrived.iter().any(|(_, levels)| levels.peak[0] > 0.01));
+    for pair in arrived.windows(2) {
+        assert!((pair[1].1.seconds - pair[0].1.seconds - 0.05).abs() < 1e-9);
+    }
+    let latest = arrived.iter().map(|(after, _)| *after).fold(0.0, f64::max);
+    println!(
+        "a report arrived up to {:.1} ms after its last sample was filled",
+        latest * 1000.0
+    );
+    assert!(latest < 0.1, "{latest}");
+    reports.unsubscribe(Topic::Levels);
+    assert_eq!(reports.wait(Duration::from_millis(300)), None);
+    assert_eq!(engine.load().late, 0);
+}
+
+#[test]
+#[ignore]
+fn a_clock_report_comes_within_a_second_and_gives_when_the_sound_card_plays_a_sample() {
+    let engine = live(512);
+    let reports = engine.subscribe(&[Topic::Clock, Topic::Output]);
+    let mut clocks = Vec::new();
+    let mut output = None;
+    let began = Instant::now();
+    while began.elapsed() < Duration::from_millis(2500) {
+        match reports.wait(Duration::from_millis(100)) {
+            Some(Report::Clock {
+                seconds,
+                system,
+                delay,
+            }) => clocks.push((began.elapsed(), seconds, system, delay)),
+            Some(report @ Report::Output { .. }) => output = Some(report),
+            _ => {}
+        }
+    }
+    assert!(clocks[0].0 < Duration::from_secs(1), "{:?}", clocks[0].0);
+    assert!((3..=6).contains(&clocks.len()), "{}", clocks.len());
+    let (now, at) = engine.clock();
+    for (_, seconds, system, delay) in &clocks {
+        assert_eq!(Some(*delay), engine.latency());
+        let filled = at.unwrap() - Duration::from_secs_f64(now - seconds);
+        let after = system.duration_since(filled).unwrap().as_secs_f64();
+        assert!((after - delay).abs() < 0.002, "{after} against {delay}");
+    }
+    println!("the output's delay is {:.2} ms", clocks[0].3 * 1000.0);
+    let Some(Report::Output {
+        device,
+        rate,
+        delay_ms,
+        ..
+    }) = output
+    else {
+        panic!("no output report")
+    };
+    assert_eq!(device.as_deref(), Some("BlackHole 2ch"));
+    assert_eq!(rate, 48_000.0);
+    assert_eq!(delay_ms, engine.latency().map(|seconds| seconds * 1000.0));
+}
+
+#[test]
+#[ignore]
+fn three_notes_held_live_report_three_voices_and_a_late_buffer_is_sent_as_a_warning() {
+    let mut engine = live(512);
+    engine.register(stall());
+    engine.register(level());
+    let reports = engine.subscribe(&[Topic::Voices, Topic::Warnings]);
+    std::thread::sleep(Duration::from_millis(300));
+    let at = engine.now() + 0.1;
+    let mut events: Vec<(f64, Event)> = (0..3)
+        .map(|_| (at, Event::note(None, "level", &[("level", 0.0)])))
+        .collect();
+    events.push((at + 1.2, Event::note(None, "stall", &[])));
+    engine.play(&events).unwrap();
+    let mut sounding = Vec::new();
+    let mut warnings = Vec::new();
+    let began = Instant::now();
+    while began.elapsed() < Duration::from_millis(3200) {
+        match reports.wait(Duration::from_millis(100)) {
+            Some(Report::Voices {
+                sounding: count, ..
+            }) => sounding.push(count),
+            Some(Report::Warning { message, .. }) => warnings.push(message),
+            _ => {}
+        }
+    }
+    assert!(sounding.contains(&3), "{sounding:?}");
+    assert_eq!(sounding.last(), Some(&0), "{sounding:?}");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].starts_with("1 buffer reached the sound card late, by up to "));
+    assert_eq!(engine.warnings(), warnings);
+}
+
+#[test]
+#[ignore]
+fn reports_left_untaken_for_ten_seconds_cost_no_buffer_and_the_next_says_how_many_were_dropped() {
+    let mut engine = live(512);
+    let reports = engine.subscribe(&[Topic::Levels, Topic::Voices]);
+    std::thread::sleep(Duration::from_millis(500));
+    engine.load();
+    let start = engine.now() + 0.2;
+    let notes: Vec<(f64, Event)> = (0..64)
+        .map(|i| {
+            let note = 48.0 + [0.0, 4.0, 7.0, 12.0][i % 4];
+            let at = start + i as f64 * 0.125;
+            (at, Event::note(None, "piano", &[("note", note)]))
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    std::thread::sleep(Duration::from_secs(10));
+    let load = engine.load();
+    assert_eq!(load.late, 0, "{load:?}");
+    let Some(Report::Dropped {
+        reports: dropped, ..
+    }) = reports.next()
+    else {
+        panic!("no count of dropped reports")
+    };
+    println!("{dropped} reports dropped, {load:?}");
+    assert!((130..=170).contains(&dropped), "{dropped}");
+    let kept = std::iter::from_fn(|| reports.next()).count();
+    assert!((64..=66).contains(&kept), "{kept}");
 }

@@ -186,6 +186,46 @@ A live engine has to fill each buffer before the sound card needs it, and a buff
 After a gap, the engine's clock is behind for good, and `seconds_at` and `play_at` catch up with it by at most a millisecond a second.
 Until they have, an event given a system time plays late by what is left of the gap; `behind` shows the gap within a second.
 
+## What the engine reports
+
+`subscribe` takes the kinds of report wanted and returns the subscription, which the engine then sends reports to without being asked.
+
+```rust,no_run
+use mxs::{Engine, Report, Topic};
+use std::time::Duration;
+
+fn main() -> Result<(), mxs::Error> {
+    let engine = Engine::live()?;
+    let reports = engine.subscribe(&[Topic::Levels, Topic::Voices]);
+    while let Some(report) = reports.wait(Duration::from_secs(1)) {
+        match report {
+            Report::Levels(levels) => println!("{:.2} s: peak {:?}", levels.seconds, levels.peak),
+            Report::Voices { sounding, .. } => println!("{sounding} notes sound"),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+```
+
+Every report carries the engine's seconds of the sample it describes.
+
+| Kind | What it holds | When it is sent |
+| --- | --- | --- |
+| `Topic::Clock` | The engine's seconds, the system time at which the sound card plays them, and the output's delay, which that time includes. | At once, whenever the two clocks move apart by more than 2 ms, and at least once a second. An offline engine has no system time and sends none. |
+| `Topic::Levels` | For the left and the right channel of the main output, the loudest sample and the RMS level, where 1 is full scale; whether a sample reached full scale; the wave as 64 points from -1 to 1; and the level in dB of 25 bands from 50 Hz to 16 kHz, each about a third of an octave, which `Levels::band` gives the edges of. | Twenty times a second, each report covering the twentieth of a second before it. The bands cover the last 8192 frames. |
+| `Topic::Voices` | How many notes sound. | About once a second. |
+| `Topic::Output` | The device's name, the rate in Hz, and the output's delay in milliseconds; an offline engine has no device and no delay. | At once. The engine keeps its device for as long as it runs, so no second one follows. |
+| `Topic::Warnings` | One warning, worded as `warnings` words it. | At once for a value held to its range or a note that could not be built, and within a second for the counts of late buffers, late events and stolen notes. |
+
+- A kind nobody subscribes to is not worked out, and subscribing changes no sample of the output.
+- A live engine works its reports out on a thread of its own: the audio thread only copies its output into a ring buffer while levels are wanted, and never waits.
+- An offline engine works them out as it renders, the same reports on every run for the same events and the same calls to `render`.
+- `next` takes the oldest report that waits, and `wait` also waits for one to arrive.
+- 64 reports wait for a subscriber at most. Past that the oldest are dropped, and a `Report::Dropped` in their place says how many.
+- `unsubscribe` ends one kind, and dropping the subscription ends all of them.
+- `warnings`, `now` and `clock` answer as before, and a warning sent as a report is still given by `warnings`.
+
 ## A synth of your own
 
 mx's synths are built only from what the crate makes public, so a synth of yours is written the same way and registered next to them.
