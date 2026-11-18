@@ -34,7 +34,7 @@ fn main() -> Result<(), mxs::Error> {
 
 ## How far ahead to hand a note over
 
-Building a note's voice is the costly part of starting it: about a millisecond for a piano or a cello note, a tenth of that for a berimbau stroke.
+Building a note's voice is the costly part of starting it: about 0.2 ms for a piano note or a berimbau stroke and 0.05 ms for a cello note, once the instrument has played a note, and a few milliseconds for its first.
 A live engine builds voices on a thread of its own, in the order the notes were handed over.
 
 ```mermaid
@@ -51,7 +51,7 @@ sequenceDiagram
 ```
 
 - [`Engine::play`] returns once the events are checked. Neither the caller nor the audio thread waits for a voice.
-- A note therefore has to be handed over before its time by at least what it and the notes handed over ahead of it take to build: about 12 ms for a chord of ten piano notes.
+- A note therefore has to be handed over before its time by at least what it and the notes handed over ahead of it take to build: about 2 ms for a chord of ten piano notes.
 - A note handed over with less time starts as soon as it is built, and [`Engine::warnings`] counts it among the events that arrived after their time.
 - A change, a release or a stop handed over after a note reaches it, though the note's voice may not be built yet when the call returns.
 
@@ -83,6 +83,36 @@ fn main() -> Result<(), mxs::Error> {
 
 An instrument played by hand cannot hand its notes over ahead.
 It gives each note the time [`Engine::now`], and the note sounds as soon as its voice is built.
+
+## Voices kept ready
+
+[`Engine::keep_ready`] keeps a number of voices of an instrument built before any note asks for one, so a note played by hand starts with nothing left to build:
+
+```rust,no_run
+use mxs::{Engine, Event, synths};
+
+fn main() -> Result<(), mxs::Error> {
+    let mut engine = Engine::live()?;
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    engine.keep_ready("piano", 10)?;
+
+    let chord: Vec<(f64, Event)> = [60.0, 64.0, 67.0]
+        .iter()
+        .map(|&note| (engine.now(), Event::note(None, "piano", &[("note", note), ("vel", 0.8)])))
+        .collect();
+    engine.play(&chord)?;
+    Ok(())
+}
+```
+
+- A note that gives no option but `note` and `vel` takes a ready voice of its synth, which the audio thread fills with that note and vel as the note starts, building and allocating nothing.
+- A note handed over at [`Engine::now`] then starts in the next buffer the sound card asks for: a chord of ten piano notes is handed over in under a millisecond, and late by at most one buffer.
+- A ready voice sounds as a voice built for the same note and vel, sample for sample.
+- Each voice taken is replaced on the builder thread, so the number asked for is kept: ten piano voices are back within about 10 ms.
+- A note with any other option, of a synth with no voice ready, or in a pass is built as before.
+- The instruments fitted to recordings can be kept ready: the piano, guitar, electric bass, deep bass, harp, electric piano, electric guitar, marimba, vibraphone, xylophone, glockenspiel and timpani, and the violin, cello and `flute_figured`; a voice of any other synth is refused with [`Error::CannotKeepReady`].
+- Filling a ready voice takes the audio thread 0.1 to 0.2 ms for a piano note, so a chord of ten takes up to 2 ms of one buffer.
+- A held note that slides to another note or vel while it sounds still works out the new note's figures on the audio thread, as a note built for it does.
 
 ## Whether the engine keeps up
 
