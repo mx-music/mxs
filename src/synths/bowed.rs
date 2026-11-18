@@ -2,12 +2,14 @@
 //! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, and the swell in.
 
 use super::common::{harmonics, net, silent_after};
+use super::figures::{Figures, held_note};
 use crate::nodes::modes;
 use crate::nodes::{db, hz, pink_noise, shape, shape_node};
 use crate::synth::SynthDecl;
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
+use std::sync::OnceLock;
 
 /// The centres of the bands mx measures, from 80 Hz to 4 kHz.
 const BANDS: [f64; 8] = [113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, 3162.0];
@@ -267,7 +269,7 @@ pub fn all() -> Vec<Synth> {
                 hiss: [-35.5, -35.5, -30.5],
             },
         ),
-        bowed(
+        figured(
             "cello",
             Bowed {
                 peak: 144.0,
@@ -282,18 +284,8 @@ pub fn all() -> Vec<Synth> {
                 count: 32,
                 level: 0.0,
             },
-            Fit {
-                body: 133.1,
-                gains: [
-                    [-2.7, 2.1, 2.8, -7.2, 6.4, -8.3, 5.6, -5.3],
-                    [-1.5, 1.1, 2.8, -6.1, 7.8, -2.1, 11.7, -6.2],
-                    [-5.5, 1.4, -2.3, -3.8, 3.7, -1.5, 12.3, -4.9],
-                ],
-                levels: [-18.75, -22.40, -20.35],
-                swell: [0.86, 0.77, 0.65],
-                rosin: [0.0879, 0.0371, 0.1479],
-                hiss: [-26.5, -28.0, -21.5],
-            },
+            cello_figures,
+            CELLO_LEVEL,
         ),
         bowed(
             "double_bass",
@@ -375,28 +367,88 @@ fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
         }
         let mut end = f64::INFINITY;
         if pizz > 0.0 {
-            let hz_: Vec<f64> = harmonics(s.count).iter().map(|n| freq * n).collect();
-            let octaves: Vec<f64> = hz_.iter().map(|f| (f / s.peak).log2()).collect();
-            let levels: Vec<f64> = (0..s.count)
-                .map(|i| {
-                    let p = octaves[i];
-                    let level = p.min(0.0) * (s.rise + s.soft_rise * soft.powi(3))
-                        - p.max(0.0) * (s.fall + s.soft_fall * soft);
-                    if hz_[i] < 16_000.0 { db(level) } else { 0.0 }
-                })
-                .collect();
-            let fades: Vec<f64> = octaves
-                .iter()
-                .map(|p| s.fade * 2f64.powf(p * s.fade_slope))
-                .collect();
-            let gain = vel.powf(s.gain) * db(s.level);
-            sound = sound
-                + modes(net(impulse::<U1>()), &hz_, &levels, &fades)
-                    * (s.pluck * pizz * gain) as f32;
+            let (pluck, silent) = plucked(&s, freq, vel, soft, pizz);
+            sound = sound + pluck;
             if pizz >= 1.0 {
-                end = silent_after(&levels, &fades, s.pluck);
+                end = silent;
             }
         }
         Note::envelope(sound, o).within(end)
     })
 }
+
+/// A plucked string at `freq`, as loud as `pizz` of a whole pluck, and the seconds after which it is silent.
+fn plucked(s: &Bowed, freq: f64, vel: f64, soft: f64, pizz: f64) -> (Net, f64) {
+    let hz_: Vec<f64> = harmonics(s.count).iter().map(|n| freq * n).collect();
+    let octaves: Vec<f64> = hz_.iter().map(|f| (f / s.peak).log2()).collect();
+    let levels: Vec<f64> = (0..s.count)
+        .map(|i| {
+            let p = octaves[i];
+            let level = p.min(0.0) * (s.rise + s.soft_rise * soft.powi(3))
+                - p.max(0.0) * (s.fall + s.soft_fall * soft);
+            if hz_[i] < 16_000.0 { db(level) } else { 0.0 }
+        })
+        .collect();
+    let fades: Vec<f64> = octaves
+        .iter()
+        .map(|p| s.fade * 2f64.powf(p * s.fade_slope))
+        .collect();
+    let gain = vel.powf(s.gain) * db(s.level);
+    let sound = modes(net(impulse::<U1>()), &hz_, &levels, &fades) * (s.pluck * pizz * gain) as f32;
+    (sound, silent_after(&levels, &fades, s.pluck))
+}
+
+/// A bowed string played from figures fitted to its recordings partial by partial, which pizz: 1 plucks instead.
+/// Its loudness follows the recordings from one velocity to the next, `level` at vel 1, and a note softer than the softest recorded is quieter in proportion.
+fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, level: f64) -> Synth {
+    Synth::new(name)
+        .option(Spec::note("note").default(52.0).doc("The pitch; a change while the note holds slides to the new one."))
+        .option(
+            Spec::float("vel")
+                .default(0.6)
+                .range(0.0, 1.0)
+                .doc("How hard the string is bowed or plucked."),
+        )
+        .option(
+            Spec::float("pizz")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 plucks the string instead of bowing it."),
+        )
+        .option(
+            Spec::float("vibrato")
+                .default(0.25)
+                .range(0.0, 2.0)
+                .doc("The vibrato's depth in semitones, reached as the note holds; the recordings are played without one."),
+        )
+        .option(
+            Spec::float("legato")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 changes bow from a note still sounding: the string speaks at once, from where the recordings settle, instead of from silence."),
+        )
+        .options(Spec::envelope(1.0, 0.3))
+        .build(move |o, _ctx| {
+            let vel = o.number("vel").clamp(0.0, 1.0);
+            let pizz = o.number("pizz").clamp(0.0, 1.0);
+            let figures = figures();
+            let gain = level * (vel / figures.softest()).min(1.0);
+            let bowed = held_note(figures, gain, Some(o.number("vibrato")), o.number("legato"), o);
+            if pizz <= 0.0 {
+                return bowed;
+            }
+            let soft = ((1.0 - vel) / 0.7).max(0.0);
+            let (pluck, silent) = plucked(&s, hz(o.number("note")), vel, soft, pizz);
+            let end = if pizz >= 1.0 { silent } else { f64::INFINITY };
+            Note::envelope(bowed.sound * (1.0 - pizz) as f32 + pluck, o).within(end)
+        })
+}
+
+/// The cello's figures, fitted partial by partial to the University of Iowa's arco cello at pp, mf and ff.
+fn cello_figures() -> &'static Figures {
+    static FIGURES: OnceLock<Figures> = OnceLock::new();
+    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/cello.mxh")))
+}
+
+/// The cello's gain at vel 1, as loud at C3 at vel 1 as its bowed model, within 0.1 dB.
+const CELLO_LEVEL: f64 = 1.0;

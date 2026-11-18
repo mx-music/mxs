@@ -109,7 +109,7 @@ fn about(name: &str) -> &'static str {
             "A viola, bowed or plucked as the violin is, fitted to the University of Iowa's viola from C3 to Bb6."
         }
         "cello" => {
-            "A cello, bowed or plucked as the violin is, fitted to the University of Iowa's cello from C2 to Bb5."
+            "A cello, bowed or plucked, its bowed notes fitted partial by partial to the University of Iowa's arco cello at pp, mf and ff from C2 to Bb5, played there without vibrato, so its vibrato is a player's."
         }
         "double_bass" => {
             "A double bass at the pitch it sounds, bowed or plucked as the violin is, fitted to the University of Iowa's double bass from E1 to G4."

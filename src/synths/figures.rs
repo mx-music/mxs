@@ -1,6 +1,7 @@
 //! Synths that play figures fitted to recordings of struck notes partial by partial, as `mix mx.fit` writes them.
 //! Each partial is a sine whose level in dB runs in straight lines between fixed times after the strike, and falls at a last slope after them.
 //! The strike's noise is white noise through each band's filter, its power in straight lines between the same times.
+//! Figures of held notes, bowed, blown or played on an organ, hold each level after the last time until the note is let go, then fall at its slope, with the recordings' vibrato.
 
 use crate::nodes::hz;
 use crate::{Note, Options};
@@ -27,6 +28,15 @@ struct Recording {
     velocity: u8,
     partials: Vec<Partial>,
     noise: Vec<Shape>,
+    vibrato: Option<Vibrato>,
+}
+
+/// A held note's vibrato: the seconds it holds from, where its vibrato is full, its rate in Hz and its depth in cents either side.
+#[derive(Clone, Copy, Default)]
+pub(super) struct Vibrato {
+    pub settles: f64,
+    pub rate: f64,
+    pub depth: f64,
 }
 
 #[derive(Clone)]
@@ -34,6 +44,8 @@ struct Partial {
     ratio: f64,
     harmonic: u16,
     shape: Shape,
+    /// How far its level swings with the vibrato, in dB at its full depth, rising as the pitch does.
+    swing: f64,
 }
 
 /// A level in dB at each of the times, and its slope in dB a second after the last.
@@ -49,6 +61,8 @@ pub(super) struct Voice {
     times: Vec<f64>,
     partials: Vec<(f64, Shape)>,
     noise: Vec<((f64, f64), Shape)>,
+    swings: Vec<f64>,
+    vibrato: Option<Vibrato>,
 }
 
 struct Reader<'a> {
@@ -90,9 +104,15 @@ impl Reader<'_> {
 
 impl Figures {
     /// Reads figures as `mix mx.fit` writes them: "MXF1", the times, the noise bands, then each recording's note, velocity, partials and noise.
+    /// Figures of held notes start "MXH1", and give each recording's vibrato before its partials, and each partial's swing with it after its slope.
     pub fn read(bytes: &[u8]) -> Figures {
         let mut reader = Reader { bytes, at: 0 };
-        assert_eq!(&reader.take::<4>(), b"MXF1", "not figures of struck notes");
+        let magic = reader.take::<4>();
+        let held = &magic == b"MXH1";
+        assert!(
+            held || &magic == b"MXF1",
+            "not figures of struck or held notes"
+        );
         let count = reader.u16() as usize;
         let times: Vec<f64> = (0..count).map(|_| reader.f32()).collect();
         let bands = (0..reader.u16())
@@ -101,13 +121,28 @@ impl Figures {
         let recordings = (0..reader.u16())
             .map(|_| {
                 let (note, velocity) = (reader.u8(), reader.u8());
+                let vibrato = held.then(|| {
+                    let (settles, _release, rate, depth) =
+                        (reader.f32(), reader.f32(), reader.f32(), reader.f32());
+                    Vibrato {
+                        settles,
+                        rate,
+                        depth,
+                    }
+                });
                 let partials = (0..reader.u16())
                     .map(|_| {
                         let (ratio, harmonic) = (reader.f32(), reader.u16());
+                        let tail = reader.tenths();
+                        let swing = if held { reader.tenths() } else { 0.0 };
                         Partial {
                             ratio,
                             harmonic,
-                            shape: reader.shape(times.len()),
+                            shape: Shape {
+                                levels: (0..times.len()).map(|_| reader.tenths()).collect(),
+                                tail,
+                            },
+                            swing,
                         }
                     })
                     .collect();
@@ -117,6 +152,7 @@ impl Figures {
                     velocity,
                     partials,
                     noise,
+                    vibrato,
                 }
             })
             .collect();
@@ -216,6 +252,43 @@ impl Figures {
                 members = vec![from];
             }
         }
+        let swings = groups
+            .iter()
+            .map(|held| {
+                let total: f64 = held.iter().map(|(_, w)| w).sum();
+                held.iter().map(|(p, w)| p.swing * w).sum::<f64>() / total
+            })
+            .collect();
+        // The vibrato's rate is the weighted rate of the recordings that have one, its depth the weighted depth of all, so a soft recording with none narrows it.
+        let vibrato = nearest.iter().any(|(r, _)| r.vibrato.is_some()).then(|| {
+            let total: f64 = nearest.iter().map(|(_, w)| w).sum();
+            let each = |f: &dyn Fn(&Vibrato) -> f64| {
+                nearest
+                    .iter()
+                    .map(|(r, w)| r.vibrato.as_ref().map_or(0.0, f) * w)
+                    .sum::<f64>()
+                    / total
+            };
+            let swinging: f64 = nearest
+                .iter()
+                .filter(|(r, _)| r.vibrato.is_some_and(|v| v.depth > 0.0))
+                .map(|(_, w)| w)
+                .sum();
+            let rate = if swinging > 0.0 {
+                nearest
+                    .iter()
+                    .map(|(r, w)| r.vibrato.filter(|v| v.depth > 0.0).map_or(0.0, |v| v.rate) * w)
+                    .sum::<f64>()
+                    / swinging
+            } else {
+                0.0
+            };
+            Vibrato {
+                settles: each(&|v| v.settles),
+                rate,
+                depth: each(&|v| v.depth),
+            }
+        });
         let partials = groups
             .iter()
             .map(|held| {
@@ -248,6 +321,8 @@ impl Figures {
             times: self.times.clone(),
             partials,
             noise,
+            swings,
+            vibrato,
         }
     }
 }
@@ -692,6 +767,228 @@ impl AudioNode for Struck {
     }
 }
 
+/// A held note played from figures fitted to recordings of held notes: it holds until `hold` seconds or until its gate lets it go, then each partial and band falls at its slope.
+/// Its pitch follows `note` as it slides, and its vibrato, `vibrato` when given in place of the recordings', fades in until the note settles.
+/// With `legato` at 1 it speaks at once, from where the recordings settle.
+pub(super) fn held_note(
+    figures: &Figures,
+    gain: f64,
+    vibrato: Option<f64>,
+    legato: f64,
+    o: &Options,
+) -> Note {
+    let note = o.number("note");
+    let vel = o.number("vel").clamp(0.0, 1.0);
+    let mut voice = figures.voice(note, vel);
+    let skip = legato.clamp(0.0, 1.0) * voice.vibrato.map_or(0.0, |v| v.settles);
+    if let Some(depth) = vibrato {
+        // Recordings played without vibrato give it a player's: 5.4 Hz, full a second in.
+        let recorded = voice.vibrato.filter(|v| v.rate > 0.0).unwrap_or(Vibrato {
+            settles: 1.0,
+            rate: 5.4,
+            depth: 0.0,
+        });
+        voice.vibrato = Some(Vibrato {
+            depth: depth * 100.0,
+            ..recorded
+        });
+    }
+    let hold = o.number("attack") + o.number("decay") + o.number("sustain");
+    let falls = voice.falls();
+    let gate = shared(1.0);
+    let node = Sustained {
+        voice,
+        base: note,
+        hold,
+        gate: gate.clone(),
+        rate: DEFAULT_SR,
+        sines: vec![],
+        bands: vec![],
+        sample: 0,
+        let_go: None,
+        phase: 0.0,
+        skip,
+    };
+    let mut node = node;
+    node.set_sample_rate(DEFAULT_SR);
+    let sound = o.follow("note") >> Net::wrap(Box::new(An(node))) * gain as f32;
+    Note {
+        sound,
+        end: hold + falls,
+        release: Some((gate, falls)),
+    }
+}
+
+impl Voice {
+    /// The seconds every partial and band takes, once let go from its last level, to fall 100 dB under the loudest partial, at most 5.
+    fn falls(&self) -> f64 {
+        let loudest = self
+            .partials
+            .iter()
+            .flat_map(|(_, s)| s.levels.iter())
+            .cloned()
+            .fold(f64::MIN, f64::max);
+        let under = loudest - 100.0;
+        self.partials
+            .iter()
+            .map(|(_, s)| s)
+            .chain(self.noise.iter().map(|(_, s)| s))
+            .map(|s| {
+                let from = s.levels.iter().cloned().fold(f64::MIN, f64::max);
+                if from <= under || s.tail >= 0.0 {
+                    0.0
+                } else {
+                    (from - under) / -s.tail
+                }
+            })
+            .fold(0.05, f64::max)
+            .min(5.0)
+    }
+}
+
+#[derive(Clone)]
+struct Sustained {
+    voice: Voice,
+    base: f64,
+    hold: f64,
+    gate: Shared,
+    rate: f64,
+    sines: Vec<Sine>,
+    bands: Vec<Band>,
+    sample: usize,
+    let_go: Option<f64>,
+    phase: f64,
+    skip: f64,
+}
+
+impl Sustained {
+    // A held level at `t`: the shape's level until the note is let go, its last level after the last time, and falling at its slope after the letting go.
+    // A band's level runs in straight lines of power between the times, as the fit reads it.
+    fn level(&self, shape: &Shape, t: f64, power: bool) -> f64 {
+        let times = &self.voice.times;
+        let at = |t: f64| {
+            let last = times.len() - 1;
+            if t >= times[last] {
+                shape.levels[last]
+            } else if power {
+                10.0 * shape.power_at(times, t).max(1e-30).log10()
+            } else {
+                shape.at(times, t)
+            }
+        };
+        match self.let_go {
+            Some(go) if t > go => at(go + self.skip) + shape.tail * (t - go),
+            _ => at(t + self.skip),
+        }
+    }
+
+    // The levels and frequencies at the next reading, BLOCK samples on, for each sine and band to glide to, with the note at `note`.
+    fn read(&mut self, note: f64) {
+        let t = (self.sample + BLOCK) as f64 / self.rate;
+        if self.let_go.is_none() && (t >= self.hold || self.gate.value() <= 0.0) {
+            self.let_go = Some(t.min(self.hold.max(0.0)));
+        }
+        let vibrato = self.voice.vibrato.unwrap_or_default();
+        let swing = if vibrato.depth > 0.0 && vibrato.rate > 0.0 {
+            self.phase += 2.0 * std::f64::consts::PI * vibrato.rate * BLOCK as f64 / self.rate;
+            (t / vibrato.settles.max(0.05)).min(1.0) * self.phase.sin()
+        } else {
+            0.0
+        };
+        let ratio = 2f64.powf((note - self.base) / 12.0 + vibrato.depth * swing / 1200.0);
+        let gone = self.let_go.is_some_and(|go| t > go);
+        for k in 0..self.sines.len() {
+            if self.sines[k].done {
+                continue;
+            }
+            let (freq, shape) = &self.voice.partials[self.sines[k].shape];
+            let level =
+                self.level(shape, t, false) + self.voice.swings[self.sines[k].shape] * swing;
+            let omega =
+                2.0 * std::f64::consts::PI * (freq * ratio).min(0.49 * self.rate) / self.rate;
+            let sine = &mut self.sines[k];
+            sine.turn = (omega.cos(), omega.sin());
+            let target = (t / RISE).min(1.0) * 10f64.powf(level / 20.0);
+            sine.step = (target - sine.amplitude) / BLOCK as f64;
+            if level < -140.0 && gone {
+                sine.done = true;
+            }
+            let size = (sine.phasor.0 * sine.phasor.0 + sine.phasor.1 * sine.phasor.1).sqrt();
+            sine.phasor = (sine.phasor.0 / size, sine.phasor.1 / size);
+        }
+        for k in 0..self.bands.len() {
+            if self.bands[k].done {
+                continue;
+            }
+            let shape = &self.voice.noise[self.bands[k].shape].1;
+            let level = self.level(shape, t, true);
+            let band = &mut self.bands[k];
+            let rising = if t >= band.rise {
+                1.0
+            } else {
+                0.5 - 0.5 * (std::f64::consts::PI * t / band.rise).cos()
+            };
+            let target = rising * 10f64.powf(level / 20.0);
+            band.step = (target - band.amplitude) / BLOCK as f64;
+            if level < -140.0 && gone {
+                band.done = true;
+            }
+        }
+    }
+}
+
+impl AudioNode for Sustained {
+    const ID: u64 = 0x6d78_0071;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        let mut struck = Struck {
+            voice: self.voice.clone(),
+            rate: sample_rate,
+            sines: vec![],
+            bands: vec![],
+            sample: 0,
+        };
+        struck.set_sample_rate(sample_rate);
+        self.rate = sample_rate;
+        self.sample = 0;
+        self.let_go = None;
+        self.phase = 0.0;
+        self.sines = struck.sines;
+        self.bands = struck.bands;
+        self.sines.iter_mut().for_each(|s| s.amplitude = 0.0);
+        self.bands.iter_mut().for_each(|b| b.amplitude = 0.0);
+        self.read(self.base);
+    }
+
+    fn reset(&mut self) {
+        self.set_sample_rate(self.rate);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        if self.sample > 0 && self.sample.is_multiple_of(BLOCK) {
+            self.read(input[0] as f64);
+        }
+        let mut sum = 0.0;
+        for sine in self.sines.iter_mut().filter(|s| !s.done) {
+            sum += sine.amplitude * sine.phasor.1;
+            let (re, im) = sine.phasor;
+            sine.phasor = (
+                re * sine.turn.0 - im * sine.turn.1,
+                re * sine.turn.1 + im * sine.turn.0,
+            );
+            sine.amplitude += sine.step;
+        }
+        for band in self.bands.iter_mut().filter(|b| !b.done) {
+            sum += band.amplitude * band.filtered();
+            band.amplitude += band.step;
+        }
+        self.sample += 1;
+        [sum as f32].into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -707,6 +1004,7 @@ mod tests {
                 ratio: *ratio,
                 harmonic: *harmonic,
                 shape: shape(),
+                swing: 0.0,
             })
             .collect();
         Recording {
@@ -714,6 +1012,7 @@ mod tests {
             velocity: 127,
             partials,
             noise: vec![],
+            vibrato: None,
         }
     }
 

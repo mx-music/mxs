@@ -526,3 +526,65 @@ fn a_hundred_notes_of_each_struck_synth_played_from_figures_leave_nothing_soundi
         );
     }
 }
+
+fn cello(options: &[(&str, f64)], seconds: f64) -> Vec<f32> {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    engine
+        .play(&[(0.0, Event::note(None, "cello", options))])
+        .unwrap();
+    engine.render(seconds).unwrap().0
+}
+
+fn level(sound: &[f32], from: f64, to: f64) -> f64 {
+    let part = &sound[(from * RATE) as usize..(to * RATE) as usize];
+    let power = part.iter().map(|x| (*x as f64).powi(2)).sum::<f64>() / part.len() as f64;
+    10.0 * power.max(1e-30).log10()
+}
+
+#[test]
+fn a_cello_note_held_twice_as_long_as_its_recordings_holds_its_level_then_falls_once_let_go() {
+    // The University of Iowa's arco notes hold for one to four seconds.
+    let sound = cello(
+        &[
+            ("note", 48.0),
+            ("vel", 0.6),
+            ("sustain", 8.0),
+            ("vibrato", 0.0),
+        ],
+        10.0,
+    );
+    let (early, late) = (level(&sound, 2.0, 3.0), level(&sound, 7.0, 8.0));
+    assert!(
+        (early - late).abs() < 1.0,
+        "{early} dB early, {late} dB late"
+    );
+    let after = level(&sound, 9.5, 10.0);
+    assert!(late - after > 20.0, "{late} dB held, {after} dB after");
+}
+
+#[test]
+fn a_legato_cello_note_speaks_at_once() {
+    let options = |legato: f64| [("note", 48.0), ("vel", 0.6), ("legato", legato)];
+    let detached = level(&cello(&options(0.0), 1.0), 0.0, 0.03);
+    let slurred = level(&cello(&options(1.0), 1.0), 0.0, 0.03);
+    assert!(
+        slurred - detached > 6.0,
+        "{slurred} dB slurred, {detached} dB detached"
+    );
+}
+
+#[test]
+fn a_plucked_cello_note_rings_and_ends_by_itself() {
+    let sound = cello(
+        &[
+            ("note", 48.0),
+            ("vel", 0.6),
+            ("pizz", 1.0),
+            ("sustain", 30.0),
+        ],
+        12.0,
+    );
+    assert!(level(&sound, 0.0, 0.5) > -40.0);
+    assert!(level(&sound, 11.0, 12.0) < -100.0);
+}
