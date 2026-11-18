@@ -7,6 +7,7 @@ pub mod effects;
 mod engine;
 pub mod graph;
 pub mod keys;
+mod load;
 mod mixer;
 pub mod nodes;
 mod options;
@@ -17,6 +18,7 @@ pub mod synths;
 
 pub use device::{Device, Settings, devices};
 pub use engine::{Engine, Error, Event, Source, Target, VOICES};
+pub use load::Load;
 pub use options::{Context, Options};
 pub use sample::check as check_sample;
 pub use sample::check_bytes as check_sample_bytes;

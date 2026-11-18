@@ -10,6 +10,9 @@ pub(crate) struct Timing {
     /// System seconds since the Unix epoch, less the engine's seconds, at the same instant.
     offset: Option<f64>,
     last: u64,
+    first: Option<f64>,
+    /// The lowest offset read in this half second and in the one before, and the frame this one began at.
+    recent: (f64, f64, u64),
     /// Seconds from rendering a frame to the device playing it, as the device gives it.
     pub latency: Option<f64>,
 }
@@ -20,6 +23,8 @@ impl Timing {
             rate,
             offset: None,
             last: 0,
+            first: None,
+            recent: (f64::INFINITY, f64::INFINITY, 0),
             latency: None,
         }
     }
@@ -36,6 +41,19 @@ impl Timing {
         });
         self.last = frame;
         self.latency = latency;
+        self.first.get_or_insert(offset);
+        let (now, before, began) = self.recent;
+        self.recent = if (frame.saturating_sub(began)) as f64 > self.rate / 2.0 {
+            (offset, now, frame)
+        } else {
+            (now.min(offset), before, began)
+        };
+    }
+
+    /// Seconds the engine's clock has fallen behind the system's since the first callback, by the lowest offset read in the last half second to a second.
+    pub fn behind(&self) -> Option<f64> {
+        let (now, before, _) = self.recent;
+        self.first.map(|first| now.min(before) - first)
     }
 
     /// The system seconds at which the engine renders its `seconds`, once a callback has been seen.
@@ -104,6 +122,29 @@ mod tests {
             last = (truly - offset - frame as f64 / rate).abs();
         });
         assert!(last > 0.3, "{last}");
+    }
+
+    #[test]
+    fn a_gap_puts_the_clock_behind_by_its_length_within_a_second_while_the_mapping_takes_far_longer()
+     {
+        let rate = 48_000.0;
+        let mut timing = Timing::new(rate);
+        let (started, buffer, gap) = (1_800_000_000.0, 512u64, 0.05);
+        let mut frame = 0;
+        // Ten seconds of callbacks on time, then every callback after comes 50 ms late, as after a gap in the sound.
+        while frame < 480_000 {
+            timing.observe(frame, started + frame as f64 / rate, None);
+            frame += buffer;
+        }
+        assert!(timing.behind().unwrap().abs() < 1e-9);
+        while frame < 480_000 + 96_000 {
+            timing.observe(frame, started + gap + frame as f64 / rate, None);
+            frame += buffer;
+        }
+        assert!((timing.behind().unwrap() - gap).abs() < 1e-5);
+        let truly = started + gap + frame as f64 / rate;
+        let late = timing.engine(truly).unwrap() - frame as f64 / rate;
+        assert!((late - 0.048).abs() < 0.0005, "{late}");
     }
 
     #[test]

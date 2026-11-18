@@ -165,6 +165,17 @@ A change can also reach every sound of an effect chain, or one of its effects, t
 - `Engine::live_with_input` also opens the sound card's input, and `Event::Input` plays it through an effect chain.
 - `record_output` writes what the engine plays to a WAV file.
 
+## Whether the engine keeps up
+
+A live engine has to fill each buffer before the sound card needs it, and a buffer filled too late is heard as a gap.
+
+- `load` says how long filling took as a share of the time the buffers last, the mean and the worst since it was last called, and how many buffers were late and by how much. An offline engine has no deadline, so it counts none late, and still gives the shares, each stretch it renders counting as a buffer.
+- `warnings` says how many buffers were late since it was last called, beside the events that arrived after their time and the notes stolen.
+- `behind` says how many seconds the engine's clock has fallen behind the system's since it started, which is the gaps in the sound and the drift between the two clocks.
+
+After a gap, the engine's clock is behind for good, and `seconds_at` and `play_at` catch up with it by at most a millisecond a second.
+Until they have, an event given a system time plays late by what is left of the gap; `behind` shows the gap within a second.
+
 ## A synth of your own
 
 mx's synths are built only from what the crate makes public, so a synth of yours is written the same way and registered next to them.
@@ -242,6 +253,12 @@ cargo run --release --features keys --bin keys -- --synth piano --buffer 128
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --release --all-features
+```
+
+The checks of a live engine play through BlackHole 2ch, a virtual sound card, so that nothing is heard, and run only when asked for:
+
+```sh
+cargo test --release --test live -- --ignored --test-threads 1
 ```
 
 The synth and effect lists in the documentation are written from the code.

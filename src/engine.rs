@@ -2,6 +2,7 @@
 
 use crate::clock::Timing;
 use crate::device::{self, Format, Range, Settings};
+use crate::load::{Load, Meter};
 use crate::mixer::{
     CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices,
 };
@@ -269,6 +270,7 @@ pub struct Engine {
     warnings: Vec<String>,
     clock: Arc<AtomicU64>,
     voices: Arc<Voices>,
+    meter: Arc<Meter>,
     failed: Arc<AtomicBool>,
     lost: Arc<AtomicBool>,
     device: String,
@@ -290,6 +292,7 @@ impl Engine {
             garbage,
             clock,
             voices,
+            Meter::new(),
             Arc::new(AtomicBool::new(false)),
             Output::Offline(Box::new(mixer)),
         )
@@ -317,6 +320,7 @@ impl Engine {
             garbage,
             clock,
             voices,
+            Meter::new(),
             Arc::new(AtomicBool::new(false)),
             output,
         );
@@ -352,10 +356,12 @@ impl Engine {
         let mixing = clock.clone();
         let voices = Voices::new(VOICES);
         let limiting = voices.clone();
+        let meter = Meter::new();
+        let metering = meter.clone();
         // cpal's streams cannot move between threads on every platform, so one thread owns them until the engine is dropped.
         std::thread::spawn(move || {
             match open(
-                receiving, returning, mixing, limiting, failing, losing, &settings,
+                receiving, returning, mixing, limiting, metering, failing, losing, &settings,
             ) {
                 Ok((streams, opened)) => {
                     let _ = ready.send(Ok(opened));
@@ -377,6 +383,7 @@ impl Engine {
             garbage,
             clock,
             voices,
+            meter,
             failed,
             Output::Live { stop },
         );
@@ -393,6 +400,7 @@ impl Engine {
         garbage: rtrb::Consumer<Garbage>,
         clock: Arc<AtomicU64>,
         voices: Arc<Voices>,
+        meter: Arc<Meter>,
         failed: Arc<AtomicBool>,
         output: Output,
     ) -> Engine {
@@ -418,6 +426,7 @@ impl Engine {
             warnings: Vec::new(),
             clock,
             voices,
+            meter,
             failed,
             lost: Arc::new(AtomicBool::new(false)),
             device: String::new(),
@@ -559,8 +568,32 @@ impl Engine {
         self.samples.get(&sample).map(|data| data.channels.len())
     }
 
-    /// Values held to their ranges since the last call, once for each option, and how many notes were stolen to keep to the voice limit.
+    /// How long filling audio took against how long the audio lasts, and how many buffers a live engine filled too late for the sound card, since the last call.
+    /// An offline engine counts each stretch it renders as a buffer, a quarter second at most.
+    pub fn load(&mut self) -> Load {
+        self.meter.take()
+    }
+
+    /// Seconds the engine's clock has fallen behind the system's since it started: gaps in the sound, and the drift between the two clocks; a live engine knows it, an offline one does not.
+    /// After a gap, `seconds_at` catches up by at most a millisecond a second, so until then an event given a system time plays late by what is left of the gap.
+    pub fn behind(&self) -> Option<f64> {
+        self.timing().and_then(|t| t.behind())
+    }
+
+    /// Values held to their ranges since the last call, once for each option, how many notes were stolen to keep to the voice limit, how many events arrived after their time, and how many buffers reached the sound card late.
     pub fn warnings(&mut self) -> Vec<String> {
+        let (buffers, over) = self.meter.take_late();
+        if buffers > 0 {
+            let reached = if buffers == 1 {
+                "buffer reached"
+            } else {
+                "buffers reached"
+            };
+            let ms = over * 1000.0;
+            self.warnings.push(format!(
+                "{buffers} {reached} the sound card late, by up to {ms:.1} ms"
+            ));
+        }
         let late = self.voices.late.swap(0, Ordering::Relaxed);
         let most = self.voices.most_late.swap(0, Ordering::Relaxed);
         if late > 0 {
@@ -912,6 +945,7 @@ impl Engine {
     pub fn render(&mut self, seconds: f64) -> Result<(Vec<f32>, Vec<f32>), Error> {
         self.check_running()?;
         let frames = self.frames(seconds) as usize;
+        let (meter, rate) = (self.meter.clone(), self.rate);
         let Output::Offline(mixer) = &mut self.output else {
             return Err(Error::Live);
         };
@@ -925,7 +959,9 @@ impl Engine {
                 while mixer.recording_room() < left.len() {
                     std::thread::sleep(Duration::from_millis(1));
                 }
+                let began = Instant::now();
                 mixer.render(left, right);
+                meter.record(began.elapsed(), left.len(), rate, false);
             }
         }));
         self.drain();
@@ -1193,6 +1229,7 @@ fn open(
     garbage: rtrb::Producer<Garbage>,
     clock: Arc<AtomicU64>,
     voices: Arc<Voices>,
+    meter: Arc<Meter>,
     failed: Arc<AtomicBool>,
     lost: Arc<AtomicBool>,
     settings: &Settings,
@@ -1224,6 +1261,8 @@ fn open(
     let timing = Arc::new(Mutex::new(Timing::new(chosen.rate as f64)));
     let live = Live {
         mixer,
+        meter,
+        rate: chosen.rate as f64,
         failed,
         lost,
         frames,
@@ -1278,6 +1317,8 @@ struct Opened {
 /// What the output callback owns.
 struct Live {
     mixer: Mixer,
+    meter: Arc<Meter>,
+    rate: f64,
     failed: Arc<AtomicBool>,
     lost: Arc<AtomicBool>,
     frames: Arc<AtomicU64>,
@@ -1294,6 +1335,8 @@ where
 {
     let Live {
         mut mixer,
+        meter,
+        rate,
         failed,
         lost,
         frames,
@@ -1316,7 +1359,9 @@ where
                 if let Ok(mut timing) = timing.try_lock() {
                     timing.observe(frames.load(Ordering::Acquire), system, Some(latency));
                 }
-                fill(&mut mixer, &failed, data, channels, &mut left, &mut right)
+                let began = Instant::now();
+                fill(&mut mixer, &failed, data, channels, &mut left, &mut right);
+                meter.record(began.elapsed(), data.len() / channels, rate, true);
             },
             move |e| match e.kind() {
                 cpal::ErrorKind::DeviceNotAvailable => lost.store(true, Ordering::Release),

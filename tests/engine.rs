@@ -736,3 +736,30 @@ fn a_released_note_falls_silent_over_its_release_from_where_it_is() {
     );
     assert!(engine.warnings().is_empty());
 }
+
+#[test]
+fn an_offline_engine_says_the_share_of_time_its_buffers_took_and_counts_none_late() {
+    let mut engine = engine();
+    assert_eq!(engine.load(), mxs::Load::default());
+    assert_eq!(engine.behind(), None);
+    let notes: Vec<(f64, Event)> = (0..8)
+        .map(|i| {
+            (
+                i as f64 * 0.25,
+                Event::note(None, "piano", &[("note", 48.0 + i as f64)]),
+            )
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    engine.render(2.0).unwrap();
+    let load = engine.load();
+    assert_eq!(load.buffers, 8);
+    assert!(load.mean > 0.0 && load.worst >= load.mean, "{load:?}");
+    // A debug build fills slower than the sound lasts.
+    if !cfg!(debug_assertions) {
+        assert!(load.worst < 1.0, "{load:?}");
+    }
+    assert_eq!((load.late, load.most_over), (0, 0.0));
+    assert_eq!(engine.load(), mxs::Load::default());
+    assert!(engine.warnings().is_empty());
+}
