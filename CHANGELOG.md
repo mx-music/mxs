@@ -1,5 +1,13 @@
 # Changelog for mxs v0.1
 
+## v0.1.5 (2026-11-18)
+
+### 1. Enhancements
+
+  * [synths] A fitted synth plays each noise band as loud at any sample rate as at 48 kHz, the rate its figures' noise gains are written for; figures fitted to recordings at another rate were up to 4.6 dB too quiet in a band, and NSynth's, at 16 kHz, gain from a refit
+  * [synths] Refit `electric_bass` with its noise gains written for 48 kHz, so its strike plays the noise of its recordings
+  * [synths] A fitted synth works out each noise band's gain and warmed filters once for each band and rate, shared by every instrument, so a note builds in about 0.1 ms instead of 3 to 5 ms, with the same samples
+
 ## v0.1.4 (2026-11-18)
 
 ### 1. Enhancements
