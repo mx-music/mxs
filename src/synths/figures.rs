@@ -6,6 +6,8 @@
 use crate::nodes::hz;
 use crate::{Note, Options};
 use fundsp::prelude::*;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 
 /// The seconds over which a sine rises at its start.
 const RISE: f64 = 0.001;
@@ -647,6 +649,35 @@ fn noise_scale(low: f64, high: f64, rate: f64) -> f64 {
     (response_energy(band_filter(low, high, NOISE_RATE)) / response_energy(band_filter(low, high, rate))).sqrt()
 }
 
+/// A band's noise gain and its filters once warmed, by its edges, its place among the bands and the rate, which every note of an instrument shares.
+static WARMED: LazyLock<Mutex<HashMap<(u64, u64, usize, u64), Band>>> =
+    LazyLock::new(Default::default);
+
+// The band `k` of a voice, its filters warmed on noise so it starts as a recording's would; the
+// first voice at a rate works it out and every later one takes it.
+fn warmed(k: usize, low: f64, high: f64, rate: f64) -> Band {
+    let key = (low.to_bits(), high.to_bits(), k, rate.to_bits());
+    if let Some(band) = WARMED.lock().unwrap().get(&key) {
+        return band.clone();
+    }
+    let mut band = Band {
+        shape: k,
+        filter: band_filter(low, high, rate),
+        state: [[0.0; 4]; 4],
+        noise: 0x9e37_79b9_7f4a_7c15 ^ (k as u64 + 1).wrapping_mul(0xbf58_476d_1ce4_e5b9),
+        rise: (1.0 / (high - low)).clamp(0.002, 0.02),
+        scale: noise_scale(low, high, rate),
+        amplitude: 0.0,
+        step: 0.0,
+        done: false,
+    };
+    for _ in 0..(WARM * rate) as usize {
+        band.filtered();
+    }
+    WARMED.lock().unwrap().insert(key, band.clone());
+    band
+}
+
 /// The sum of the squares of the filters' response to an impulse.
 fn response_energy(filter: [[f64; 5]; 4]) -> f64 {
     let mut state = [[0.0; 4]; 4];
@@ -750,32 +781,17 @@ impl AudioNode for Struck {
                 }
             })
             .collect();
+        // Every band is warmed, silent or not, so the instrument's first note readies the bands
+        // its other notes sound.
         self.bands = self
             .voice
             .noise
             .iter()
             .enumerate()
-            .filter(|(_, ((_, high), shape))| {
-                *high < sample_rate / 2.0 && shape.levels.iter().any(|l| *l > SILENT)
-            })
-            .map(|(k, ((low, high), _))| {
-                let mut band = Band {
-                    shape: k,
-                    filter: band_filter(*low, *high, sample_rate),
-                    state: [[0.0; 4]; 4],
-                    noise: 0x9e37_79b9_7f4a_7c15
-                        ^ (k as u64 + 1).wrapping_mul(0xbf58_476d_1ce4_e5b9),
-                    rise: (1.0 / (high - low)).clamp(0.002, 0.02),
-                    scale: noise_scale(*low, *high, sample_rate),
-                    amplitude: 0.0,
-                    step: 0.0,
-                    done: false,
-                };
-                for _ in 0..(WARM * sample_rate) as usize {
-                    band.filtered();
-                }
-                band
-            })
+            .filter(|(_, ((_, high), _))| *high < sample_rate / 2.0)
+            .map(|(k, ((low, high), shape))| (warmed(k, *low, *high, sample_rate), shape))
+            .filter(|(_, shape)| shape.levels.iter().any(|l| *l > SILENT))
+            .map(|(band, _)| band)
             .collect();
         self.read();
     }
@@ -1510,5 +1526,71 @@ mod noise_rate {
                 assert!((other - at).abs() < 0.3, "{low}-{high} Hz at {rate}: {other:.2} dB against {at:.2}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod build_time {
+    use crate::options::{Context, Options};
+    use crate::spec::Value;
+    use fundsp::prelude::*;
+    use std::time::Instant;
+
+    fn build(synth: &crate::Synth, note: f64, rate: f64) -> crate::Note {
+        let given = [
+            ("note".to_string(), Value::Number(note)),
+            ("vel".to_string(), Value::Number(0.7)),
+        ];
+        let (values, _) = crate::engine::checked(&synth.name, &synth.specs, &given).unwrap();
+        let options = Options::new(
+            synth.name.as_str().into(),
+            synth.specs.clone().into(),
+            values,
+        );
+        let mut note = (synth.build)(&options, &mut Context::new(synth.name.as_str().into()));
+        note.sound.set_sample_rate(rate);
+        note.sound.allocate();
+        note
+    }
+
+    fn synth(name: &str) -> crate::Synth {
+        crate::synths::all()
+            .into_iter()
+            .find(|s| s.name == name)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_fitted_note_after_the_first_builds_in_under_0_3_ms() {
+        for name in ["piano", "cello", "marimba", "electric_piano"] {
+            let synth = synth(name);
+            build(&synth, 60.0, 48_000.0);
+            let notes = [48.0, 55.0, 62.0, 69.0, 76.0];
+            let start = Instant::now();
+            for note in notes {
+                build(&synth, note, 48_000.0);
+            }
+            let each = start.elapsed().as_secs_f64() * 1000.0 / notes.len() as f64;
+            assert!(each < 0.3, "a {name} note builds in {each:.3} ms");
+        }
+    }
+
+    #[test]
+    fn a_fitted_note_built_from_the_bands_kept_sounds_as_the_first_did() {
+        // A rate no other test plays, so the first note works its bands out.
+        let rate = 37_000.0;
+        let render = || {
+            let mut note = build(&synth("marimba"), 48.0, rate);
+            let mut frame = vec![0.0; note.sound.outputs()];
+            (0..rate as usize)
+                .flat_map(|_| {
+                    note.sound.tick(&[], &mut frame);
+                    frame.clone()
+                })
+                .collect::<Vec<f32>>()
+        };
+        let first = render();
+        assert!(first.iter().any(|s| s.abs() > 1e-4));
+        assert_eq!(render(), first);
     }
 }
