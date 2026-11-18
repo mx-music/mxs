@@ -1,5 +1,14 @@
 # Changelog for mxs v0.1
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [docs] Add guides, in `docs/guide` and in the crate's documentation as the `guide` module, each with diagrams and programs that run as tests: how the engine is built, events and the life of a note, effects and parts, time, reports, playing live, a synth or an effect of your own, and samples, input and recording
+  * [docs] `Engine` lists its calls by what they are for, the `graph` module lists the calls a graph is made of, and the items the documentation names are links
+  * [examples] Add `phrase`, `parts`, `own_synth`, `sample` and `beats`, each of which plays live or renders into a WAV file
+  * [synths] Add `flute_figured`, a flute played from figures fitted partial by partial to the University of Iowa's flute, with slurs, tongued notes and breaths; it is temporary, to compare with `flute`
+
 ## v0.1.3 (2026-11-18)
 
 ### 1. Enhancements

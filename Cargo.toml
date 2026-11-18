@@ -2,9 +2,10 @@
 name = "mxs"
 version = "0.1.3"
 edition = "2024"
-description = "A sound engine on FunDSP, with 92 synths and 17 effects"
+description = "A sound engine on FunDSP, with synths fitted to recordings of real instruments"
 license = "MIT"
 repository = "https://github.com/mx-music/mxs"
+exclude = [".cargo"]
 
 [dependencies]
 claxon = "0.4"
@@ -17,6 +18,10 @@ stacker = "0.1.25"
 
 [features]
 keys = ["dep:midir"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--html-in-header", "docs/mermaid.html"]
 
 [[bin]]
 name = "keys"

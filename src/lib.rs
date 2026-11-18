@@ -1,3 +1,15 @@
+// The README links its guides and catalogs by file; the first definition of a link wins, so these point the same links at the modules here.
+//! [architecture]: guide::architecture
+//! [events]: guide::events
+//! [signal_path]: guide::signal_path
+//! [time]: guide::time
+//! [reports]: guide::reports
+//! [live]: guide::live
+//! [building]: guide::building
+//! [samples]: guide::samples
+//! [synths]: synths
+//! [effects]: effects
+//!
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
@@ -6,6 +18,7 @@ mod device;
 pub mod effects;
 mod engine;
 pub mod graph;
+pub mod guide;
 pub mod keys;
 mod load;
 mod mixer;
@@ -31,5 +44,5 @@ pub use spec::{Kind, Spec, Value};
 pub use synth::{Effect, EffectDecl, Note, Synth, SynthDecl};
 pub use time::Tempo;
 
-/// The rate mx plays and renders at.
+/// The rate an offline engine is usually made with, in frames a second; a live engine runs at its device's.
 pub const RATE: f64 = 48_000.0;
