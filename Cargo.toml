@@ -1,6 +1,6 @@
 [package]
 name = "mxs"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "A sound engine on FunDSP, with synths fitted to recordings of real instruments"
 license = "MIT"
