@@ -2,7 +2,7 @@
 //! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, and the swell in.
 
 use super::common::{harmonics, net, silent_after};
-use super::figures::{held_note, Figures};
+use super::figures::{Figures, held_note};
 use crate::nodes::modes;
 use crate::nodes::{db, hz, pink_noise, shape, shape_node};
 use crate::synth::SynthDecl;
@@ -376,11 +376,7 @@ fn plucked(s: &Bowed, freq: f64, vel: f64, soft: f64, pizz: f64) -> (Net, f64) {
             let p = octaves[i];
             let level = p.min(0.0) * (s.rise + s.soft_rise * soft.powi(3))
                 - p.max(0.0) * (s.fall + s.soft_fall * soft);
-            if hz_[i] < 16_000.0 {
-                db(level)
-            } else {
-                0.0
-            }
+            if hz_[i] < 16_000.0 { db(level) } else { 0.0 }
         })
         .collect();
     let fades: Vec<f64> = octaves

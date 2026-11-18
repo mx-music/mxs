@@ -853,7 +853,8 @@ pub(super) fn held_note(
     let mut node = node;
     node.deepen = node.vary();
     node.set_sample_rate(DEFAULT_SR);
-    let sound = (o.follow("note") | o.follow("vel")) >> Net::wrap(Box::new(An(node))) * gain as f32;
+    let sound =
+        (o.follow("note") | o.follow("vel")) >> (Net::wrap(Box::new(An(node))) * gain as f32);
     Note {
         sound,
         end: hold + falls,
