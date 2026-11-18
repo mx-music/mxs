@@ -353,10 +353,10 @@ impl Voice {
         }
     }
 
-    /// Each partial louder or quieter by `by` of its place from the lowest, in dB.
-    pub fn vary(&mut self, by: impl Fn(usize) -> f64) {
-        for (i, (_, shape)) in self.partials.iter_mut().enumerate() {
-            let change = by(i);
+    /// Each partial louder or quieter by `by` of its frequency, in dB.
+    pub fn vary(&mut self, by: impl Fn(f64) -> f64) {
+        for (hz, shape) in &mut self.partials {
+            let change = by(*hz);
             shape.levels.iter_mut().for_each(|level| *level += change);
         }
     }

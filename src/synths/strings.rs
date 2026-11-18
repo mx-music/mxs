@@ -446,22 +446,22 @@ fn piano_pedal_figures() -> &'static Figures {
 }
 
 /// The piano's gain at vel 1, as loud at C4 as the version measured band by band.
-const PIANO_LEVEL: f64 = 2.1;
+const PIANO_LEVEL: f64 = 0.2034;
 /// The gain of the figures with the pedal down against those without, so C4 at vel 1 with the pedal is as loud as the version measured band by band.
-const PEDAL_LEVEL: f64 = 0.834;
+const PEDAL_LEVEL: f64 = 1.21;
 /// How the piano grows louder with vel, as the version measured band by band did.
 const PIANO_GROWTH: f64 = 2.62;
 /// The most a partial of a key not recorded stands from the keys either side at `uneven: 1`, in dB, so the median is half of it, as the Steinway's keys stand from their neighbours.
 const UNEVEN: f64 = 10.0;
-/// How much quieter the keys from C3 down play than the recordings, brought to one level, give them, in dB, so their strikes peak under full scale; the trim eases off up to C4.
-const BASS_TRIM: f64 = -4.0;
-/// How much quieter each key above C4 plays per semitone, in dB, to the most of TREBLE_MOST, so the treble stands under C4 as it did before the refit.
-const TREBLE_TRIM: f64 = -0.2;
-const TREBLE_MOST: f64 = -7.0;
+/// How much quieter the keys from C3 down play, in dB, so a single strike peaks under full scale with the pedal down; the trim eases off up to C4.
+const BASS_TRIM: f64 = -2.0;
+/// How much quieter each key above C4 plays per semitone, in dB, to the most of TREBLE_MOST, so the treble stands under C4 at vel 0.6 as it did before the refit, within 4 dB.
+const TREBLE_TRIM: f64 = -0.6;
+const TREBLE_MOST: f64 = -20.0;
 /// The frequency under which the strike's noise is the hammer's knock, in Hz.
 const KNOCK_UNDER: f64 = 600.0;
 
-/// What a piano note with `options` plays with its pedal up at 0 or down at 1, and its gain: its recordings are brought to the same level, so a velocity carries the energy vel 1 has and plays louder by vel alone.
+/// What a piano note with `options` plays with its pedal up at 0 or down at 1, and its gain: its recordings are brought to the same peak, which leaves a key with a sharp strike weaker than the next, so every key at every velocity carries the same energy in its partials over their first half second, its differences from `uneven` included, and plays louder by vel alone.
 fn piano_voice(options: &Options, down: f64) -> (Voice, f64) {
     let figures = if down > 0.0 {
         piano_pedal_figures()
@@ -471,14 +471,18 @@ fn piano_voice(options: &Options, down: f64) -> (Voice, f64) {
     let note = options.number("note");
     let vel = options.number("vel");
     let mut voice = figures.voice(note, vel);
-    let loudness = (figures.voice(note, 1.0).energy() / voice.energy()).sqrt();
     voice.bend(options.number("aftersound") / 0.5);
     voice.noise_under(KNOCK_UNDER, options.number("knock"));
     if !figures.recorded(note) {
         let uneven = options.number("uneven");
         let instrument = options.number("instrument");
-        voice.vary(|i| uneven * UNEVEN * vary(instrument, note, i as f64, 0));
+        let pitch = hz(note);
+        voice.vary(|partial_hz| {
+            uneven * UNEVEN * vary(instrument, note, (4.0 * partial_hz / pitch).round(), 0)
+        });
     }
+    // The partials alone: the noise's estimated energy runs up to 4 dB over what the bands play.
+    let evened = voice.energy().sqrt().recip();
     let trim = db(BASS_TRIM * ((60.0 - note) / 12.0).clamp(0.0, 1.0)
         + (TREBLE_TRIM * (note - 60.0).max(0.0)).max(TREBLE_MOST));
     let level = if down > 0.0 {
@@ -486,7 +490,7 @@ fn piano_voice(options: &Options, down: f64) -> (Voice, f64) {
     } else {
         PIANO_LEVEL
     };
-    (voice, level * vel.powf(PIANO_GROWTH) * loudness * trim)
+    (voice, level * vel.powf(PIANO_GROWTH) * evened * trim)
 }
 
 /// What a piano note is made of, worked out from its options before any sound exists: the piano plays a note from these and nothing else.
