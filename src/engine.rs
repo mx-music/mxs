@@ -2479,6 +2479,7 @@ fn open(
     let inputs = input.as_ref().map_or(0, |i| i.channels);
     let frames = clock.clone();
     let mut mixer = Mixer::new(commands, garbage, clock, voices, input);
+    let following = hub.clone();
     let (tap, tapped) = report::tap(hub, chosen.rate as f64);
     mixer.report_to(tap);
     let timing = Arc::new(Mutex::new(Timing::new(chosen.rate as f64)));
@@ -2490,6 +2491,7 @@ fn open(
         lost,
         frames,
         timing: timing.clone(),
+        hub: following,
     };
     let config = cpal::StreamConfig {
         channels: chosen.channels,
@@ -2548,6 +2550,7 @@ struct Live {
     lost: Arc<AtomicBool>,
     frames: Arc<AtomicU64>,
     timing: Arc<Mutex<Timing>>,
+    hub: Arc<Hub>,
 }
 
 fn output_stream<T>(
@@ -2566,8 +2569,10 @@ where
         lost,
         frames,
         timing,
+        hub,
     } = live;
     let channels = config.channels as usize;
+    let (moving, moved_frames) = (timing.clone(), frames.clone());
     let mut left = vec![0.0f32; 16384];
     let mut right = vec![0.0f32; 16384];
     device
@@ -2590,11 +2595,52 @@ where
             },
             move |e| match e.kind() {
                 cpal::ErrorKind::DeviceNotAvailable => lost.store(true, Ordering::Release),
+                cpal::ErrorKind::DeviceChanged => {
+                    follow(hub.clone(), moving.clone(), moved_frames.clone(), rate)
+                }
                 _ => eprintln!("mxs output: {e}"),
             },
             None,
         )
         .map_err(|e| e.to_string())
+}
+
+/// Once the engine has played a tenth of a second on the system's new default output, lines its clock up with the system's again and reports the new output.
+// The move holds the callbacks up for about 100 ms, and the clock otherwise rises to meet that by a millisecond a second.
+fn follow(hub: Arc<Hub>, timing: Arc<Mutex<Timing>>, frames: Arc<AtomicU64>, rate: f64) {
+    std::thread::spawn(move || {
+        let from = frames.load(Ordering::Acquire) + (rate / 10.0) as u64;
+        let waiting = Instant::now();
+        while frames.load(Ordering::Acquire) < from {
+            if waiting.elapsed() > Duration::from_secs(2) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut held = timing.lock().unwrap_or_else(|e| e.into_inner());
+        held.restart();
+        let delay_ms = held.latency.map(|seconds| seconds * 1000.0);
+        drop(held);
+        let seconds = frames.load(Ordering::Acquire) as f64 / rate;
+        let device = device::output(&cpal::default_host(), None).ok();
+        let name = device.as_ref().map(device::name_of);
+        hub.keep(Report::Output {
+            seconds,
+            device: name.clone(),
+            rate,
+            delay_ms,
+        });
+        let theirs = device
+            .and_then(|device| device.default_output_config().ok())
+            .map(|config| config.sample_rate() as f64)
+            .filter(|theirs| *theirs != rate);
+        if let (Some(name), Some(theirs)) = (name, theirs) {
+            hub.warn(
+                seconds,
+                format!("{name} plays at {theirs} Hz and the engine at {rate} Hz, so the system converts between them"),
+            );
+        }
+    });
 }
 
 fn open_input(

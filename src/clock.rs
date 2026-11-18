@@ -50,6 +50,11 @@ impl Timing {
         };
     }
 
+    /// Forgets the offset, so that the next frame observed sets it again, as on another device.
+    pub fn restart(&mut self) {
+        self.offset = None;
+    }
+
     /// Seconds the engine's clock has fallen behind the system's since the first callback, by the lowest offset read in the last half second to a second.
     pub fn behind(&self) -> Option<f64> {
         let (now, before, _) = self.recent;
@@ -145,6 +150,23 @@ mod tests {
         let truly = started + gap + frame as f64 / rate;
         let late = timing.engine(truly).unwrap() - frame as f64 / rate;
         assert!((late - 0.048).abs() < 0.0005, "{late}");
+    }
+
+    #[test]
+    fn after_a_restart_the_next_frame_observed_maps_the_clock_however_late_it_comes() {
+        let rate = 48_000.0;
+        let mut timing = Timing::new(rate);
+        let (started, buffer, gap) = (1_800_000_000.0, 512u64, 0.1);
+        let mut frame = 0;
+        while frame < 480_000 {
+            timing.observe(frame, started + frame as f64 / rate, None);
+            frame += buffer;
+        }
+        timing.restart();
+        timing.observe(frame, started + gap + frame as f64 / rate, Some(0.012));
+        let late =
+            timing.engine(started + gap + frame as f64 / rate).unwrap() - frame as f64 / rate;
+        assert!(late.abs() < 1e-6, "{late}");
     }
 
     #[test]

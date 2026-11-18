@@ -31,6 +31,10 @@ fn main() -> Result<(), mxs::Error> {
 - The engine runs at the device's rate, which [`Engine::rate`] gives. It need not be [`RATE`], the rate an offline engine is usually made with.
 - A smaller buffer shortens the delay from a note to its sound, and leaves the engine less time to fill each buffer.
 - The engine writes 32-bit float samples when the device takes them, and 24-bit or 16-bit ones otherwise.
+- An engine started without a named device follows the system's default output: when headphones are plugged in or another output is chosen, its sound moves there after a gap of about 100 ms, and the notes handed over keep their times.
+- After such a move, a [`Topic::Output`] report names the new device and its delay, within half a second, and the clock reports line the engine's seconds up with the system clock again.
+- The engine keeps its rate through a move, and the system converts it to the new device's rate when the two differ, which [`Engine::warnings`] then says.
+- An engine started on a named device stays on it, and calls on it are refused with [`Error::DeviceLost`] once that device goes away.
 
 ## How far ahead to hand a note over
 
