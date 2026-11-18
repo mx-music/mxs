@@ -45,6 +45,7 @@ const fn cone(bell: f32, air: f32, slur: [f32; 2], drift: [f32; 3]) -> Bore {
 pub fn all() -> Vec<Synth> {
     vec![
         flute(),
+        flute_figured(),
         reed_wind(
             "clarinet",
             5.0,
@@ -1071,6 +1072,60 @@ fn flute() -> Synth {
             Note::envelope((jet >> (tone | hiss) >> Net::wrap(Box::new(join::<U2>()))) * quiet, o)
         })
 }
+
+/// The flute's figures, fitted partial by partial to the University of Iowa's flute played with vibrato at pp, mf and ff.
+fn flute_figures() -> &'static super::figures::Figures {
+    static FIGURES: std::sync::OnceLock<super::figures::Figures> = std::sync::OnceLock::new();
+    FIGURES.get_or_init(|| super::figures::Figures::read(include_bytes!("figures/flute.mxh")))
+}
+
+/// A flute played from figures fitted to its recordings partial by partial, a change of note a slur to the new note's figures, its loudness following vel as the recordings' loudest partial does.
+fn flute_figured() -> Synth {
+    Synth::new("flute_figured")
+        .option(
+            Spec::note("note")
+                .default(72.0)
+                .doc("The pitch; a change while the note holds slurs to the new one."),
+        )
+        .option(
+            Spec::float("vel").default(0.6).range(0.0, 1.0).doc(
+                "How hard the flute is blown; a change while the note holds swells or eases it.",
+            ),
+        )
+        .option(
+            Spec::float("vibrato")
+                .range(0.0, 2.0)
+                .doc("The vibrato's depth in semitones, in place of the recordings'."),
+        )
+        .option(Spec::float("inhale").default(0.0).range(0.0, 1.0).doc(
+            "1 takes a breath once the note is let go, as a player does at the end of a phrase.",
+        ))
+        .options(Spec::envelope(0.5, 0.2))
+        .build(|o, ctx| {
+            let figures = flute_figures();
+            // A slur dips the partials 1 dB, and the vibrato's depth spreads from note to note as a played Syrinx's does, 4 to 13 cents between its quartiles.
+            let breath = super::figures::Breath {
+                wander: 0.5,
+                wander_above: 1.5,
+                catch: 1.0,
+                vary: 0.6,
+                inhale: o.number("inhale") >= 0.5,
+                even: 1.0,
+                seed: ctx.seed(),
+            };
+            super::figures::held_note(
+                figures,
+                FLUTE_FIGURED_LEVEL,
+                o.given("vibrato"),
+                0.0,
+                Some(breath),
+                o,
+            )
+        })
+}
+
+/// The figured flute's gain at vel 1, as loud as the flute playing the same Sarabande.
+const FLUTE_FIGURED_LEVEL: f64 = 3.4;
 
 /// A reed or brass wind's bore and how it is played.
 struct Bore {

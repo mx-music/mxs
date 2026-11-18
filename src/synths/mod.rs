@@ -117,6 +117,9 @@ fn about(name: &str) -> &'static str {
         "flute" => {
             "A flute, a model of an air jet at the end of a bore, so a change of note is a slur on the same breath. Fitted to the University of Iowa's flute from B3 to Db7 and VSCO 2's flute."
         }
+        "flute_figured" => {
+            "A flute played from figures fitted partial by partial to the University of Iowa's flute; temporary, to compare with the flute."
+        }
         "clarinet" => {
             "A Bb clarinet at the pitch it sounds, a model of a reed on a bore, fitted to the University of Iowa's Bb clarinet from D3 to C7."
         }

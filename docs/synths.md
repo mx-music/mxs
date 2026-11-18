@@ -5,7 +5,7 @@
 | Basic waveforms | [`saw`](#saw), [`square`](#square), [`tri`](#tri), [`pulse`](#pulse), [`noise`](#noise), [`fm`](#fm), [`pluck`](#pluck), [`supersaw`](#supersaw), [`acid`](#acid), [`brass`](#brass) |
 | Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`deep_bass`](#deep_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura), [`electric_piano`](#electric_piano), [`electric_guitar`](#electric_guitar) |
 | Bowed strings | [`violin`](#violin), [`viola`](#viola), [`cello`](#cello), [`double_bass`](#double_bass) |
-| Winds | [`flute`](#flute), [`clarinet`](#clarinet), [`oboe`](#oboe), [`bassoon`](#bassoon), [`tenor_sax`](#tenor_sax), [`trumpet`](#trumpet), [`trombone`](#trombone), [`horn`](#horn), [`tuba`](#tuba) |
+| Winds | [`flute`](#flute), [`flute_figured`](#flute_figured), [`clarinet`](#clarinet), [`oboe`](#oboe), [`bassoon`](#bassoon), [`tenor_sax`](#tenor_sax), [`trumpet`](#trumpet), [`trombone`](#trombone), [`horn`](#horn), [`tuba`](#tuba) |
 | Organs and reeds | [`organ`](#organ), [`harmonium`](#harmonium), [`accordion`](#accordion) |
 | Tuned percussion | [`marimba`](#marimba), [`vibraphone`](#vibraphone), [`xylophone`](#xylophone), [`glockenspiel`](#glockenspiel), [`timpani`](#timpani) |
 | Drums | [`berimbau`](#berimbau), [`kick`](#kick), [`snare`](#snare), [`clap`](#clap), [`crash`](#crash), [`ride`](#ride), [`closed_hihat`](#closed_hihat), [`open_hihat`](#open_hihat), [`low_tom`](#low_tom), [`mid_tom`](#mid_tom), [`high_tom`](#high_tom), [`rimshot`](#rimshot), [`cross_stick`](#cross_stick), [`pedal_hihat`](#pedal_hihat), [`cowbell`](#cowbell), [`clave`](#clave), [`low_agogo`](#low_agogo), [`high_agogo`](#high_agogo), [`ganza`](#ganza), [`shaker`](#shaker), [`low_conga`](#low_conga), [`mid_conga`](#mid_conga), [`high_conga`](#high_conga), [`low_timbale`](#low_timbale), [`high_timbale`](#high_timbale), [`timbale_shell`](#timbale_shell), [`guiro`](#guiro), [`triangle`](#triangle), [`tambourine`](#tambourine), [`tambourine_shake`](#tambourine_shake), [`cabasa`](#cabasa), [`cajon`](#cajon), [`low_bongo`](#low_bongo), [`high_bongo`](#high_bongo), [`pandeiro`](#pandeiro), [`surdo`](#surdo), [`cuica`](#cuica), [`tamborim`](#tamborim), [`caxixi`](#caxixi), [`pandeiro_thumb`](#pandeiro_thumb), [`pandeiro_heel`](#pandeiro_heel), [`pandeiro_slap`](#pandeiro_slap), [`pandeiro_jingles`](#pandeiro_jingles), [`tabla`](#tabla), [`tabla_na`](#tabla_na), [`tabla_tun`](#tabla_tun), [`tabla_te`](#tabla_te), [`tabla_tas`](#tabla_tas), [`tabla_ghe`](#tabla_ghe), [`tabla_ke`](#tabla_ke) |
@@ -409,6 +409,19 @@ A flute, a model of an air jet at the end of a bore, so a change of note is a sl
 | `tuned` | a number, 0 to 3 |  | The breath at which the jet crosses to the edge in half a period, in place of the mf breath; 0 holds it there. |
 | `pulse` | a number, 0 to 1 |  | How much the hiss follows the jet across the edge, from 0 steady to 1 only on one side, in place of the one fitted; for fitting. |
 | `even` | a number, 0 to 4 |  | The part of the square of the jet's sound in the output, in place of the one fitted; for fitting. |
+
+It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
+
+### `flute_figured`
+
+A flute played from figures fitted partial by partial to the University of Iowa's flute; temporary, to compare with the flute.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 72 | The pitch; a change while the note holds slurs to the new one. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the flute is blown; a change while the note holds swells or eases it. |
+| `vibrato` | a number, 0 to 2 |  | The vibrato's depth in semitones, in place of the recordings'. |
+| `inhale` | a number, 0 to 1 | 0 | 1 takes a breath once the note is let go, as a player does at the end of a phrase. |
 
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 

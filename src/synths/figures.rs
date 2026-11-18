@@ -15,6 +15,30 @@ const SILENT: f64 = -160.0;
 const WARM: f64 = 0.1;
 /// The samples between two readings of the levels, which glide in straight lines in between.
 const BLOCK: usize = 16;
+/// The seconds over which a slur moves each partial to the new note's level.
+const SLUR: f64 = 0.015;
+/// The seconds a slur's catch lasts, as the breath settles on the new note.
+const CATCH: f64 = 0.04;
+/// How much faster a tongued note runs through its recorded attack than a note started from rest, as a played Syrinx's tongued notes stand 3 dB under for 30 ms at the median.
+const TONGUE: f64 = 2.5;
+/// A breath taken after a phrase, as a played Syrinx's ten breaths: 450 ms at the median, 46 dB under the loudest notes, which is 40 dB under the held note it follows, its power in octaves from 100 Hz to 16 kHz in dB against its whole.
+const INHALE: f64 = 0.45;
+const INHALE_UNDER: f64 = 40.0;
+const INHALE_OCTAVES: [(f64, f64, f64); 7] = [
+    (100.0, 250.0, -34.0),
+    (250.0, 500.0, -15.0),
+    (500.0, 1000.0, -6.0),
+    (1000.0, 2000.0, -4.0),
+    (2000.0, 4000.0, -10.0),
+    (4000.0, 8000.0, -16.0),
+    (8000.0, 16000.0, -22.0),
+];
+/// The seconds the pitch takes through a leap or a tongued note.
+const LEAP: f64 = 0.008;
+/// The seconds the pitch takes through a slur at the median, as a played Syrinx's moves from 20 cents off one note to within 20 cents of the next in 12 ms at the median and 8 to 19 between its quartiles.
+const BEND: f64 = 0.022;
+/// The fewest seconds between two readings of the figures as vel moves.
+const SWELL: f64 = 0.01;
 
 /// The figures of an instrument's recorded notes.
 pub(super) struct Figures {
@@ -576,6 +600,7 @@ struct Sine {
     amplitude: f64,
     step: f64,
     done: bool,
+    drift: f64,
 }
 
 #[derive(Clone)]
@@ -708,6 +733,7 @@ impl AudioNode for Struck {
                     amplitude: 0.0,
                     step: 0.0,
                     done: false,
+                    drift: 0.0,
                 }
             })
             .collect();
@@ -770,31 +796,21 @@ impl AudioNode for Struck {
 /// A held note played from figures fitted to recordings of held notes: it holds until `hold` seconds or until its gate lets it go, then each partial and band falls at its slope.
 /// Its pitch follows `note` as it slides, and its vibrato, `vibrato` when given in place of the recordings', fades in until the note settles.
 /// With `legato` at 1 it speaks at once, from where the recordings settle.
+/// With a `breath`, the note is played as a wind player plays it, see `Breath`.
 pub(super) fn held_note(
-    figures: &Figures,
+    figures: &'static Figures,
     gain: f64,
     vibrato: Option<f64>,
     legato: f64,
+    breath: Option<Breath>,
     o: &Options,
 ) -> Note {
     let note = o.number("note");
     let vel = o.number("vel").clamp(0.0, 1.0);
-    let mut voice = figures.voice(note, vel);
+    let voice = vibrated(figures.voice(note, vel), vibrato);
     let skip = legato.clamp(0.0, 1.0) * voice.vibrato.map_or(0.0, |v| v.settles);
-    if let Some(depth) = vibrato {
-        // Recordings played without vibrato give it a player's: 5.4 Hz, full a second in.
-        let recorded = voice.vibrato.filter(|v| v.rate > 0.0).unwrap_or(Vibrato {
-            settles: 1.0,
-            rate: 5.4,
-            depth: 0.0,
-        });
-        voice.vibrato = Some(Vibrato {
-            depth: depth * 100.0,
-            ..recorded
-        });
-    }
     let hold = o.number("attack") + o.number("decay") + o.number("sustain");
-    let falls = voice.falls();
+    let falls = if breath.is_some() { 5.0 } else { voice.falls() };
     let under = voice.loudest() - 100.0;
     let gate = shared(1.0);
     let node = Sustained {
@@ -811,10 +827,33 @@ pub(super) fn held_note(
         let_go: None,
         phase: 0.0,
         skip,
+        figures,
+        vel,
+        vibrato,
+        breath,
+        origin: 0.0,
+        gliding: 0.0,
+        caught: f64::NEG_INFINITY,
+        swelled: 0.0,
+        blown: vel,
+        dipped: false,
+        last_vel: vel,
+        deepen: 1.0,
+        bend: 0.0,
+        bent: f64::NEG_INFINITY,
+        bending: BEND,
+        loud: 1.0,
+        sounding: 1.0,
+        register: breath.map_or(1.0, |b| register(figures, note, b.even)),
+        pace: 1.0,
+        inhale: vec![],
+        inhaled: None,
+        fading: vec![],
     };
     let mut node = node;
+    node.deepen = node.vary();
     node.set_sample_rate(DEFAULT_SR);
-    let sound = o.follow("note") >> Net::wrap(Box::new(An(node))) * gain as f32;
+    let sound = (o.follow("note") | o.follow("vel")) >> Net::wrap(Box::new(An(node))) * gain as f32;
     Note {
         sound,
         end: hold + falls,
@@ -822,8 +861,39 @@ pub(super) fn held_note(
     }
 }
 
+/// The voice with `vibrato` in semitones in place of the recordings'.
+fn vibrated(mut voice: Voice, vibrato: Option<f64>) -> Voice {
+    if let Some(depth) = vibrato {
+        // Recordings played without vibrato give it a player's: 5.4 Hz, full a second in.
+        let recorded = voice.vibrato.filter(|v| v.rate > 0.0).unwrap_or(Vibrato {
+            settles: 1.0,
+            rate: 5.4,
+            depth: 0.0,
+        });
+        voice.vibrato = Some(Vibrato {
+            depth: depth * 100.0,
+            ..recorded
+        });
+    }
+    voice
+}
+
 impl Voice {
-    fn loudest(&self) -> f64 {
+    // The time in its attack at which the fundamental first stands within 10 dB of its last level.
+    fn tongued(&self) -> f64 {
+        let Some((_, shape)) = self.partials.first() else {
+            return 0.0;
+        };
+        let held = shape.levels[shape.levels.len() - 1];
+        let at = shape
+            .levels
+            .iter()
+            .position(|l| *l >= held - 10.0)
+            .unwrap_or(0);
+        self.times[at]
+    }
+
+    pub(super) fn loudest(&self) -> f64 {
         self.partials
             .iter()
             .flat_map(|(_, s)| s.levels.iter())
@@ -851,6 +921,52 @@ impl Voice {
     }
 }
 
+/// How a wind player plays held figures: a change of note slurs to the new note's figures from where they settle, with a catch as the breath settles, a note reached through a dip in vel is tongued and plays its recorded attack, the figures follow vel as it swells or eases, and each partial's level wanders slowly as a breath does.
+#[derive(Clone, Copy)]
+pub(super) struct Breath {
+    /// How far the fundamental's level wanders, in dB.
+    pub wander: f64,
+    /// How far the other partials' levels wander, in dB.
+    pub wander_above: f64,
+    /// How far the partials dip in a slur's catch, in dB.
+    pub catch: f64,
+    /// How far the vibrato's depth differs from note to note, as the spread of the log of its factor.
+    pub vary: f64,
+    /// Whether a breath is taken once the note is let go.
+    pub inhale: bool,
+    /// How much of the recordings' rise in loudness up the range a player evens out, from 0 to 1.
+    pub even: f64,
+    pub seed: u64,
+}
+
+/// The gain that takes `even` of the way from a note's held loudness at vel 1 to that of the middle recorded note.
+fn register(figures: &Figures, note: f64, even: f64) -> f64 {
+    let held = |note: f64| {
+        let power: f64 = figures
+            .voice(note, 1.0)
+            .partials
+            .iter()
+            .map(|(_, s)| 10f64.powf(s.levels[s.levels.len() - 1] / 10.0))
+            .sum();
+        10.0 * power.max(1e-30).log10()
+    };
+    let mut notes: Vec<u8> = figures.recordings.iter().map(|r| r.note).collect();
+    notes.sort();
+    let middle = notes[notes.len() / 2] as f64;
+    10f64.powf(-even * (held(note) - held(middle)) / 20.0)
+}
+
+/// Where a note's figures start again from.
+#[derive(Clone, Copy, PartialEq)]
+enum From {
+    /// Where the recordings settle, for a slur.
+    Settled,
+    /// Where their attack stands 10 dB under the held level, for a note tongued on a breath that keeps flowing, as a played Syrinx's tongued notes dip 8 dB at the median.
+    Attack,
+    /// The same time, for a change of vel.
+    Same,
+}
+
 #[derive(Clone)]
 struct Sustained {
     voice: Voice,
@@ -866,6 +982,28 @@ struct Sustained {
     let_go: Option<f64>,
     phase: f64,
     skip: f64,
+    figures: &'static Figures,
+    vel: f64,
+    vibrato: Option<f64>,
+    breath: Option<Breath>,
+    origin: f64,
+    gliding: f64,
+    caught: f64,
+    swelled: f64,
+    blown: f64,
+    dipped: bool,
+    last_vel: f64,
+    deepen: f64,
+    bend: f64,
+    bent: f64,
+    bending: f64,
+    loud: f64,
+    sounding: f64,
+    register: f64,
+    pace: f64,
+    inhale: Vec<(Band, f64)>,
+    inhaled: Option<f64>,
+    fading: Vec<Sine>,
 }
 
 impl Sustained {
@@ -886,20 +1024,248 @@ impl Sustained {
         match self.let_go {
             Some(go) if t > go => {
                 // A slope too slow to reach the floor before the note ends, as `falls` is at most 5 seconds, is steepened to reach it then.
-                let from = at(go + self.skip);
+                let from = at((go - self.origin) * self.pace + self.skip);
                 let tail = shape.tail.min(-(from - self.under).max(0.0) / self.falls);
                 from + tail * (t - go)
             }
-            _ => at(t + self.skip),
+            _ => at((t - self.origin) * self.pace + self.skip),
+        }
+    }
+
+    // Moves to the figures of `note` at `vel`: each sine goes on as the nearest harmonic of the new note, a band as the same band, and the rest fade out, all over the slur.
+    fn revoice(&mut self, note: f64, vel: f64, t: f64, from: From) {
+        if let Some(breath) = self.breath.filter(|_| from != From::Same) {
+            self.register = register(self.figures, note, breath.even);
+        }
+        let voice = vibrated(self.figures.voice(note, vel), self.vibrato);
+        let (old, new) = (hz(self.base), hz(note));
+        let mut sines = std::mem::take(&mut self.sines);
+        let mut bands = std::mem::take(&mut self.bands);
+        let mut struck = Struck {
+            voice: voice.clone(),
+            rate: self.rate,
+            sines: vec![],
+            bands: vec![],
+            sample: 0,
+        };
+        struck.set_sample_rate(self.rate);
+        for mut sine in struck.sines {
+            let harmonic = voice.partials[sine.shape].0 / new;
+            let nearest = sines.iter().position(|s| {
+                !s.done && (self.voice.partials[s.shape].0 / old / harmonic - 1.0).abs() < 0.03
+            });
+            if let Some(k) = nearest {
+                let was = sines.swap_remove(k);
+                sine.phasor = was.phasor;
+                sine.amplitude = was.amplitude;
+                sine.drift = was.drift;
+            } else {
+                sine.amplitude = 0.0;
+            }
+            self.sines.push(sine);
+        }
+        for mut band in struck.bands {
+            let edges = voice.noise[band.shape].0;
+            band.rise = 0.0;
+            match bands
+                .iter()
+                .position(|b| !b.done && self.voice.noise[b.shape].0 == edges)
+            {
+                Some(k) => {
+                    let was = bands.swap_remove(k);
+                    band.state = was.state;
+                    band.noise = was.noise;
+                    band.amplitude = was.amplitude;
+                }
+                None => band.amplitude = 0.0,
+            }
+            self.bands.push(band);
+        }
+        let samples = SLUR * self.rate;
+        for mut sine in sines.into_iter().filter(|s| !s.done) {
+            sine.step = -sine.amplitude / samples;
+            self.fading.push(sine);
+        }
+        // A slurred step of a semitone or two glides, as a played Syrinx's do, while a leap moves within 8 ms, as its leaps take 0 to 7 between the quartiles, since a jump at once clicks; a tongue stops the air between the two.
+        if from != From::Same {
+            let step = (self.base - note).abs() <= 2.5;
+            self.bend = if from == From::Settled || !step {
+                self.base - note
+            } else {
+                0.0
+            };
+            self.bent = t;
+            let (u, v) = (self.uniform(), self.uniform());
+            let drawn = (BEND
+                * (0.5
+                    * (-2.0 * u.max(1e-12).ln()).sqrt()
+                    * (2.0 * std::f64::consts::PI * v).cos())
+                .exp())
+            .clamp(0.015, 0.04);
+            self.bending = if from == From::Settled && step {
+                drawn
+            } else {
+                LEAP
+            };
+        }
+        match from {
+            From::Settled => {
+                self.skip = voice.vibrato.map_or(0.0, |v| v.settles);
+                self.origin = t;
+                self.caught = t;
+                self.pace = 1.0;
+                self.deepen = self.vary();
+            }
+            From::Attack => {
+                self.skip = voice.tongued();
+                self.origin = t;
+                self.pace = TONGUE;
+                self.deepen = self.vary();
+            }
+            From::Same => {}
+        }
+        self.under = voice.loudest() - 100.0;
+        self.voice = voice;
+        self.base = note;
+        self.vel = vel;
+        // A tongue stops the air at once, so a tongued note drops to its attack faster than a slur moves.
+        self.gliding = t + if from == From::Attack {
+            SLUR / 3.0
+        } else {
+            SLUR
+        };
+    }
+
+    // Sets up the breath taken after the note, 45 dB under its held level, in its octaves.
+    fn take_breath(&mut self, t: f64) {
+        let held: f64 = self
+            .voice
+            .partials
+            .iter()
+            .map(|(_, s)| 10f64.powf(s.levels[s.levels.len() - 1] / 10.0) / 2.0)
+            .sum::<f64>()
+            * self.loud
+            * self.loud;
+        let total = held * 10f64.powf(-INHALE_UNDER / 10.0);
+        let whole: f64 = INHALE_OCTAVES
+            .iter()
+            .map(|(_, _, w)| 10f64.powf(w / 10.0))
+            .sum();
+        let seed = self.breath.map_or(1, |b| b.seed);
+        self.inhale = INHALE_OCTAVES
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, high, _))| *high < self.rate / 2.0)
+            .map(|(k, (low, high, w))| {
+                let filter = band_filter(*low, *high, self.rate);
+                // Uniform noise from -1 to 1 has a power of a third, which the filter scales by its response's energy.
+                let power = total * 10f64.powf(w / 10.0) / whole;
+                let band = Band {
+                    shape: k,
+                    filter,
+                    state: [[0.0; 4]; 4],
+                    noise: seed ^ (k as u64 + 7).wrapping_mul(0xbf58_476d_1ce4_e5b9),
+                    rise: 0.0,
+                    amplitude: 0.0,
+                    step: 0.0,
+                    done: false,
+                };
+                (band, (power / (response_energy(filter) / 3.0)).sqrt())
+            })
+            .collect();
+        self.inhaled = Some(t + 0.08);
+    }
+
+    // The breath's level at `t`: in over 40 ms, falling 12 dB as the lungs fill, out over the last 40 ms.
+    fn inhaling(&mut self, t: f64) {
+        let Some(from) = self.inhaled else {
+            return;
+        };
+        let x = t - from;
+        let shape = if !(0.0..INHALE).contains(&x) {
+            0.0
+        } else {
+            let rise = (x / 0.04).min(1.0);
+            let fall = ((INHALE - x) / 0.04).min(1.0);
+            (0.5 - 0.5 * (std::f64::consts::PI * rise).cos())
+                * (0.5 - 0.5 * (std::f64::consts::PI * fall).cos())
+                * 10f64.powf(-12.0 * x / INHALE / 20.0)
+        };
+        for (band, amplitude) in self.inhale.iter_mut() {
+            band.step = (shape * *amplitude - band.amplitude) / BLOCK as f64;
+        }
+    }
+
+    // A uniform draw from 0 to 1 from the breath's seed, mixed first so that seeds alike give draws apart.
+    fn uniform(&mut self) -> f64 {
+        let Some(breath) = self.breath.as_mut() else {
+            return 0.5;
+        };
+        breath.seed = breath.seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = breath.seed;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        (z ^ (z >> 31)) as f64 / u64::MAX as f64
+    }
+
+    // The vibrato's depth for a note, a player's being deeper on one note than the next.
+    fn vary(&mut self) -> f64 {
+        let Some(vary) = self.breath.map(|b| b.vary) else {
+            return 1.0;
+        };
+        let (u, v) = (self.uniform(), self.uniform());
+        (vary * (-2.0 * u.max(1e-12).ln()).sqrt() * (2.0 * std::f64::consts::PI * v).cos()).exp()
+    }
+
+    // A slow wander from -1 to 1, as a breath's: white noise through a one-pole lowpass at 1 Hz, kept at unit spread.
+    fn wander(&mut self, drift: f64) -> f64 {
+        if self.breath.is_none() {
+            return 0.0;
+        }
+        let white = self.uniform() * 2.0 - 1.0;
+        let pole = 1.0 - (-2.0 * std::f64::consts::PI * BLOCK as f64 / self.rate).exp();
+        drift + pole * (white * (3.0 * (2.0 - pole) / pole).sqrt() - drift)
+    }
+
+    // Plays a change of note or vel as a wind player does.
+    fn breathe(&mut self, note: f64, vel: f64, t: f64) {
+        if self.breath.is_none() || self.let_go.is_some() {
+            return;
+        }
+        // The breath's level is the loudest vel lately, easing over a fifth of a second, so a quick dip under half of it is the tongue.
+        let ease = (-(BLOCK as f64) / self.rate / 0.2).exp();
+        self.blown = vel.max(self.blown * ease);
+        if vel < 0.5 * self.blown {
+            self.dipped = true;
+        }
+        let moved = (note - self.base).abs() >= 0.5;
+        let rising = vel > self.last_vel + 1e-4;
+        self.last_vel = vel;
+        // The figures and loudness follow the breath, not the tongue's dip, which is played as the attack.
+        let blown = self.blown;
+        self.loud = (blown / self.figures.softest()).min(1.0) * self.register;
+        if self.dipped && (moved || rising) {
+            self.dipped = false;
+            self.revoice(note, blown, t, From::Attack);
+        } else if moved {
+            self.revoice(note, blown, t, From::Settled);
+        } else if (blown - self.vel).abs() > 0.03 && t >= self.swelled + SWELL {
+            self.swelled = t;
+            self.revoice(self.base, blown, t, From::Same);
         }
     }
 
     // The levels and frequencies at the next reading, BLOCK samples on, for each sine and band to glide to, with the note at `note`.
-    fn read(&mut self, note: f64) {
+    fn read(&mut self, note: f64, vel: f64) {
         let t = (self.sample + BLOCK) as f64 / self.rate;
         if self.let_go.is_none() && (t >= self.hold || self.gate.value() <= 0.0) {
             self.let_go = Some(t.min(self.hold.max(0.0)));
+            if self.breath.is_some_and(|b| b.inhale) {
+                self.take_breath(t);
+            }
         }
+        self.breathe(note, vel, t);
+        self.inhaling(t);
         let vibrato = self.voice.vibrato.unwrap_or_default();
         let swing = if vibrato.depth > 0.0 && vibrato.rate > 0.0 {
             self.phase += 2.0 * std::f64::consts::PI * vibrato.rate * BLOCK as f64 / self.rate;
@@ -907,21 +1273,49 @@ impl Sustained {
         } else {
             0.0
         };
-        let ratio = 2f64.powf((note - self.base) / 12.0 + vibrato.depth * swing / 1200.0);
+        let x = ((t - self.bent) / self.bending).clamp(0.0, 1.0);
+        let bend = self.bend * (0.5 + 0.5 * (std::f64::consts::PI * x).cos());
+        let ratio = 2f64
+            .powf((note - self.base + bend) / 12.0 + self.deepen * vibrato.depth * swing / 1200.0);
         let gone = self.let_go.is_some_and(|go| t > go);
+        let gliding = ((self.gliding - t) * self.rate).max(BLOCK as f64);
+        self.fading.retain(|s| s.amplitude > 0.0);
+        // A slur's catch: the partials dip as the breath settles on the new note.
+        let catch = self.breath.map_or(0.0, |b| {
+            let x = (t - self.caught) / CATCH;
+            if (0.0..1.0).contains(&x) {
+                b.catch * (std::f64::consts::PI * x).sin()
+            } else {
+                0.0
+            }
+        });
+        // The wander comes in over the second after the figures start to hold.
+        let local = t - self.origin + self.skip;
+        let wandering = ((local - 0.5) / 1.0).clamp(0.0, 1.0);
         for k in 0..self.sines.len() {
             if self.sines[k].done {
                 continue;
             }
+            let drift = self.wander(self.sines[k].drift);
+            self.sines[k].drift = drift;
             let (freq, shape) = &self.voice.partials[self.sines[k].shape];
-            let level =
-                self.level(shape, t, false) + self.voice.swings[self.sines[k].shape] * swing;
+            let depth = self.breath.map_or(0.0, |b| {
+                if (freq / hz(self.base) - 1.0).abs() < 0.03 {
+                    b.wander
+                } else {
+                    b.wander_above
+                }
+            });
+            let level = self.level(shape, t, false)
+                + self.voice.swings[self.sines[k].shape] * swing
+                + wandering * depth * drift
+                - catch;
             let omega =
                 2.0 * std::f64::consts::PI * (freq * ratio).min(0.49 * self.rate) / self.rate;
             let sine = &mut self.sines[k];
             sine.turn = (omega.cos(), omega.sin());
             let target = (t / RISE).min(1.0) * 10f64.powf(level / 20.0);
-            sine.step = (target - sine.amplitude) / BLOCK as f64;
+            sine.step = (target - sine.amplitude) / gliding;
             if level < -140.0 && gone {
                 sine.done = true;
             }
@@ -941,7 +1335,7 @@ impl Sustained {
                 0.5 - 0.5 * (std::f64::consts::PI * t / band.rise).cos()
             };
             let target = rising * 10f64.powf(level / 20.0);
-            band.step = (target - band.amplitude) / BLOCK as f64;
+            band.step = (target - band.amplitude) / gliding;
             if level < -140.0 && gone {
                 band.done = true;
             }
@@ -951,7 +1345,7 @@ impl Sustained {
 
 impl AudioNode for Sustained {
     const ID: u64 = 0x6d78_0071;
-    type Inputs = U1;
+    type Inputs = U2;
     type Outputs = U1;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -967,20 +1361,23 @@ impl AudioNode for Sustained {
         self.sample = 0;
         self.let_go = None;
         self.phase = 0.0;
+        self.origin = 0.0;
+        self.gliding = 0.0;
+        self.fading.clear();
         self.sines = struck.sines;
         self.bands = struck.bands;
         self.sines.iter_mut().for_each(|s| s.amplitude = 0.0);
         self.bands.iter_mut().for_each(|b| b.amplitude = 0.0);
-        self.read(self.base);
+        self.read(self.base, self.vel);
     }
 
     fn reset(&mut self) {
         self.set_sample_rate(self.rate);
     }
 
-    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
         if self.sample > 0 && self.sample.is_multiple_of(BLOCK) {
-            self.read(input[0] as f64);
+            self.read(input[0] as f64, input[1] as f64);
         }
         let mut sum = 0.0;
         for sine in self.sines.iter_mut().filter(|s| !s.done) {
@@ -992,12 +1389,28 @@ impl AudioNode for Sustained {
             );
             sine.amplitude += sine.step;
         }
+        for sine in self.fading.iter_mut() {
+            sum += sine.amplitude.max(0.0) * sine.phasor.1;
+            let (re, im) = sine.phasor;
+            sine.phasor = (
+                re * sine.turn.0 - im * sine.turn.1,
+                re * sine.turn.1 + im * sine.turn.0,
+            );
+            sine.amplitude += sine.step;
+        }
         for band in self.bands.iter_mut().filter(|b| !b.done) {
             sum += band.amplitude * band.filtered();
             band.amplitude += band.step;
         }
+        // Over about 10 ms, as a step in loudness from one note to the next is otherwise a click.
+        self.sounding += (self.loud - self.sounding) / (0.01 * self.rate);
+        let mut breath = 0.0;
+        for (band, _) in self.inhale.iter_mut() {
+            breath += band.amplitude * band.filtered();
+            band.amplitude += band.step;
+        }
         self.sample += 1;
-        [sum as f32].into()
+        [(sum * self.sounding + breath) as f32].into()
     }
 }
 
