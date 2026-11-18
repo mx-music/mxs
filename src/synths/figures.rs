@@ -610,6 +610,8 @@ struct Band {
     state: [[f64; 4]; 4],
     noise: u64,
     rise: f64,
+    /// The gain that moves the figures' noise from `NOISE_RATE` to the rate it plays at.
+    scale: f64,
     amplitude: f64,
     step: f64,
     done: bool,
@@ -632,6 +634,17 @@ impl Band {
         }
         x
     }
+}
+
+/// The sample rate the figures' noise gains are written for, as mx writes them.
+const NOISE_RATE: f64 = 48_000.0;
+
+/// The gain that gives a band's noise at `rate` the power its written gain gives at `NOISE_RATE`, as white noise through the same filters carries less power the higher the rate.
+fn noise_scale(low: f64, high: f64, rate: f64) -> f64 {
+    if high >= rate / 2.0 || high >= NOISE_RATE / 2.0 {
+        return 1.0;
+    }
+    (response_energy(band_filter(low, high, NOISE_RATE)) / response_energy(band_filter(low, high, rate))).sqrt()
 }
 
 /// The sum of the squares of the filters' response to an impulse.
@@ -699,7 +712,7 @@ impl Struck {
             } else {
                 0.5 - 0.5 * (std::f64::consts::PI * t / band.rise).cos()
             };
-            let target = rising * power.sqrt();
+            let target = rising * power.sqrt() * band.scale;
             band.step = (target - band.amplitude) / BLOCK as f64;
             if power < 1e-14 && t > last {
                 band.done = true;
@@ -753,6 +766,7 @@ impl AudioNode for Struck {
                     noise: 0x9e37_79b9_7f4a_7c15
                         ^ (k as u64 + 1).wrapping_mul(0xbf58_476d_1ce4_e5b9),
                     rise: (1.0 / (high - low)).clamp(0.002, 0.02),
+                    scale: noise_scale(*low, *high, sample_rate),
                     amplitude: 0.0,
                     step: 0.0,
                     done: false,
@@ -1167,6 +1181,7 @@ impl Sustained {
                     state: [[0.0; 4]; 4],
                     noise: seed ^ (k as u64 + 7).wrapping_mul(0xbf58_476d_1ce4_e5b9),
                     rise: 0.0,
+                    scale: 1.0,
                     amplitude: 0.0,
                     step: 0.0,
                     done: false,
@@ -1472,5 +1487,28 @@ mod tests {
             (level + 20.0).abs() < 1e-9,
             "the merged partial plays at {level} dB"
         );
+    }
+}
+
+#[cfg(test)]
+mod noise_rate {
+    use super::{band_filter, noise_scale, Band, NOISE_RATE};
+
+    fn power(low: f64, high: f64, rate: f64) -> f64 {
+        let mut band = Band { shape: 0, filter: band_filter(low, high, rate), state: [[0.0; 4]; 4], noise: 7, rise: 0.0, scale: noise_scale(low, high, rate), amplitude: 0.0, step: 0.0, done: false };
+        let samples = (20.0 * rate) as usize;
+        let sum: f64 = (0..samples).map(|_| (band.filtered() * band.scale).powi(2)).skip((0.5 * rate) as usize).sum();
+        10.0 * (sum / (samples as f64 - 0.5 * rate)).log10()
+    }
+
+    #[test]
+    fn a_noise_band_carries_the_same_power_at_any_rate_it_plays_at() {
+        for (low, high) in [(1057.0, 1205.0), (2851.0, 3207.0), (5088.0, 5702.0)] {
+            let at = power(low, high, NOISE_RATE);
+            for rate in [16_000.0, 44_100.0, 96_000.0] {
+                let other = power(low, high, rate);
+                assert!((other - at).abs() < 0.3, "{low}-{high} Hz at {rate}: {other:.2} dB against {at:.2}");
+            }
+        }
     }
 }
