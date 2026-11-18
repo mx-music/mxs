@@ -6,7 +6,7 @@ use crate::spec::Spec;
 use fundsp::prelude::*;
 use std::sync::Arc;
 
-type BuildNote = dyn Fn(&Options, &mut Context) -> Note + Send + Sync;
+pub(crate) type BuildNote = dyn Fn(&Options, &mut Context) -> Note + Send + Sync;
 type BuildEffect = dyn Fn(&Options, &mut Context) -> Net + Send + Sync;
 type Tail = dyn Fn(&Options) -> f64 + Send + Sync;
 

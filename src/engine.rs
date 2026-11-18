@@ -9,13 +9,13 @@ use crate::mixer::{
 use crate::options::{Context, Control, Options};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Spec, Value};
-use crate::synth::{Effect, Note, Synth};
+use crate::synth::{BuildNote, Effect, Note, Synth};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use fundsp::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -260,12 +260,9 @@ pub struct Engine {
     recording: Option<Recording>,
     output_recording: Option<Recording>,
     samples: HashMap<u64, Arc<SampleData>>,
-    commands: rtrb::Producer<Command>,
-    garbage: rtrb::Consumer<Garbage>,
-    sounds: HashMap<u64, Sound>,
-    ids: HashMap<u64, u64>,
-    chains: HashMap<u64, Vec<HashMap<String, Control>>>,
-    next: u64,
+    book: Arc<Mutex<Book>>,
+    builder: Option<Builder>,
+    next: Arc<AtomicU64>,
     warned: HashSet<(String, String)>,
     warnings: Vec<String>,
     clock: Arc<AtomicU64>,
@@ -391,6 +388,7 @@ impl Engine {
         engine.lost = lost;
         engine.device = opened.name;
         engine.timing = Some(opened.timing);
+        engine.builder = Some(Builder::start(engine.book.clone(), opened.rate));
         Ok(engine)
     }
 
@@ -405,6 +403,7 @@ impl Engine {
         output: Output,
     ) -> Engine {
         let sampler = Arc::from("sample");
+        let next = Arc::new(AtomicU64::new(0));
         let sampler_specs: Vec<Spec> = sample_specs().into_iter().chain(placing_specs()).collect();
         Engine {
             rate,
@@ -416,12 +415,20 @@ impl Engine {
             recording: None,
             output_recording: None,
             samples: HashMap::new(),
-            commands,
-            garbage,
-            sounds: HashMap::new(),
-            ids: HashMap::new(),
-            chains: HashMap::new(),
-            next: 0,
+            book: Arc::new(Mutex::new(Book {
+                rate,
+                live: matches!(output, Output::Live { .. }),
+                commands,
+                garbage,
+                sounds: HashMap::new(),
+                ids: HashMap::new(),
+                chains: HashMap::new(),
+                next: next.clone(),
+                clock: clock.clone(),
+                warnings: Vec::new(),
+            })),
+            builder: None,
+            next,
             warned: HashSet::new(),
             warnings: Vec::new(),
             clock,
@@ -550,17 +557,17 @@ impl Engine {
     /// Loads a FLAC, WAV or AIFF file, and returns the number events name it by.
     pub fn load_sample(&mut self, path: impl AsRef<Path>) -> Result<u64, Error> {
         let data = SampleData::load(path.as_ref()).map_err(Error::Sample)?;
-        self.next += 1;
-        self.samples.insert(self.next, Arc::new(data));
-        Ok(self.next)
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        self.samples.insert(id, Arc::new(data));
+        Ok(id)
     }
 
     /// Loads the bytes of a FLAC, WAV or AIFF file, which messages call `shown`, and returns the number events name it by.
     pub fn load_sample_bytes(&mut self, shown: &str, bytes: &[u8]) -> Result<u64, Error> {
         let data = SampleData::decode(shown, bytes).map_err(Error::Sample)?;
-        self.next += 1;
-        self.samples.insert(self.next, Arc::new(data));
-        Ok(self.next)
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        self.samples.insert(id, Arc::new(data));
+        Ok(id)
     }
 
     /// How many channels a loaded sample has.
@@ -619,6 +626,8 @@ impl Engine {
                 "{stolen} {notes} stolen to keep to {limit} at once"
             ));
         }
+        let mut built = std::mem::take(&mut self.book().warnings);
+        self.warnings.append(&mut built);
         std::mem::take(&mut self.warnings)
     }
 
@@ -664,8 +673,7 @@ impl Engine {
         }
         unit.set_sample_rate(self.rate);
         unit.allocate();
-        self.next += 1;
-        let key = self.next;
+        let key = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let chain = Chain {
             key,
             unit: Box::new(unit),
@@ -673,20 +681,21 @@ impl Engine {
             stop: None,
             tail: self.frames(tail),
         };
-        self.send(Command::StartChain(Box::new(chain)))?;
-        self.chains.insert(key, controls);
+        let mut book = self.book();
+        book.send(Command::StartChain(Box::new(chain)))?;
+        book.chains.insert(key, controls);
         Ok(key)
     }
 
     /// Removes an effect chain at `at` seconds, once its notes and its effects' tails have ended.
     pub fn stop_effects(&mut self, chain: u64, at: f64) -> Result<(), Error> {
-        if !self.chains.contains_key(&chain) {
+        self.settle();
+        let at = self.frames(at);
+        let mut book = self.book();
+        if !book.chains.contains_key(&chain) {
             return Err(Error::UnknownChain(chain));
         }
-        self.send(Command::StopChain {
-            key: chain,
-            at: self.frames(at),
-        })
+        book.send(Command::StopChain { key: chain, at })
     }
 
     /// Records `source` to a stereo 24-bit WAV file at `path` from `at` seconds, apart from the main output, until `stop_recording`.
@@ -694,16 +703,24 @@ impl Engine {
     pub fn record(&mut self, path: impl AsRef<Path>, source: Source, at: f64) -> Result<(), Error> {
         self.check_running()?;
         self.stop_recording()?;
-        self.sweep();
-        let (voice, sound) = match source {
-            Source::Input(input) => self.input_voice(input, 1, &[], at, Out::Tap)?,
-            Source::Sample(sample) => self.sample_voice(sample, &[], at, Out::Tap)?,
+        self.settle();
+        let draft = match source {
+            Source::Input(input) => self.input_draft(None, input, 1, &[], at, Out::Tap)?,
+            Source::Sample(sample) => self.sample_draft(None, sample, &[], at, Out::Tap)?,
+        };
+        let built = build(draft, self.rate)?;
+        let (voice, sound) = {
+            let mut book = self.book();
+            book.sweep();
+            book.start(built)
         };
         let (recorder, mut recording) = self.recorder(path.as_ref(), voice.start, false)?;
         recording.source = Some(voice.key);
-        self.sounds.insert(sound.key, sound);
-        self.send(Command::Start(voice))?;
-        self.send(Command::Record(Box::new(recorder)))?;
+        let mut book = self.book();
+        book.sounds.insert(sound.key, sound);
+        book.send(Command::Start(voice))?;
+        book.send(Command::Record(Box::new(recorder)))?;
+        drop(book);
         self.recording = Some(recording);
         Ok(())
     }
@@ -715,7 +732,8 @@ impl Engine {
         self.stop_recording_output()?;
         let start = Ord::max(self.frames(at), self.clock.load(Ordering::Acquire));
         let (recorder, recording) = self.recorder(path.as_ref(), start, true)?;
-        self.send(Command::RecordOutput(Box::new(recorder)))?;
+        self.book()
+            .send(Command::RecordOutput(Box::new(recorder)))?;
         self.output_recording = Some(recording);
         Ok(())
     }
@@ -725,14 +743,16 @@ impl Engine {
         let Some(recording) = self.output_recording.take() else {
             return Ok(());
         };
-        let sent = self.send(Command::StopRecordingOutput);
+        self.settle();
+        let sent = self.book().send(Command::StopRecordingOutput);
         self.finish(recording, sent)
     }
 
     /// Whether any note or sample started is still sounding; live input does not count.
     pub fn sounding(&self) -> bool {
         let now = self.now();
-        self.sounds
+        self.book()
+            .sounds
             .values()
             .any(|sound| sound.start <= now && now < sound.end && sound.end.is_finite())
     }
@@ -779,16 +799,19 @@ impl Engine {
         let Some(recording) = self.recording.take() else {
             return Ok(());
         };
+        self.settle();
         let now = self.clock.load(Ordering::Acquire);
+        let mut book = self.book();
         let mut sent = Ok(());
         if let Some(source) = recording.source {
-            self.sounds.remove(&source);
-            sent = self.send(Command::Stop {
+            book.sounds.remove(&source);
+            sent = book.send(Command::Stop {
                 key: source,
                 at: now,
             });
         }
-        let sent = sent.and_then(|()| self.send(Command::StopRecording));
+        let sent = sent.and_then(|()| book.send(Command::StopRecording));
+        drop(book);
         self.finish(recording, sent)
     }
 
@@ -800,7 +823,7 @@ impl Engine {
         // The recorder's ring closes once the mixer hands it back and it is dropped here.
         let deadline = Instant::now() + Duration::from_secs(2);
         while !recording.writer.is_finished() {
-            self.drain();
+            self.book().drain();
             if Instant::now() > deadline {
                 recording.giving_up.store(true, Ordering::Release);
             }
@@ -816,78 +839,411 @@ impl Engine {
 
     /// Plays events, each at its seconds on the engine's clock; an event whose time has passed plays at once.
     /// Every event is checked before any is sent, so a batch with a mistake plays nothing.
+    /// A live engine builds the notes' voices on a thread of its own, in the order they were handed over, so the call returns once the events are checked; a note handed over with less time than its voice takes to build starts late, and `warnings` counts it.
+    /// One mistake shows only as a voice is built, a synth whose sound has neither 1 nor 2 channels: an offline engine still refuses the batch, and a live one leaves that note out and says so in `warnings`.
     pub fn play(&mut self, events: &[(f64, Event)]) -> Result<(), Error> {
         self.check_running()?;
-        self.sweep();
-        let mut commands = Vec::with_capacity(events.len());
-        let mut sounds = Vec::new();
+        let mut drafts = Vec::with_capacity(events.len());
         for (at, event) in events {
-            match event {
+            let chain_of = |chain: &Option<u64>| chain.map_or(Out::Main, Out::Chain);
+            drafts.push(match event {
                 Event::Note {
                     id,
                     synth,
                     options,
                     chain,
-                } => {
-                    let registered = self
-                        .synths
-                        .get(synth)
-                        .ok_or_else(|| Error::UnknownSynth(synth.clone()))?;
-                    let (owner, specs, build) = (
-                        registered.owner.clone(),
-                        registered.specs.clone(),
-                        registered.item.build.clone(),
-                    );
-                    let values = self.check(&owner, &specs, options)?;
-                    let options = Options::new(owner.clone(), specs, values);
-                    let note = build(&options, &mut Context::new(owner.clone()));
-                    let out = chain.map_or(Out::Main, Out::Chain);
-                    let (voice, sound) = self.voice(&owner, note, &options, *at, out, None)?;
-                    commands.push(Command::Start(voice));
-                    sounds.push((*id, sound));
-                }
+                } => Draft::Sound(Box::new(self.note_draft(
+                    *id,
+                    synth,
+                    options,
+                    *at,
+                    chain_of(chain),
+                )?)),
                 Event::Sample {
                     id,
                     sample,
                     options,
                     chain,
-                } => {
-                    let out = chain.map_or(Out::Main, Out::Chain);
-                    let (voice, sound) = self.sample_voice(*sample, options, *at, out)?;
-                    commands.push(Command::Start(voice));
-                    sounds.push((*id, sound));
-                }
+                } => Draft::Sound(Box::new(self.sample_draft(
+                    *id,
+                    *sample,
+                    options,
+                    *at,
+                    chain_of(chain),
+                )?)),
                 Event::Input {
                     id,
                     input,
                     channels,
                     options,
                     chain,
-                } => {
-                    let out = chain.map_or(Out::Main, Out::Chain);
-                    let (voice, sound) = self.input_voice(*input, *channels, options, *at, out)?;
-                    commands.push(Command::Start(voice));
-                    sounds.push((*id, sound));
+                } => Draft::Sound(Box::new(self.input_draft(
+                    *id,
+                    *input,
+                    *channels,
+                    options,
+                    *at,
+                    chain_of(chain),
+                )?)),
+                change => Draft::Change(*at, change.clone()),
+            });
+        }
+        if let Some(builder) = &self.builder {
+            builder.hand(drafts);
+            return Ok(());
+        }
+        let mut items = Vec::with_capacity(drafts.len());
+        for draft in drafts {
+            items.push(match draft {
+                Draft::Sound(sound) => Item::Sound(Box::new(build(*sound, self.rate)?)),
+                Draft::Change(at, event) => Item::Change(at, event),
+            });
+        }
+        let mut book = self.book();
+        book.sweep();
+        book.commit(items)
+    }
+
+    fn book(&self) -> std::sync::MutexGuard<'_, Book> {
+        self.book.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Waits until a live engine has built and sent every event handed over so far.
+    fn settle(&self) {
+        if let Some(builder) = &self.builder {
+            builder.settle();
+        }
+    }
+
+    /// Renders the next `seconds` of an offline engine, as its left and right channels.
+    pub fn render(&mut self, seconds: f64) -> Result<(Vec<f32>, Vec<f32>), Error> {
+        self.check_running()?;
+        let frames = self.frames(seconds) as usize;
+        let (meter, rate) = (self.meter.clone(), self.rate);
+        let Output::Offline(mixer) = &mut self.output else {
+            return Err(Error::Live);
+        };
+        let mut left = vec![0.0; frames];
+        let mut right = vec![0.0; frames];
+        // Rendering outruns a recording's writer, so it goes a quarter second at a time, once the recordings have room for it.
+        let chunk = Ord::max((self.rate / 4.0) as usize, 1);
+        let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for (left, right) in left.chunks_mut(chunk).zip(right.chunks_mut(chunk)) {
+                mixer.receive();
+                while mixer.recording_room() < left.len() {
+                    std::thread::sleep(Duration::from_millis(1));
                 }
-                Event::Set { .. } | Event::Stop { .. } | Event::Release { .. } => {}
+                let began = Instant::now();
+                mixer.render(left, right);
+                meter.record(began.elapsed(), left.len(), rate, false);
+            }
+        }));
+        self.book().drain();
+        match rendered {
+            Ok(()) => Ok((left, right)),
+            Err(_) => {
+                self.failed.store(true, Ordering::Release);
+                Err(Error::Failed)
             }
         }
-        // The batch's sounds are known before its changes are resolved, so a change can reach a note of the same batch.
-        for (id, sound) in sounds {
-            if let Some(id) = id {
-                self.ids.insert(id, sound.key);
-            }
-            self.sounds.insert(sound.key, sound);
+    }
+
+    fn frames(&self, seconds: f64) -> u64 {
+        (seconds.max(0.0) * self.rate).round() as u64
+    }
+
+    fn check_running(&self) -> Result<(), Error> {
+        if self.lost.load(Ordering::Acquire) {
+            Err(Error::DeviceLost(self.device.clone()))
+        } else if self.failed.load(Ordering::Acquire) {
+            Err(Error::Failed)
+        } else {
+            Ok(())
         }
-        for (at, event) in events {
+    }
+
+    /// The values to play: each given value checked against its declaration and held to its range.
+    fn check(
+        &mut self,
+        owner: &str,
+        specs: &[Spec],
+        given: &[(String, Value)],
+    ) -> Result<HashMap<String, Value>, Error> {
+        let (values, held) = checked(owner, specs, given)?;
+        for name in held {
+            if self.warned.insert((owner.to_string(), name.clone())) {
+                self.warnings.push(held_warning(owner, specs, &name));
+            }
+        }
+        Ok(values)
+    }
+
+    fn note_draft(
+        &mut self,
+        id: Option<u64>,
+        synth: &str,
+        given: &[(String, Value)],
+        at: f64,
+        out: Out,
+    ) -> Result<SoundDraft, Error> {
+        let registered = self
+            .synths
+            .get(synth)
+            .ok_or_else(|| Error::UnknownSynth(synth.to_string()))?;
+        let (owner, specs, build) = (
+            registered.owner.clone(),
+            registered.specs.clone(),
+            registered.item.build.clone(),
+        );
+        let values = self.check(&owner, &specs, given)?;
+        Ok(SoundDraft {
+            id,
+            at,
+            out,
+            input: None,
+            options: Options::new(owner, specs, values),
+            make: Make::Note(build),
+        })
+    }
+
+    fn sample_draft(
+        &mut self,
+        id: Option<u64>,
+        sample: u64,
+        given: &[(String, Value)],
+        at: f64,
+        out: Out,
+    ) -> Result<SoundDraft, Error> {
+        let data = self
+            .samples
+            .get(&sample)
+            .ok_or(Error::UnknownSample(sample))?
+            .clone();
+        let (owner, specs) = self.sampler.clone();
+        let values = self.check(&owner, &specs, given)?;
+        Ok(SoundDraft {
+            id,
+            at,
+            out,
+            input: None,
+            options: Options::new(owner, specs, values),
+            make: Make::Sample(data),
+        })
+    }
+
+    fn input_draft(
+        &mut self,
+        id: Option<u64>,
+        input: usize,
+        channels: usize,
+        given: &[(String, Value)],
+        at: f64,
+        out: Out,
+    ) -> Result<SoundDraft, Error> {
+        let channels = channels.clamp(1, 2);
+        if input + channels > Ord::min(self.inputs, INPUTS) {
+            return Err(Error::UnknownInput(input + channels - 1));
+        }
+        let (owner, specs) = self.input.clone();
+        let values = self.check(&owner, &specs, given)?;
+        Ok(SoundDraft {
+            id,
+            at,
+            out,
+            input: Some((input, channels)),
+            options: Options::new(owner, specs, values),
+            make: Make::Input(channels),
+        })
+    }
+}
+
+/// An event checked and not yet built.
+enum Draft {
+    Sound(Box<SoundDraft>),
+    Change(f64, Event),
+}
+
+/// A note, sample or input whose options are checked, with what builds its sound.
+struct SoundDraft {
+    id: Option<u64>,
+    at: f64,
+    out: Out,
+    /// The first input channel and how many the sound reads, for live input.
+    input: Option<(usize, usize)>,
+    options: Options,
+    make: Make,
+}
+
+enum Make {
+    Note(Arc<BuildNote>),
+    Sample(Arc<SampleData>),
+    /// Live input of this many channels.
+    Input(usize),
+}
+
+/// An event ready for the mixer but for its place in time.
+enum Item {
+    Sound(Box<Built>),
+    Change(f64, Event),
+}
+
+/// A sound built and allocated, placed in the stereo field by its pan and scaled by its amp.
+struct Built {
+    id: Option<u64>,
+    at: f64,
+    out: Out,
+    input: Option<(usize, usize)>,
+    unit: Net,
+    /// Seconds the sound lasts.
+    lasts: f64,
+    controls: HashMap<String, Control>,
+    release: Option<(Shared, f64)>,
+}
+
+/// Builds a draft's sound, which is the costly part of starting a note and needs nothing of the engine.
+fn build(draft: SoundDraft, rate: f64) -> Result<Built, Error> {
+    let options = &draft.options;
+    let owner = options.owner.clone();
+    let note = match draft.make {
+        Make::Note(build) => build(options, &mut Context::new(owner.clone())),
+        Make::Sample(data) => sample_note(data, options),
+        Make::Input(1) => Note::rings(Net::wrap(Box::new(pass())), f64::INFINITY),
+        Make::Input(_) => Note::rings(Net::wrap(Box::new(multipass::<U2>())), f64::INFINITY),
+    };
+    let placing = options.follow("pan") | options.follow("amp");
+    let mut unit = match note.sound.outputs() {
+        1 => (note.sound | placing) >> Net::wrap(Box::new(An(PanMono))),
+        2 => (note.sound | placing) >> Net::wrap(Box::new(An(Balance))),
+        outputs => {
+            return Err(Error::BadSound {
+                owner: owner.to_string(),
+                outputs,
+            });
+        }
+    };
+    unit.set_sample_rate(rate);
+    unit.allocate();
+    Ok(Built {
+        id: draft.id,
+        at: draft.at,
+        out: draft.out,
+        input: draft.input,
+        unit,
+        lasts: note.end,
+        controls: options.take_controls(),
+        release: note.release,
+    })
+}
+
+/// The sounds started and the way to the mixer, which the engine's caller and a live engine's builder thread both reach.
+struct Book {
+    rate: f64,
+    live: bool,
+    commands: rtrb::Producer<Command>,
+    garbage: rtrb::Consumer<Garbage>,
+    sounds: HashMap<u64, Sound>,
+    ids: HashMap<u64, u64>,
+    chains: HashMap<u64, Vec<HashMap<String, Control>>>,
+    next: Arc<AtomicU64>,
+    clock: Arc<AtomicU64>,
+    /// What the builder thread has to say, until `warnings` is asked.
+    warnings: Vec<String>,
+}
+
+impl Book {
+    fn frames(&self, seconds: f64) -> u64 {
+        (seconds.max(0.0) * self.rate).round() as u64
+    }
+
+    fn send(&mut self, mut command: Command) -> Result<(), Error> {
+        for _ in 0..1000 {
+            match self.commands.push(command) {
+                Ok(()) => return Ok(()),
+                Err(rtrb::PushError::Full(back)) => command = back,
+            }
+            self.drain();
+            if !self.live {
+                return Err(Error::Busy);
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        Err(Error::Busy)
+    }
+
+    fn drain(&mut self) {
+        while self.garbage.pop().is_ok() {}
+    }
+
+    /// Forgets sounds that ended over a second ago, and frees what the mixer has finished with.
+    fn sweep(&mut self) {
+        self.drain();
+        let now = self.clock.load(Ordering::Acquire) as f64 / self.rate;
+        self.sounds.retain(|_, sound| sound.end + 1.0 > now);
+        let sounds = &self.sounds;
+        self.ids.retain(|_, key| sounds.contains_key(key));
+    }
+
+    /// The sound's voice, starting at its time or now if that has passed, and what the engine keeps of it.
+    fn start(&mut self, built: Built) -> (Box<Voice>, Sound) {
+        let key = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let now = self.clock.load(Ordering::Acquire);
+        let start = Ord::max(self.frames(built.at), now);
+        let late = now.saturating_sub(self.frames(built.at));
+        let end = start.saturating_add(Ord::max(self.frames(built.lasts), 1));
+        let fade = Ord::max(self.frames(END_FADE), 1);
+        let voice = Voice {
+            key,
+            out: built.out,
+            input: built.input,
+            unit: Box::new(built.unit),
+            start,
+            late,
+            end,
+            fade,
+            level: 0.0,
+            stolen: false,
+        };
+        let chain = match built.out {
+            Out::Chain(key) => Some(key),
+            _ => None,
+        };
+        let sound = Sound {
+            key,
+            chain,
+            start: built.at,
+            end: built.at + built.lasts,
+            controls: built.controls,
+            release: built.release,
+        };
+        (Box::new(voice), sound)
+    }
+
+    /// Sends a batch to the mixer: its sounds first, so that a change can reach a note of the same batch.
+    fn commit(&mut self, items: Vec<Item>) -> Result<(), Error> {
+        let mut commands = Vec::with_capacity(items.len());
+        let mut changes = Vec::new();
+        for item in items {
+            match item {
+                Item::Sound(built) => {
+                    let id = built.id;
+                    let (voice, sound) = self.start(*built);
+                    if let Some(id) = id {
+                        self.ids.insert(id, sound.key);
+                    }
+                    self.sounds.insert(sound.key, sound);
+                    commands.push(Command::Start(voice));
+                }
+                Item::Change(at, event) => changes.push((at, event)),
+            }
+        }
+        for (at, event) in changes {
             match event {
                 Event::Set { target, options } => {
-                    for change in self.changes(*at, target, options) {
+                    for change in self.changes(at, &target, &options) {
                         commands.push(Command::Change(Box::new(change)));
                     }
                 }
                 Event::Stop { ids } => {
-                    let at = *at;
                     for key in ids.iter().filter_map(|id| self.ids.get(id)) {
                         if let Some(sound) = self.sounds.get_mut(key) {
                             sound.end = sound.end.min(at.max(sound.start) + END_FADE);
@@ -941,197 +1297,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Renders the next `seconds` of an offline engine, as its left and right channels.
-    pub fn render(&mut self, seconds: f64) -> Result<(Vec<f32>, Vec<f32>), Error> {
-        self.check_running()?;
-        let frames = self.frames(seconds) as usize;
-        let (meter, rate) = (self.meter.clone(), self.rate);
-        let Output::Offline(mixer) = &mut self.output else {
-            return Err(Error::Live);
-        };
-        let mut left = vec![0.0; frames];
-        let mut right = vec![0.0; frames];
-        // Rendering outruns a recording's writer, so it goes a quarter second at a time, once the recordings have room for it.
-        let chunk = Ord::max((self.rate / 4.0) as usize, 1);
-        let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            for (left, right) in left.chunks_mut(chunk).zip(right.chunks_mut(chunk)) {
-                mixer.receive();
-                while mixer.recording_room() < left.len() {
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-                let began = Instant::now();
-                mixer.render(left, right);
-                meter.record(began.elapsed(), left.len(), rate, false);
-            }
-        }));
-        self.drain();
-        match rendered {
-            Ok(()) => Ok((left, right)),
-            Err(_) => {
-                self.failed.store(true, Ordering::Release);
-                Err(Error::Failed)
-            }
-        }
-    }
-
-    fn frames(&self, seconds: f64) -> u64 {
-        (seconds.max(0.0) * self.rate).round() as u64
-    }
-
-    fn check_running(&self) -> Result<(), Error> {
-        if self.lost.load(Ordering::Acquire) {
-            Err(Error::DeviceLost(self.device.clone()))
-        } else if self.failed.load(Ordering::Acquire) {
-            Err(Error::Failed)
-        } else {
-            Ok(())
-        }
-    }
-
-    fn send(&mut self, mut command: Command) -> Result<(), Error> {
-        for _ in 0..1000 {
-            match self.commands.push(command) {
-                Ok(()) => return Ok(()),
-                Err(rtrb::PushError::Full(back)) => command = back,
-            }
-            self.drain();
-            match &self.output {
-                Output::Live { .. } => std::thread::sleep(Duration::from_millis(1)),
-                Output::Offline(_) => return Err(Error::Busy),
-            }
-        }
-        Err(Error::Busy)
-    }
-
-    fn drain(&mut self) {
-        while self.garbage.pop().is_ok() {}
-    }
-
-    /// Forgets sounds that ended over a second ago, and frees what the mixer has finished with.
-    fn sweep(&mut self) {
-        self.drain();
-        let now = self.now();
-        self.sounds.retain(|_, sound| sound.end + 1.0 > now);
-        let sounds = &self.sounds;
-        self.ids.retain(|_, key| sounds.contains_key(key));
-    }
-
-    /// The values to play: each given value checked against its declaration and held to its range.
-    fn check(
-        &mut self,
-        owner: &str,
-        specs: &[Spec],
-        given: &[(String, Value)],
-    ) -> Result<HashMap<String, Value>, Error> {
-        let (values, held) = checked(owner, specs, given)?;
-        for name in held {
-            if self.warned.insert((owner.to_string(), name.clone())) {
-                self.warnings.push(held_warning(owner, specs, &name));
-            }
-        }
-        Ok(values)
-    }
-
-    fn sample_voice(
-        &mut self,
-        sample: u64,
-        given: &[(String, Value)],
-        at: f64,
-        out: Out,
-    ) -> Result<(Box<Voice>, Sound), Error> {
-        let data = self
-            .samples
-            .get(&sample)
-            .ok_or(Error::UnknownSample(sample))?
-            .clone();
-        let (owner, specs) = self.sampler.clone();
-        let values = self.check(&owner, &specs, given)?;
-        let options = Options::new(owner.clone(), specs, values);
-        let note = sample_note(data, &options);
-        self.voice(&owner, note, &options, at, out, None)
-    }
-
-    fn input_voice(
-        &mut self,
-        input: usize,
-        channels: usize,
-        given: &[(String, Value)],
-        at: f64,
-        out: Out,
-    ) -> Result<(Box<Voice>, Sound), Error> {
-        let channels = channels.clamp(1, 2);
-        if input + channels > Ord::min(self.inputs, INPUTS) {
-            return Err(Error::UnknownInput(input + channels - 1));
-        }
-        let (owner, specs) = self.input.clone();
-        let values = self.check(&owner, &specs, given)?;
-        let options = Options::new(owner.clone(), specs, values);
-        let sound = match channels {
-            1 => Net::wrap(Box::new(pass())),
-            _ => Net::wrap(Box::new(multipass::<U2>())),
-        };
-        let note = Note::rings(sound, f64::INFINITY);
-        self.voice(&owner, note, &options, at, out, Some((input, channels)))
-    }
-
-    /// The note placed in the stereo field by its pan and scaled by its amp, ready for the mixer.
-    fn voice(
-        &mut self,
-        owner: &str,
-        note: Note,
-        options: &Options,
-        at: f64,
-        out: Out,
-        input: Option<(usize, usize)>,
-    ) -> Result<(Box<Voice>, Sound), Error> {
-        let placing = options.follow("pan") | options.follow("amp");
-        let release = note.release;
-        let mut unit = match note.sound.outputs() {
-            1 => (note.sound | placing) >> Net::wrap(Box::new(An(PanMono))),
-            2 => (note.sound | placing) >> Net::wrap(Box::new(An(Balance))),
-            outputs => {
-                return Err(Error::BadSound {
-                    owner: owner.to_string(),
-                    outputs,
-                });
-            }
-        };
-        unit.set_sample_rate(self.rate);
-        unit.allocate();
-        self.next += 1;
-        let key = self.next;
-        let now = self.clock.load(Ordering::Acquire);
-        let start = Ord::max(self.frames(at), now);
-        let late = now.saturating_sub(self.frames(at));
-        let end = start.saturating_add(Ord::max(self.frames(note.end), 1));
-        let fade = Ord::max(self.frames(END_FADE), 1);
-        let voice = Voice {
-            key,
-            out,
-            input,
-            unit: Box::new(unit),
-            start,
-            late,
-            end,
-            fade,
-            level: 0.0,
-            stolen: false,
-        };
-        let chain = match out {
-            Out::Chain(key) => Some(key),
-            _ => None,
-        };
-        let sound = Sound {
-            key,
-            chain,
-            start: at,
-            end: at + note.end,
-            controls: options.take_controls(),
-            release,
-        };
-        Ok((Box::new(voice), sound))
-    }
-
     fn changes(&self, at: f64, target: &Target, options: &[(String, f64)]) -> Vec<Change> {
         let controls: Vec<&HashMap<String, Control>> = match target {
             Target::Sounds(ids) => ids
@@ -1174,6 +1339,91 @@ impl Engine {
             }
         }
         changes
+    }
+}
+
+/// A live engine's thread that builds voices, so that neither the caller nor the audio thread waits for them.
+struct Builder {
+    drafts: Option<mpsc::Sender<Vec<Draft>>>,
+    /// How many batches are handed over and not yet sent to the mixer.
+    waiting: Arc<(Mutex<usize>, Condvar)>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Builder {
+    fn start(book: Arc<Mutex<Book>>, rate: f64) -> Builder {
+        let (drafts, handed) = mpsc::channel::<Vec<Draft>>();
+        let waiting = Arc::new((Mutex::new(0usize), Condvar::new()));
+        let counting = waiting.clone();
+        let thread = std::thread::Builder::new()
+            .name("mxs builder".to_string())
+            .spawn(move || {
+                for batch in handed {
+                    let mut said = Vec::new();
+                    let mut items = Vec::with_capacity(batch.len());
+                    for draft in batch {
+                        match draft {
+                            Draft::Sound(sound) => {
+                                let owner = sound.options.owner.clone();
+                                let built = std::panic::catch_unwind(
+                                    std::panic::AssertUnwindSafe(|| build(*sound, rate)),
+                                );
+                                match built {
+                                    Ok(Ok(built)) => items.push(Item::Sound(Box::new(built))),
+                                    Ok(Err(error)) => {
+                                        said.push(format!("{error}, so its note did not play"))
+                                    }
+                                    Err(_) => said.push(format!(
+                                        "{owner} panicked as its note was built, so the note did not play"
+                                    )),
+                                }
+                            }
+                            Draft::Change(at, event) => items.push(Item::Change(at, event)),
+                        }
+                    }
+                    let mut book = book.lock().unwrap_or_else(|e| e.into_inner());
+                    book.sweep();
+                    if let Err(error) = book.commit(items) {
+                        said.push(format!("{error}, so some events did not play"));
+                    }
+                    book.warnings.append(&mut said);
+                    drop(book);
+                    let (count, settled) = &*counting;
+                    *count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+                    settled.notify_all();
+                }
+            })
+            .expect("the builder thread starts");
+        Builder {
+            drafts: Some(drafts),
+            waiting,
+            thread: Some(thread),
+        }
+    }
+
+    fn hand(&self, batch: Vec<Draft>) {
+        let (count, _) = &*self.waiting;
+        *count.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        if let Some(drafts) = &self.drafts {
+            let _ = drafts.send(batch);
+        }
+    }
+
+    fn settle(&self) {
+        let (count, settled) = &*self.waiting;
+        let mut count = count.lock().unwrap_or_else(|e| e.into_inner());
+        while *count > 0 {
+            count = settled.wait(count).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+}
+
+impl Drop for Builder {
+    fn drop(&mut self) {
+        self.drafts.take();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 

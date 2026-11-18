@@ -763,3 +763,23 @@ fn an_offline_engine_says_the_share_of_time_its_buffers_took_and_counts_none_lat
     assert_eq!(engine.load(), mxs::Load::default());
     assert!(engine.warnings().is_empty());
 }
+
+#[test]
+fn an_offline_engine_refuses_a_batch_with_a_sound_of_three_channels_and_plays_none_of_it() {
+    let mut engine = engine();
+    engine.register(level());
+    engine.register(Synth::new("three").build(|_, _| Note::rings(dc((0.0, 0.0, 0.0)), 1.0)));
+    let batch = [
+        (0.0, Event::note(None, "level", &[])),
+        (0.0, Event::note(None, "three", &[])),
+    ];
+    assert_eq!(
+        engine.play(&batch),
+        Err(Error::BadSound {
+            owner: "three".to_string(),
+            outputs: 3
+        })
+    );
+    let (left, _) = engine.render(0.5).unwrap();
+    assert!(left.iter().all(|&x| x == 0.0));
+}

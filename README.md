@@ -165,6 +165,16 @@ A change can also reach every sound of an effect chain, or one of its effects, t
 - `Engine::live_with_input` also opens the sound card's input, and `Event::Input` plays it through an effect chain.
 - `record_output` writes what the engine plays to a WAV file.
 
+## How far ahead to hand a note over
+
+Building a note's voice is the costly part of starting it: about a millisecond for a piano or a cello note, a tenth of that for a berimbau stroke.
+
+- A live engine builds voices on a thread of its own, in the order the notes were handed over, so `play` returns once the events are checked, and neither the caller nor the audio thread waits for a voice.
+- A note therefore has to be handed over before its time by at least what it and the notes handed over ahead of it take to build: about 12 ms for a chord of ten piano notes.
+- A note handed over with less time starts as soon as it is built, and `warnings` counts it among the events that arrived after their time.
+- A change, a release or a stop handed over after a note reaches it, though the note's voice may not be built yet when the call returns.
+- An offline engine has no thread of its own and builds each voice in the call that hands the note over.
+
 ## Whether the engine keeps up
 
 A live engine has to fill each buffer before the sound card needs it, and a buffer filled too late is heard as a gap.
