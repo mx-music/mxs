@@ -186,6 +186,43 @@ A live engine has to fill each buffer before the sound card needs it, and a buff
 After a gap, the engine's clock is behind for good, and `seconds_at` and `play_at` catch up with it by at most a millisecond a second.
 Until they have, an event given a system time plays late by what is left of the gap; `behind` shows the gap within a second.
 
+## Parts
+
+A part is a group of sounds with a name, which can be turned down, muted or soloed as one.
+
+```rust
+use mxs::{Engine, Event, RATE, Value, synths};
+
+fn main() -> Result<(), mxs::Error> {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+
+    let bass = engine.start_part("bass", &[])?;
+    let note = Event::Note {
+        id: None,
+        synth: "piano".to_string(),
+        options: vec![("note".to_string(), Value::Number(36.0))],
+        chain: Some(bass),
+    };
+    engine.play(&[(0.0, note)])?;
+    engine.set_gain("bass", 0.5, 0.0)?;
+    engine.mute("bass", true, 1.0)?;
+    engine.mute("bass", false, 2.0)?;
+    engine.render(3.0)?;
+    Ok(())
+}
+```
+
+- `start_part` takes the part's name and its effects, as `start_effects` takes them, or none. It returns what a note, a sample or a live input names as its `chain` to play into the part, and `part` gives the same for a name later.
+- `set_gain`, `mute` and `solo` take the part's name and a time in seconds, and reach their level over 10 ms from that time, so nothing clicks.
+- They apply after the part's effects, so a reverb's tail is turned down with its part.
+- A muted part plays on unheard: a note handed over before the mute is not heard, and a note that started while the part was muted is heard from where it has got to once the part is unmuted.
+- While any part is soloed, only the soloed parts are heard. A part both muted and soloed is silent. A sound that plays into no part is heard as ever.
+- `stop_part` removes a part once its sounds and its effects' tails have ended, and frees its name at once.
+- A recording of the output holds what is heard.
+- A levels report gives each part's level after its gain, by its name.
+- A name that no part was started under is refused, and the error names it.
+
 ## What the engine reports
 
 `subscribe` takes the kinds of report wanted and returns the subscription, which the engine then sends reports to without being asked.
@@ -213,7 +250,7 @@ Every report carries the engine's seconds of the sample it describes.
 | Kind | What it holds | When it is sent |
 | --- | --- | --- |
 | `Topic::Clock` | The engine's seconds, the system time at which the sound card plays them, and the output's delay, which that time includes. | At once, whenever the two clocks move apart by more than 2 ms, and at least once a second. An offline engine has no system time and sends none. |
-| `Topic::Levels` | For the left and the right channel of the main output, the loudest sample and the RMS level, where 1 is full scale; whether a sample reached full scale; the wave as 64 points from -1 to 1; and the level in dB of 25 bands from 50 Hz to 16 kHz, each about a third of an octave, which `Levels::band` gives the edges of. | Twenty times a second, each report covering the twentieth of a second before it. The bands cover the last 8192 frames. |
+| `Topic::Levels` | For the left and the right channel of the main output, the loudest sample and the RMS level, where 1 is full scale; whether a sample reached full scale; the wave as 64 points from -1 to 1; the level in dB of 25 bands from 50 Hz to 16 kHz, each about a third of an octave, which `Levels::band` gives the edges of; and the loudest sample and the RMS level of each part, by its name. | Twenty times a second, each report covering the twentieth of a second before it. The bands cover the last 8192 frames. |
 | `Topic::Voices` | How many notes sound. | About once a second. |
 | `Topic::Output` | The device's name, the rate in Hz, and the output's delay in milliseconds; an offline engine has no device and no delay. | At once. The engine keeps its device for as long as it runs, so no second one follows. |
 | `Topic::Warnings` | One warning, worded as `warnings` words it. | At once for a value held to its range or a note that could not be built, and within a second for the counts of late buffers, late events and stolen notes. |

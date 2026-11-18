@@ -1,7 +1,7 @@
 //! What the engine says of itself while it plays, to whoever subscribes: its clock, the levels of its output, how many notes sound, its output device and its warnings.
 //! The audio thread only copies its output into a ring buffer while levels are wanted; a thread of the engine's own works the reports out, so nothing here makes the audio wait.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
@@ -43,6 +43,17 @@ impl Topic {
     }
 }
 
+/// The level of a part over a twentieth of a second, after its effects, its gain, its mute and its solo.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartLevels {
+    /// The part's name.
+    pub name: String,
+    /// The loudest sample of the left and the right channel, where 1 is full scale.
+    pub peak: [f32; 2],
+    /// The RMS level of the left and the right channel.
+    pub rms: [f32; 2],
+}
+
 /// The level of the main output over a twentieth of a second.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Levels {
@@ -58,6 +69,8 @@ pub struct Levels {
     pub wave: [f32; WAVE],
     /// The RMS level in dB of both channels mixed to one, in each of `BANDS` bands, over the last 8192 frames; `Levels::band` gives a band's edges, and a band with no sound reads `FLOOR`.
     pub bands: [f32; BANDS],
+    /// The level of each part that has a name, in the order of their names.
+    pub parts: Vec<PartLevels>,
 }
 
 impl Levels {
@@ -156,6 +169,7 @@ struct Sink {
 struct Inner {
     sinks: Vec<Arc<Sink>>,
     output: Option<Report>,
+    names: HashMap<u64, String>,
     said: VecDeque<String>,
     /// Counts the changes to who subscribes to what, so the engine's thread sends the clock and the voices to a new subscriber at once.
     changes: u64,
@@ -180,6 +194,7 @@ impl Hub {
             inner: Mutex::new(Inner {
                 sinks: Vec::new(),
                 output: None,
+                names: HashMap::new(),
                 said: VecDeque::new(),
                 changes: 0,
                 stopped: false,
@@ -224,6 +239,19 @@ impl Hub {
 
     pub fn take_said(&self) -> Vec<String> {
         lock(&self.inner).said.drain(..).collect()
+    }
+
+    /// Names a part, for the levels reports.
+    pub fn name_part(&self, key: u64, name: &str) {
+        lock(&self.inner).names.insert(key, name.to_string());
+    }
+
+    pub fn forget_part(&self, key: u64) {
+        lock(&self.inner).names.remove(&key);
+    }
+
+    fn part_name(&self, key: u64) -> Option<String> {
+        lock(&self.inner).names.get(&key).cloned()
     }
 
     /// Sets the output report, which each new subscriber to the output is sent at once.
@@ -341,36 +369,75 @@ impl Drop for Reports {
     }
 }
 
-/// The audio thread's end of the ring its output is copied into while levels are wanted.
-pub(crate) struct Tap {
-    hub: Arc<Hub>,
-    frames: rtrb::Producer<[f32; 2]>,
-    spans: rtrb::Producer<(u64, u32)>,
+/// What a part played over a stretch of the levels reports: the frames of it, the loudest sample and the squares summed, of each channel.
+#[derive(Clone, Copy)]
+pub(crate) struct PartSpan {
+    /// The frame after the stretch's last.
+    pub end: u64,
+    pub key: u64,
+    pub frames: u32,
+    pub peak: [f32; 2],
+    pub squares: [f64; 2],
 }
 
-/// The other end, which the engine's reporting thread reads.
+/// The audio thread's end of the rings its output and its parts' levels are copied into while levels are wanted.
+pub(crate) struct Tap {
+    hub: Arc<Hub>,
+    every: u64,
+    frames: rtrb::Producer<[f32; 2]>,
+    spans: rtrb::Producer<(u64, u32)>,
+    parts: rtrb::Producer<PartSpan>,
+}
+
+/// The other end, which a live engine's reporting thread reads, and an offline engine as it renders.
 pub(crate) struct Tapped {
     frames: rtrb::Consumer<[f32; 2]>,
     spans: rtrb::Consumer<(u64, u32)>,
+    parts: rtrb::Consumer<PartSpan>,
+    read: Vec<(u64, usize)>,
     left: Vec<f32>,
     right: Vec<f32>,
 }
 
-/// A ring that holds a second of output at `rate`.
+/// Rings that hold a second of output at `rate`.
 pub(crate) fn tap(hub: Arc<Hub>, rate: f64) -> (Tap, Tapped) {
     let (frames, tapped) = rtrb::RingBuffer::new(rate as usize);
     let (spans, spanned) = rtrb::RingBuffer::new(4096);
-    let tap = Tap { hub, frames, spans };
+    let (parts, parted) = rtrb::RingBuffer::new(4096);
+    let tap = Tap {
+        hub,
+        every: every(rate),
+        frames,
+        spans,
+        parts,
+    };
     let tapped = Tapped {
         frames: tapped,
         spans: spanned,
+        parts: parted,
+        read: Vec::new(),
         left: Vec::new(),
         right: Vec::new(),
     };
     (tap, tapped)
 }
 
+/// How many frames a levels report covers.
+fn every(rate: f64) -> u64 {
+    Ord::max((rate / LEVELS_A_SECOND).round() as u64, 1)
+}
+
 impl Tap {
+    /// How many frames a levels report covers, counted from the engine's start, while anyone wants levels.
+    pub fn every(&self) -> Option<u64> {
+        self.hub.wants(Topic::Levels).then_some(self.every)
+    }
+
+    /// Copies what a part played up to the end of a levels report's stretch; it never waits.
+    pub fn part(&mut self, span: PartSpan) {
+        let _ = self.parts.push(span);
+    }
+
     /// Copies the frames from `first` on, unless nobody wants levels or the ring has no room for all of them; it never waits.
     pub fn push(&mut self, first: u64, left: &[f32], right: &[f32]) {
         if !self.hub.wants(Topic::Levels)
@@ -387,18 +454,46 @@ impl Tap {
 }
 
 impl Tapped {
-    /// Hands each stretch of output copied so far to `each`, with the frame it starts at.
-    pub fn read(&mut self, mut each: impl FnMut(u64, &[f32], &[f32])) {
+    fn collect(&mut self) {
+        self.read.clear();
+        self.left.clear();
+        self.right.clear();
         while let Ok((first, count)) = self.spans.pop() {
-            self.left.clear();
-            self.right.clear();
             for _ in 0..count {
                 let [l, r] = self.frames.pop().unwrap_or([0.0; 2]);
                 self.left.push(l);
                 self.right.push(r);
             }
-            each(first, &self.left, &self.right);
+            self.read.push((first, count as usize));
         }
+    }
+
+    /// Hands each stretch of output copied so far to `each`, with the frame it starts at.
+    fn each(&self, mut each: impl FnMut(u64, &[f32], &[f32])) {
+        let mut from = 0;
+        for &(first, count) in &self.read {
+            let to = from + count;
+            each(first, &self.left[from..to], &self.right[from..to]);
+            from = to;
+        }
+    }
+
+    /// Works the levels reports out of what was copied so far, and sends them.
+    // The parts are read after the output: a part's levels are copied before the output they belong to, so none is missed.
+    pub fn report(&mut self, analyser: &mut Analyser, hub: &Hub) {
+        self.collect();
+        while let Ok(span) = self.parts.pop() {
+            analyser.pending.push(span);
+        }
+        if !hub.wants(Topic::Levels) {
+            analyser.pending.clear();
+            return;
+        }
+        self.each(|first, left, right| {
+            analyser.feed(first, left, right, &|key| hub.part_name(key), |levels| {
+                hub.send(Report::Levels(Box::new(levels)))
+            })
+        });
     }
 }
 
@@ -416,13 +511,15 @@ pub(crate) struct Analyser {
     history: Vec<f32>,
     at: usize,
     spectrum: Spectrum,
+    /// What each part played, up to the reports not made yet.
+    pending: Vec<PartSpan>,
 }
 
 impl Analyser {
     pub fn new(rate: f64) -> Analyser {
         Analyser {
             rate,
-            every: Ord::max((rate / LEVELS_A_SECOND).round() as u64, 1),
+            every: every(rate),
             next: 0,
             whole: true,
             peak: [0.0; 2],
@@ -432,11 +529,19 @@ impl Analyser {
             history: vec![0.0; SPECTRUM],
             at: 0,
             spectrum: Spectrum::new(),
+            pending: Vec::new(),
         }
     }
 
-    /// Takes the output from the frame `first` on, and hands `send` each report it completes.
-    pub fn feed(&mut self, first: u64, left: &[f32], right: &[f32], mut send: impl FnMut(Levels)) {
+    /// Takes the output from the frame `first` on, and hands `send` each report it completes, its parts named by `name`.
+    pub fn feed(
+        &mut self,
+        first: u64,
+        left: &[f32],
+        right: &[f32],
+        name: &dyn Fn(u64) -> Option<String>,
+        mut send: impl FnMut(Levels),
+    ) {
         if first != self.next {
             self.start();
             self.whole = first.is_multiple_of(self.every);
@@ -457,8 +562,9 @@ impl Analyser {
                 *point = mono.clamp(-1.0, 1.0);
             }
             if within + 1 == self.every {
+                let parts = self.parts(frame + 1, name);
                 if self.whole {
-                    send(self.levels((frame + 1) as f64 / self.rate));
+                    send(self.levels((frame + 1) as f64 / self.rate, parts));
                 }
                 self.start();
             }
@@ -474,7 +580,30 @@ impl Analyser {
         self.wave = [0.0; WAVE];
     }
 
-    fn levels(&mut self, seconds: f64) -> Levels {
+    /// The levels of each named part over the stretch that ends before the frame `end`.
+    fn parts(&mut self, end: u64, name: &dyn Fn(u64) -> Option<String>) -> Vec<PartLevels> {
+        let rms = |squares: f64, frames: u32| (squares / f64::from(frames.max(1))).sqrt() as f32;
+        let mut parts: Vec<PartLevels> = self
+            .pending
+            .iter()
+            .filter(|span| span.end == end)
+            .filter_map(|span| {
+                Some(PartLevels {
+                    name: name(span.key)?,
+                    peak: span.peak,
+                    rms: [
+                        rms(span.squares[0], span.frames),
+                        rms(span.squares[1], span.frames),
+                    ],
+                })
+            })
+            .collect();
+        parts.sort_by(|a, b| a.name.cmp(&b.name));
+        self.pending.retain(|span| span.end > end);
+        parts
+    }
+
+    fn levels(&mut self, seconds: f64, parts: Vec<PartLevels>) -> Levels {
         let rms = |squares: f64| (squares / self.every as f64).sqrt() as f32;
         Levels {
             seconds,
@@ -483,6 +612,7 @@ impl Analyser {
             full_scale: self.full_scale,
             wave: self.wave,
             bands: self.spectrum.bands(&self.history, self.at, self.rate),
+            parts,
         }
     }
 }
@@ -578,7 +708,9 @@ mod tests {
         let mut reports = Vec::new();
         let mut first = 0;
         for stretch in sound.chunks(cut) {
-            analyser.feed(first, stretch, stretch, |levels| reports.push(levels));
+            analyser.feed(first, stretch, stretch, &|_| None, |levels| {
+                reports.push(levels)
+            });
             first += stretch.len() as u64;
         }
         reports
@@ -599,7 +731,9 @@ mod tests {
         let sound = sine(440.0, 0.25, 9600);
         let mut analyser = Analyser::new(48_000.0);
         let mut seconds = Vec::new();
-        analyser.feed(1000, &sound, &sound, |levels| seconds.push(levels.seconds));
+        analyser.feed(1000, &sound, &sound, &|_| None, |levels| {
+            seconds.push(levels.seconds)
+        });
         assert_eq!(seconds, [0.1, 0.15, 0.2]);
     }
 
@@ -678,12 +812,14 @@ mod tests {
         let (mut tap, mut tapped) = tap(hub.clone(), 48_000.0);
         tap.push(0, &[0.1; 8], &[0.2; 8]);
         let mut seen = Vec::new();
-        tapped.read(|first, left, _| seen.push((first, left.len())));
+        tapped.collect();
+        tapped.each(|first, left, _| seen.push((first, left.len())));
         assert!(seen.is_empty());
         let _reports = hub.subscribe(&[Topic::Levels]);
         tap.push(8, &[0.1; 8], &[0.2; 8]);
         tap.push(16, &[0.1; 4], &[0.2; 4]);
-        tapped.read(|first, left, right| {
+        tapped.collect();
+        tapped.each(|first, left, right| {
             assert!(left.iter().all(|x| *x == 0.1) && right.iter().all(|x| *x == 0.2));
             seen.push((first, left.len()))
         });

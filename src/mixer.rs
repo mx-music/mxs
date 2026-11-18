@@ -2,7 +2,7 @@
 //! It allocates and frees nothing while filling audio: notes and chains come built over one ring buffer, and go back over another to be freed by the engine.
 
 use crate::options::Control;
-use crate::report::Tap;
+use crate::report::{PartSpan, Tap};
 use fundsp::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -60,12 +60,82 @@ pub(crate) struct Voice {
     pub stolen: bool,
 }
 
+/// A part: the sounds that play into it, its effects, and after them its gain, mute and solo.
 pub(crate) struct Chain {
     pub key: u64,
     pub unit: Box<dyn AudioUnit>,
     pub input: BufferVec,
     pub stop: Option<u64>,
     pub tail: u64,
+    pub heard: Heard,
+    /// What it has played since the last levels report: the frames, the loudest sample and the squares summed, of each channel.
+    pub played: (u32, [f32; 2], [f64; 2]),
+}
+
+/// How loud a part is heard: its gain, unless it is muted or another part is soloed, reached over `glide` frames so that nothing clicks.
+pub(crate) struct Heard {
+    pub gain: f32,
+    pub muted: bool,
+    pub soloed: bool,
+    glide: u64,
+    level: f32,
+    toward: f32,
+    step: f32,
+    left: u64,
+}
+
+impl Heard {
+    pub fn new(glide: u64) -> Heard {
+        Heard {
+            gain: 1.0,
+            muted: false,
+            soloed: false,
+            glide: Ord::max(glide, 1),
+            level: 1.0,
+            toward: 1.0,
+            step: 0.0,
+            left: 0,
+        }
+    }
+
+    fn wanted(&self, solo: bool) -> f32 {
+        if self.muted || (solo && !self.soloed) {
+            0.0
+        } else {
+            self.gain
+        }
+    }
+
+    /// Starts gliding to the level the part should have, given whether any part is soloed.
+    fn aim(&mut self, solo: bool) {
+        let wanted = self.wanted(solo);
+        if wanted != self.toward {
+            self.toward = wanted;
+            self.left = self.glide;
+            self.step = (wanted - self.level) / self.glide as f32;
+        }
+    }
+
+    /// The level of the next frame.
+    fn next(&mut self) -> f32 {
+        if self.left > 0 {
+            self.left -= 1;
+            self.level = if self.left == 0 {
+                self.toward
+            } else {
+                self.level + self.step
+            };
+        }
+        self.level
+    }
+}
+
+/// A change to how a part is heard.
+#[derive(Clone, Copy)]
+pub(crate) enum PartChange {
+    Gain(f32),
+    Mute(bool),
+    Solo(bool),
 }
 
 pub(crate) struct Change {
@@ -91,8 +161,19 @@ pub(crate) enum Command {
     Start(Box<Voice>),
     Change(Box<Change>),
     StartChain(Box<Chain>),
-    StopChain { key: u64, at: u64 },
-    Stop { key: u64, at: u64 },
+    StopChain {
+        key: u64,
+        at: u64,
+    },
+    Part {
+        key: u64,
+        at: u64,
+        change: PartChange,
+    },
+    Stop {
+        key: u64,
+        at: u64,
+    },
     Record(Box<Recorder>),
     StopRecording,
     RecordOutput(Box<Recorder>),
@@ -118,6 +199,7 @@ pub(crate) struct Mixer {
     chains: Vec<Box<Chain>>,
     #[allow(clippy::vec_box)]
     changes: Vec<Box<Change>>,
+    part_changes: Vec<(u64, u64, PartChange)>,
     buffer: BufferVec,
     input: Option<Input>,
     inputs: BufferVec,
@@ -144,6 +226,7 @@ impl Mixer {
             voices: Vec::with_capacity(CAPACITY),
             chains: Vec::with_capacity(256),
             changes: Vec::with_capacity(CAPACITY),
+            part_changes: Vec::with_capacity(CAPACITY),
             buffer: BufferVec::new(2),
             input,
             inputs: BufferVec::new(INPUTS),
@@ -169,10 +252,12 @@ impl Mixer {
         while done < left.len() {
             self.receive();
             let mut n = Ord::min(left.len() - done, BLOCK);
+            let parts = self.part_changes.iter().map(|change| change.0);
             if let Some(next) = self
                 .changes
                 .iter()
                 .map(|c| c.at)
+                .chain(parts)
                 .filter(|&at| at > self.now)
                 .min()
             {
@@ -197,7 +282,19 @@ impl Mixer {
                     self.count_late(self.now.saturating_sub(change.at));
                     self.changes.push(change);
                 }
-                Command::StartChain(chain) => self.chains.push(chain),
+                Command::StartChain(mut chain) => {
+                    // A part created while another is soloed starts unheard, with no glide.
+                    let solo = self.chains.iter().any(|c| c.heard.soloed);
+                    chain.heard.aim(solo);
+                    chain.heard.left = Ord::min(chain.heard.left, 1);
+                    chain.heard.next();
+                    self.chains.push(chain);
+                }
+                Command::Part { key, at, change } => {
+                    if self.part_changes.len() < self.part_changes.capacity() {
+                        self.part_changes.push((at, key, change));
+                    }
+                }
                 Command::StopChain { key, at } => {
                     if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
                         chain.stop = Some(at);
@@ -263,10 +360,30 @@ impl Mixer {
             }
         }
 
+        let mut i = 0;
+        while i < self.part_changes.len() {
+            let (at, key, change) = self.part_changes[i];
+            if at <= self.now {
+                self.part_changes.swap_remove(i);
+                if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
+                    match change {
+                        PartChange::Gain(gain) => chain.heard.gain = gain,
+                        PartChange::Mute(muted) => chain.heard.muted = muted,
+                        PartChange::Solo(soloed) => chain.heard.soloed = soloed,
+                    }
+                }
+            } else {
+                i += 1;
+            }
+        }
+        let solo = self.chains.iter().any(|c| c.heard.soloed);
+        let levels = self.reports.as_ref().map(|tap| tap.every());
+
         self.keep_to_the_limit(end);
 
         for chain in &mut self.chains {
             chain.input.clear();
+            chain.heard.aim(solo);
         }
         self.tap.clear();
         self.read_input(n);
@@ -345,8 +462,37 @@ impl Mixer {
                 .unit
                 .process(n, &chain.input.buffer_ref(), &mut self.buffer.buffer_mut());
             for k in 0..n {
-                left[k] += self.buffer.at_f32(0, k);
-                right[k] += self.buffer.at_f32(1, k);
+                let level = chain.heard.next();
+                let (l, r) = (
+                    self.buffer.at_f32(0, k) * level,
+                    self.buffer.at_f32(1, k) * level,
+                );
+                left[k] += l;
+                right[k] += r;
+                if let Some(Some(every)) = levels {
+                    let (frames, peak, squares) = &mut chain.played;
+                    *frames += 1;
+                    *peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
+                    squares[0] += f64::from(l) * f64::from(l);
+                    squares[1] += f64::from(r) * f64::from(r);
+                    let frame = self.now + k as u64 + 1;
+                    if frame.is_multiple_of(every) {
+                        let span = PartSpan {
+                            end: frame,
+                            key: chain.key,
+                            frames: *frames,
+                            peak: *peak,
+                            squares: *squares,
+                        };
+                        chain.played = (0, [0.0; 2], [0.0; 2]);
+                        if let Some(tap) = &mut self.reports {
+                            tap.part(span);
+                        }
+                    }
+                }
+            }
+            if levels == Some(None) {
+                chain.played = (0, [0.0; 2], [0.0; 2]);
             }
             let key = chain.key;
             let finished = chain.stop.is_some_and(|stop| end >= stop + chain.tail)

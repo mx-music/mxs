@@ -21,7 +21,7 @@ pub use device::{Device, Settings, devices};
 pub use engine::{Engine, Error, Event, Source, Target, VOICES};
 pub use load::Load;
 pub use options::{Context, Options};
-pub use report::{BANDS, FLOOR, Levels, Report, Reports, Topic, WAVE};
+pub use report::{BANDS, FLOOR, Levels, PartLevels, Report, Reports, Topic, WAVE};
 pub use sample::check as check_sample;
 pub use sample::check_bytes as check_sample_bytes;
 pub use sample::peak as sample_peak;

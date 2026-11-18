@@ -4,7 +4,8 @@ use crate::clock::Timing;
 use crate::device::{self, Format, Range, Settings};
 use crate::load::{Load, Meter};
 use crate::mixer::{
-    CAPACITY, Chain, Change, Command, Garbage, INPUTS, Input, Mixer, Out, Recorder, Voice, Voices,
+    CAPACITY, Chain, Change, Command, Garbage, Heard, INPUTS, Input, Mixer, Out, PartChange,
+    Recorder, Voice, Voices,
 };
 use crate::options::{Context, Control, Options};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
@@ -30,7 +31,7 @@ pub const VOICES: usize = 48;
 pub enum Target {
     /// The notes and samples started with these ids.
     Sounds(Vec<u64>),
-    /// Every note and sample sounding in an effect chain.
+    /// Every note and sample sounding in a part or an effect chain.
     Part(u64),
     /// One effect of a chain, by its index.
     Effect(u64, usize),
@@ -129,6 +130,10 @@ pub enum Error {
     UnknownSample(u64),
     /// No effect chain was started under this id.
     UnknownChain(u64),
+    /// No part was started under this name.
+    UnknownPart(String),
+    /// A part of this name was started and not stopped.
+    PartExists(String),
     /// A sound was given an option its declaration does not list.
     UnknownOption {
         /// The synth, effect or player it was given to.
@@ -186,6 +191,8 @@ impl std::fmt::Display for Error {
             Error::UnknownEffect(name) => write!(f, "no effect named {name}"),
             Error::UnknownSample(id) => write!(f, "no sample loaded as {id}"),
             Error::UnknownChain(id) => write!(f, "no effect chain {id}"),
+            Error::UnknownPart(name) => write!(f, "no part named {name}"),
+            Error::PartExists(name) => write!(f, "a part named {name} is already started"),
             Error::UnknownOption { owner, option } => write!(f, "{owner} has no option {option}"),
             Error::BadValue {
                 owner,
@@ -267,6 +274,8 @@ pub struct Engine {
     warned: HashSet<(String, String)>,
     hub: Arc<Hub>,
     analyser: Analyser,
+    /// What an offline engine's mixer copies for the levels reports.
+    tapped: Option<Tapped>,
     /// The whole second an offline engine last reported its voices in.
     voiced: Option<u64>,
     reporter: Option<JoinHandle<()>>,
@@ -287,8 +296,11 @@ impl Engine {
         let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
         let clock = Arc::new(AtomicU64::new(0));
         let voices = Voices::new(VOICES);
-        let mixer = Mixer::new(receiving, returning, clock.clone(), voices.clone(), None);
-        Engine::with(
+        let mut mixer = Mixer::new(receiving, returning, clock.clone(), voices.clone(), None);
+        let hub = Hub::new();
+        let (tap, tapped) = report::tap(hub.clone(), rate);
+        mixer.report_to(tap);
+        let mut engine = Engine::with(
             rate,
             commands,
             garbage,
@@ -296,9 +308,11 @@ impl Engine {
             voices,
             Meter::new(),
             Arc::new(AtomicBool::new(false)),
-            Hub::new(),
+            hub,
             Output::Offline(Box::new(mixer)),
-        )
+        );
+        engine.tapped = Some(tapped);
+        engine
     }
 
     /// An offline engine whose input is `channels` fed through the producer returned, for tests of live input.
@@ -309,13 +323,16 @@ impl Engine {
         let (feed, frames) = rtrb::RingBuffer::new(CAPACITY * channels);
         let clock = Arc::new(AtomicU64::new(0));
         let voices = Voices::new(VOICES);
-        let mixer = Mixer::new(
+        let mut mixer = Mixer::new(
             receiving,
             returning,
             clock.clone(),
             voices.clone(),
             Some(Input { frames, channels }),
         );
+        let hub = Hub::new();
+        let (tap, tapped) = report::tap(hub.clone(), rate);
+        mixer.report_to(tap);
         let output = Output::Offline(Box::new(mixer));
         let mut engine = Engine::with(
             rate,
@@ -325,9 +342,10 @@ impl Engine {
             voices,
             Meter::new(),
             Arc::new(AtomicBool::new(false)),
-            Hub::new(),
+            hub,
             output,
         );
+        engine.tapped = Some(tapped);
         engine.inputs = channels;
         (engine, feed)
     }
@@ -448,6 +466,7 @@ impl Engine {
                 sounds: HashMap::new(),
                 ids: HashMap::new(),
                 chains: HashMap::new(),
+                parts: HashMap::new(),
                 next: next.clone(),
                 clock: clock.clone(),
                 hub: hub.clone(),
@@ -457,6 +476,7 @@ impl Engine {
             warned: HashSet::new(),
             hub,
             analyser: Analyser::new(rate),
+            tapped: None,
             voiced: None,
             reporter: None,
             clock,
@@ -638,6 +658,63 @@ impl Engine {
         &mut self,
         effects: &[(String, Vec<(String, Value)>)],
     ) -> Result<u64, Error> {
+        self.start_chain(None, effects)
+    }
+
+    /// Starts a part by a name, with `effects` as `start_effects` takes them, none for a part without effects, and returns what a note, a sample or an input names as its `chain` to play into the part.
+    /// A part's gain, mute and solo apply after its effects, so an effect's tail is turned down with the part.
+    pub fn start_part(
+        &mut self,
+        name: &str,
+        effects: &[(String, Vec<(String, Value)>)],
+    ) -> Result<u64, Error> {
+        if self.book().parts.contains_key(name) {
+            return Err(Error::PartExists(name.to_string()));
+        }
+        self.start_chain(Some(name), effects)
+    }
+
+    /// What a note names as its `chain` to play into the part started by `name`.
+    pub fn part(&self, name: &str) -> Result<u64, Error> {
+        let part = self.book().parts.get(name).copied();
+        part.ok_or_else(|| Error::UnknownPart(name.to_string()))
+    }
+
+    /// Removes a part at `at` seconds, once its sounds and its effects' tails have ended; its name is free for another part at once.
+    pub fn stop_part(&mut self, name: &str, at: f64) -> Result<(), Error> {
+        let part = self.part(name)?;
+        self.stop_effects(part, at)?;
+        self.book().parts.remove(name);
+        Ok(())
+    }
+
+    /// Sets a part's gain from `at` seconds, reached over 10 ms; 1 leaves the part as it is, and 0 silences it.
+    pub fn set_gain(&mut self, part: &str, gain: f64, at: f64) -> Result<(), Error> {
+        self.change_part(part, at, PartChange::Gain(gain.max(0.0) as f32))
+    }
+
+    /// Mutes a part from `at` seconds, or lets it be heard again, over 10 ms; a muted part plays on unheard, the sounds handed over before the mute included.
+    pub fn mute(&mut self, part: &str, muted: bool, at: f64) -> Result<(), Error> {
+        self.change_part(part, at, PartChange::Mute(muted))
+    }
+
+    /// Solos a part from `at` seconds, or ends its solo: while any part is soloed, only the soloed parts are heard, and a sound that plays into no part is heard as ever.
+    pub fn solo(&mut self, part: &str, soloed: bool, at: f64) -> Result<(), Error> {
+        self.change_part(part, at, PartChange::Solo(soloed))
+    }
+
+    fn change_part(&mut self, part: &str, at: f64, change: PartChange) -> Result<(), Error> {
+        self.check_running()?;
+        let key = self.part(part)?;
+        let at = self.frames(at);
+        self.book().send(Command::Part { key, at, change })
+    }
+
+    fn start_chain(
+        &mut self,
+        name: Option<&str>,
+        effects: &[(String, Vec<(String, Value)>)],
+    ) -> Result<u64, Error> {
         self.check_running()?;
         let mut unit: Net = Net::wrap(Box::new(multipass::<U2>()));
         let mut controls = Vec::new();
@@ -677,10 +754,16 @@ impl Engine {
             input: BufferVec::new(2),
             stop: None,
             tail: self.frames(tail),
+            heard: Heard::new(self.frames(END_FADE)),
+            played: (0, [0.0; 2], [0.0; 2]),
         };
         let mut book = self.book();
         book.send(Command::StartChain(Box::new(chain)))?;
         book.chains.insert(key, controls);
+        if let Some(name) = name {
+            book.parts.insert(name.to_string(), key);
+            book.hub.name_part(key, name);
+        }
         Ok(key)
     }
 
@@ -919,6 +1002,7 @@ impl Engine {
         let (meter, rate) = (self.meter.clone(), self.rate);
         let (hub, clock, voices) = (self.hub.clone(), self.clock.clone(), self.voices.clone());
         let (analyser, voiced) = (&mut self.analyser, &mut self.voiced);
+        let tapped = &mut self.tapped;
         let Output::Offline(mixer) = &mut self.output else {
             return Err(Error::Live);
         };
@@ -936,10 +1020,8 @@ impl Engine {
                 let began = Instant::now();
                 mixer.render(left, right);
                 meter.record(began.elapsed(), left.len(), rate, false);
-                if hub.wants(Topic::Levels) {
-                    analyser.feed(first, left, right, |levels| {
-                        hub.send(Report::Levels(Box::new(levels)))
-                    });
+                if let Some(tapped) = tapped {
+                    tapped.report(analyser, &hub);
                 }
                 let seconds = (first + left.len() as u64) as f64 / rate;
                 let whole = seconds.floor() as u64;
@@ -1159,6 +1241,8 @@ struct Book {
     sounds: HashMap<u64, Sound>,
     ids: HashMap<u64, u64>,
     chains: HashMap<u64, Vec<HashMap<String, Control>>>,
+    /// The chain of each part started by a name and not stopped.
+    parts: HashMap<String, u64>,
     next: Arc<AtomicU64>,
     clock: Arc<AtomicU64>,
     /// Where what the builder thread has to say goes, until `warnings` is asked.
@@ -1186,7 +1270,11 @@ impl Book {
     }
 
     fn drain(&mut self) {
-        while self.garbage.pop().is_ok() {}
+        while let Ok(garbage) = self.garbage.pop() {
+            if let Garbage::Chain(chain) = &garbage {
+                self.hub.forget_part(chain.key);
+            }
+        }
     }
 
     /// Forgets sounds that ended over a second ago, and frees what the mixer has finished with.
@@ -1420,13 +1508,7 @@ fn report(engine: &Engine, mut tapped: Tapped) -> JoinHandle<()> {
             while let Some(changes) = hub.wait() {
                 let fresh = seen.replace(changes) != Some(changes);
                 let now = clock.load(Ordering::Acquire) as f64 / rate;
-                tapped.read(|first, left, right| {
-                    if hub.wants(Topic::Levels) {
-                        analyser.feed(first, left, right, |levels| {
-                            hub.send(Report::Levels(Box::new(levels)))
-                        });
-                    }
-                });
+                tapped.report(&mut analyser, &hub);
                 let read = timing
                     .as_ref()
                     .filter(|_| hub.wants(Topic::Clock))
