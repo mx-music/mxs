@@ -448,7 +448,8 @@ impl Mixer {
                 voice.level = loudest;
             }
             if voice.end <= end {
-                let voice = self.voices.swap_remove(i);
+                // In order, so that voices are added up in the order they were handed over, whenever each was.
+                let voice = self.voices.remove(i);
                 let _ = self.garbage.push(Garbage::Voice(voice));
             } else {
                 i += 1;

@@ -4,6 +4,7 @@
 
 ### 1. Enhancements
 
+  * [engine] Voices are added up in the order they were handed over, so a render holds the same samples whatever the length of each stretch it is asked for; a render differs from an earlier version's by up to 6e-8 of full scale
   * [engine] Add parts: `Engine::start_part` names a group of sounds with its effects, and `set_gain`, `mute` and `solo` turn it down, silence it or leave it alone heard from a time on, after its effects; a levels report gives each part's level by its name
   * [engine] Add `Engine::subscribe`, which sends reports without being asked: the clock against the system's, the levels, wave and spectrum of the output twenty times a second, how many notes sound, the output device, and the warnings; a live engine works them out on a thread of its own, and an offline one as it renders
   * [engine] A live engine builds voices on a thread of its own, so `play` returns once its events are checked; a synth whose sound has neither 1 nor 2 channels is then left out and named in `warnings`, where an offline engine still refuses the batch
