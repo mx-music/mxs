@@ -646,7 +646,9 @@ fn noise_scale(low: f64, high: f64, rate: f64) -> f64 {
     if high >= rate / 2.0 || high >= NOISE_RATE / 2.0 {
         return 1.0;
     }
-    (response_energy(band_filter(low, high, NOISE_RATE)) / response_energy(band_filter(low, high, rate))).sqrt()
+    (response_energy(band_filter(low, high, NOISE_RATE))
+        / response_energy(band_filter(low, high, rate)))
+    .sqrt()
 }
 
 /// A band's noise gain and its filters once warmed, by its edges, its place among the bands and the rate, which every note of an instrument shares.
@@ -1508,12 +1510,25 @@ mod tests {
 
 #[cfg(test)]
 mod noise_rate {
-    use super::{band_filter, noise_scale, Band, NOISE_RATE};
+    use super::{Band, NOISE_RATE, band_filter, noise_scale};
 
     fn power(low: f64, high: f64, rate: f64) -> f64 {
-        let mut band = Band { shape: 0, filter: band_filter(low, high, rate), state: [[0.0; 4]; 4], noise: 7, rise: 0.0, scale: noise_scale(low, high, rate), amplitude: 0.0, step: 0.0, done: false };
+        let mut band = Band {
+            shape: 0,
+            filter: band_filter(low, high, rate),
+            state: [[0.0; 4]; 4],
+            noise: 7,
+            rise: 0.0,
+            scale: noise_scale(low, high, rate),
+            amplitude: 0.0,
+            step: 0.0,
+            done: false,
+        };
         let samples = (20.0 * rate) as usize;
-        let sum: f64 = (0..samples).map(|_| (band.filtered() * band.scale).powi(2)).skip((0.5 * rate) as usize).sum();
+        let sum: f64 = (0..samples)
+            .map(|_| (band.filtered() * band.scale).powi(2))
+            .skip((0.5 * rate) as usize)
+            .sum();
         10.0 * (sum / (samples as f64 - 0.5 * rate)).log10()
     }
 
@@ -1523,7 +1538,10 @@ mod noise_rate {
             let at = power(low, high, NOISE_RATE);
             for rate in [16_000.0, 44_100.0, 96_000.0] {
                 let other = power(low, high, rate);
-                assert!((other - at).abs() < 0.3, "{low}-{high} Hz at {rate}: {other:.2} dB against {at:.2}");
+                assert!(
+                    (other - at).abs() < 0.3,
+                    "{low}-{high} Hz at {rate}: {other:.2} dB against {at:.2}"
+                );
             }
         }
     }
