@@ -1,6 +1,6 @@
 [package]
 name = "mxs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "A sound engine on FunDSP, with 92 synths and 17 effects"
 license = "MIT"
