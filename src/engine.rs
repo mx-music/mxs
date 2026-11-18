@@ -1735,7 +1735,18 @@ impl Book {
         }
         let mut built = self.ready.get_mut(synth)?.pop()?;
         let hold = built.ready.as_ref()?;
-        built.lasts = hold.give(sound.options.number("note"), sound.options.number("vel"));
+        let (note, vel) = (sound.options.number("note"), sound.options.number("vel"));
+        let (lasts, release) = hold.give(note, vel);
+        built.lasts = lasts;
+        if let Some((_, seconds)) = &mut built.release {
+            *seconds = release;
+        }
+        // A note that follows its note or vel reads them from these from its first sample.
+        for (name, value) in [("note", note), ("vel", vel)] {
+            if let Some(control) = built.controls.get(name) {
+                control.target.set(value as f32);
+            }
+        }
         built.id = sound.id;
         built.at = sound.at;
         built.beat = sound.beat;

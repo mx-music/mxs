@@ -1115,11 +1115,12 @@ fn flute_figured() -> Synth {
             };
             super::figures::held_note(
                 figures,
-                FLUTE_FIGURED_LEVEL,
+                |_| FLUTE_FIGURED_LEVEL,
                 o.given("vibrato"),
                 0.0,
                 Some(breath),
                 o,
+                ctx,
             )
         })
 }

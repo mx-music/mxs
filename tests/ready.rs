@@ -63,10 +63,14 @@ fn chord() -> Vec<Event> {
 
 // The chord handed over at the engine's clock, then the block being filled and a second after it.
 fn played(engine: &mut Engine) -> (usize, Vec<f32>) {
+    played_now(engine, chord())
+}
+
+fn played_now(engine: &mut Engine, notes: Vec<Event>) -> (usize, Vec<f32>) {
     let mut left = vec![0.0; RATE as usize];
     let mut right = vec![0.0; RATE as usize];
     let now = engine.now();
-    let events: Vec<(f64, Event)> = chord().into_iter().map(|e| (now, e)).collect();
+    let events: Vec<(f64, Event)> = notes.into_iter().map(|e| (now, e)).collect();
     engine.play(&events).unwrap();
     let (first, rest) = left.split_at_mut(BLOCK);
     let (first_right, rest_right) = right.split_at_mut(BLOCK);
@@ -122,14 +126,44 @@ fn a_note_with_an_option_besides_note_and_vel_is_built_and_leaves_the_ready_voic
 fn a_synth_that_builds_each_note_for_its_note_alone_is_refused() {
     let mut engine = engine();
     assert_eq!(
-        engine.keep_ready("cello", 4),
-        Err(Error::CannotKeepReady("cello".to_string()))
+        engine.keep_ready("tri", 4),
+        Err(Error::CannotKeepReady("tri".to_string()))
     );
     assert_eq!(
         engine.keep_ready("nothing", 4),
         Err(Error::UnknownSynth("nothing".to_string()))
     );
-    assert_eq!(engine.kept_ready("cello"), 0);
+    assert_eq!(engine.kept_ready("tri"), 0);
+}
+
+#[test]
+fn held_notes_of_the_violin_cello_and_flute_start_from_ready_voices_as_built_ones_play() {
+    let notes = || {
+        [
+            ("violin", 67.0, 0.4),
+            ("cello", 43.0, 0.9),
+            ("flute_figured", 74.0, 0.6),
+        ]
+        .iter()
+        .map(|&(synth, note, vel)| Event::note(None, synth, &[("note", note), ("vel", vel)]))
+        .collect::<Vec<_>>()
+    };
+    let mut engine = engine();
+    for synth in ["violin", "cello", "flute_figured"] {
+        engine.keep_ready(synth, 2).unwrap();
+    }
+    engine.render(0.1).unwrap();
+    let (made, left) = played_now(&mut engine, notes());
+    assert_eq!(made, 0, "filling the block the notes start in allocates");
+    let mut built = engine_at_the_same_frame();
+    let (_, expected) = played_now(&mut built, notes());
+    assert!(
+        left == expected,
+        "the ready notes play otherwise than built ones"
+    );
+    for synth in ["violin", "cello", "flute_figured"] {
+        assert_eq!(engine.kept_ready(synth), 2, "{synth}");
+    }
 }
 
 #[test]

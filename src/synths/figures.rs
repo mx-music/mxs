@@ -52,6 +52,8 @@ pub(super) struct Figures {
     layers: Vec<(u8, Vec<usize>)>,
     /// The sum of the squares of each band's filters' response to an impulse, once asked for.
     passed: OnceLock<Vec<f64>>,
+    /// The middle note recorded.
+    middle: f64,
 }
 
 /// A partial no note plays, which stands for one not taken yet.
@@ -226,12 +228,16 @@ impl Figures {
                 (velocity, at)
             })
             .collect();
+        let mut notes: Vec<u8> = recordings.iter().map(|r| r.note).collect();
+        notes.sort();
+        let middle = notes.get(notes.len() / 2).map_or(0.0, |n| *n as f64);
         Figures {
             times,
             bands,
             recordings,
             layers,
             passed: OnceLock::new(),
+            middle,
         }
     }
 
@@ -484,13 +490,13 @@ pub(super) fn strike(
     let (mut voice, mut working) = (figures.room(), figures.room());
     let gain = recipe.play(note, vel, &mut voice, &mut working);
     let end = voice.silent_after();
-    let envelope = Note::envelope_seconds(o);
+    let (envelope, release) = (Note::envelope_seconds(o), o.number("release"));
     let fill = recipe.fill.clone();
     let room = Mutex::new(figures.room());
     let hold = Ready::new(move |note, vel| {
         let mut voice = room.lock().unwrap_or_else(|e| e.into_inner());
         fill(note, vel, &mut voice);
-        envelope.min(voice.silent_after())
+        (envelope.min(voice.silent_after()), release)
     });
     ctx.built_ready(hold.clone());
     let refill = Refill {
@@ -908,6 +914,53 @@ fn band_filter(low: f64, high: f64, rate: f64) -> [[f64; 5]; 4] {
     ]; 4]
 }
 
+/// Every band of a voice below half the rate, warmed.
+fn warm_bands(voice: &Voice, rate: f64) -> Vec<Band> {
+    voice
+        .noise
+        .iter()
+        .enumerate()
+        .filter(|(_, ((_, high), _))| *high < rate / 2.0)
+        .map(|(k, ((low, high), _))| warmed(k, *low, *high, rate))
+        .collect()
+}
+
+/// Fills `sines` with a sine at rest for each partial of the voice below half the rate that sounds, within the room they have.
+fn fill_sines(voice: &Voice, rate: f64, sines: &mut Vec<Sine>) {
+    sines.clear();
+    sines.extend(
+        voice
+            .partials
+            .iter()
+            .enumerate()
+            .filter(|(_, (freq, shape))| {
+                *freq < rate / 2.0 && shape.levels.iter().any(|l| *l > -140.0)
+            })
+            .map(|(i, (freq, _))| {
+                let omega = 2.0 * std::f64::consts::PI * freq / rate;
+                Sine {
+                    shape: i,
+                    phasor: (1.0, 0.0),
+                    turn: (omega.cos(), omega.sin()),
+                    amplitude: 0.0,
+                    step: 0.0,
+                    done: false,
+                    drift: 0.0,
+                }
+            }),
+    );
+}
+
+/// Fills `bands` with the warmed bands where the voice has noise, within the room they have.
+fn fill_bands(voice: &Voice, warm: &[Band], bands: &mut Vec<Band>) {
+    bands.clear();
+    bands.extend(
+        warm.iter()
+            .filter(|band| voice.noise[band.shape].1.levels.iter().any(|l| *l > SILENT))
+            .cloned(),
+    );
+}
+
 #[derive(Clone)]
 struct Struck {
     voice: Voice,
@@ -924,38 +977,9 @@ struct Struck {
 impl Struck {
     // Starts the note the voice holds from its first sample, within the room set aside.
     fn start(&mut self) {
-        let rate = self.rate;
         self.sample = 0;
-        self.sines.clear();
-        self.sines.extend(
-            self.voice
-                .partials
-                .iter()
-                .enumerate()
-                .filter(|(_, (freq, shape))| {
-                    *freq < rate / 2.0 && shape.levels.iter().any(|l| *l > -140.0)
-                })
-                .map(|(i, (freq, _))| {
-                    let omega = 2.0 * std::f64::consts::PI * freq / rate;
-                    Sine {
-                        shape: i,
-                        phasor: (1.0, 0.0),
-                        turn: (omega.cos(), omega.sin()),
-                        amplitude: 0.0,
-                        step: 0.0,
-                        done: false,
-                        drift: 0.0,
-                    }
-                }),
-        );
-        let noise = &self.voice.noise;
-        self.bands.clear();
-        self.bands.extend(
-            self.warm
-                .iter()
-                .filter(|band| noise[band.shape].1.levels.iter().any(|l| *l > SILENT))
-                .cloned(),
-        );
+        fill_sines(&self.voice, self.rate, &mut self.sines);
+        fill_bands(&self.voice, &self.warm, &mut self.bands);
         self.read();
     }
 
@@ -1013,14 +1037,7 @@ impl AudioNode for Struck {
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
         self.rate = sample_rate;
-        self.warm = self
-            .voice
-            .noise
-            .iter()
-            .enumerate()
-            .filter(|(_, ((_, high), _))| *high < sample_rate / 2.0)
-            .map(|(k, ((low, high), _))| warmed(k, *low, *high, sample_rate))
-            .collect();
+        self.warm = warm_bands(&self.voice, sample_rate);
         self.sines = Vec::with_capacity(self.voice.partials.capacity());
         self.bands = Vec::with_capacity(self.warm.len());
         self.start();
@@ -1060,22 +1077,33 @@ impl AudioNode for Struck {
 /// Its pitch follows `note` as it slides, and its vibrato, `vibrato` when given in place of the recordings', fades in until the note settles.
 /// With `legato` at 1 it speaks at once, from where the recordings settle.
 /// With a `breath`, the note is played as a wind player plays it, see `Breath`.
+/// Its gain at a vel is `gain`.
+/// Built ready, it keeps room for any note of the figures, and starts again from the note and vel the engine gives it.
 pub(super) fn held_note(
     figures: &'static Figures,
-    gain: f64,
+    gain: impl Fn(f64) -> f64 + Send + Sync + 'static,
     vibrato: Option<f64>,
     legato: f64,
     breath: Option<Breath>,
     o: &Options,
+    ctx: &mut Context,
 ) -> Note {
     let note = o.number("note");
     let vel = o.number("vel").clamp(0.0, 1.0);
-    let voice = vibrated(figures.voice(note, vel), vibrato);
+    let ready = ctx.asks_ready();
+    let mut voice = if ready {
+        figures.room()
+    } else {
+        Voice::empty()
+    };
+    figures.fill(&mut voice, note, vel);
+    vibrate(&mut voice, vibrato);
     let skip = legato.clamp(0.0, 1.0) * voice.vibrato.map_or(0.0, |v| v.settles);
     let hold = o.number("attack") + o.number("decay") + o.number("sustain");
     let falls = if breath.is_some() { 5.0 } else { voice.falls() };
     let under = voice.loudest() - 100.0;
     let gate = shared(1.0);
+    let level = gain(vel);
     let node = Sustained {
         voice,
         falls,
@@ -1107,26 +1135,71 @@ pub(super) fn held_note(
         bending: BEND,
         loud: 1.0,
         sounding: 1.0,
-        register: breath.map_or(1.0, |b| register(figures, note, b.even)),
+        register: breath.map_or(1.0, |b| {
+            register(figures, note, b.even, &mut Voice::empty())
+        }),
         pace: 1.0,
         inhale: vec![],
         inhaled: None,
         fading: vec![],
+        warm: vec![],
+        gain: 1.0,
+        refill: None,
+        rates: ([0.0; 8], 0),
     };
     let mut node = node;
     node.deepen = node.vary();
+    let notes = o.follow("note") | o.follow("vel");
+    if !ready {
+        node.set_sample_rate(DEFAULT_SR);
+        return Note {
+            sound: notes >> (Net::wrap(Box::new(An(node))) * level as f32),
+            end: hold + falls,
+            release: Some((gate, falls)),
+        };
+    }
+    let room = Mutex::new(figures.room());
+    let hold_for = Ready::new(move |note, vel| {
+        let mut voice = room.lock().unwrap_or_else(|e| e.into_inner());
+        figures.fill(&mut voice, note, vel.clamp(0.0, 1.0));
+        let falls = if breath.is_some() { 5.0 } else { voice.falls() };
+        (hold + falls, falls)
+    });
+    ctx.built_ready(hold_for.clone());
+    node.gain = level as f32;
+    node.refill = Some(HeldRefill {
+        hold: hold_for,
+        gain: Arc::new(gain),
+        legato,
+        breath,
+        working: figures.room(),
+    });
     node.set_sample_rate(DEFAULT_SR);
-    let sound =
-        (o.follow("note") | o.follow("vel")) >> (Net::wrap(Box::new(An(node))) * gain as f32);
     Note {
-        sound,
+        sound: notes >> Net::wrap(Box::new(An(node))),
         end: hold + falls,
         release: Some((gate, falls)),
     }
 }
 
+/// What a held voice built ready starts again with: the hold the engine gives its note and vel through, its gain at a vel, its legato, its breath as it was built, and a voice to work in.
+#[derive(Clone)]
+struct HeldRefill {
+    hold: Arc<Ready>,
+    gain: Arc<dyn Fn(f64) -> f64 + Send + Sync>,
+    legato: f64,
+    breath: Option<Breath>,
+    working: Voice,
+}
+
 /// The voice with `vibrato` in semitones in place of the recordings'.
 fn vibrated(mut voice: Voice, vibrato: Option<f64>) -> Voice {
+    vibrate(&mut voice, vibrato);
+    voice
+}
+
+/// Gives the voice `vibrato` in semitones in place of the recordings'.
+fn vibrate(voice: &mut Voice, vibrato: Option<f64>) {
     if let Some(depth) = vibrato {
         // Recordings played without vibrato give it a player's: 5.4 Hz, full a second in.
         let recorded = voice.vibrato.filter(|v| v.rate > 0.0).unwrap_or(Vibrato {
@@ -1139,7 +1212,6 @@ fn vibrated(mut voice: Voice, vibrato: Option<f64>) -> Voice {
             ..recorded
         });
     }
-    voice
 }
 
 impl Voice {
@@ -1204,20 +1276,18 @@ pub(super) struct Breath {
 }
 
 /// The gain that takes `even` of the way from a note's held loudness at vel 1 to that of the middle recorded note.
-fn register(figures: &Figures, note: f64, even: f64) -> f64 {
-    let held = |note: f64| {
-        let power: f64 = figures
-            .voice(note, 1.0)
+/// It works the loudness out in `working`.
+fn register(figures: &Figures, note: f64, even: f64, working: &mut Voice) -> f64 {
+    let mut held = |note: f64| {
+        figures.fill(working, note, 1.0);
+        let power: f64 = working
             .partials
             .iter()
             .map(|(_, s)| 10f64.powf(s.levels[s.levels.len() - 1] / 10.0))
             .sum();
         10.0 * power.max(1e-30).log10()
     };
-    let mut notes: Vec<u8> = figures.recordings.iter().map(|r| r.note).collect();
-    notes.sort();
-    let middle = notes[notes.len() / 2] as f64;
-    10f64.powf(-even * (held(note) - held(middle)) / 20.0)
+    10f64.powf(-even * (held(note) - held(figures.middle)) / 20.0)
 }
 
 /// Where a note's figures start again from.
@@ -1268,9 +1338,76 @@ struct Sustained {
     inhale: Vec<(Band, f64)>,
     inhaled: Option<f64>,
     fading: Vec<Sine>,
+    /// Every band below half the rate, warmed, which a note takes the bands it sounds from.
+    warm: Vec<Band>,
+    gain: f32,
+    refill: Option<HeldRefill>,
+    /// The first rates it was set to, and how many times it was set.
+    rates: ([f64; 8], usize),
 }
 
 impl Sustained {
+    // Starts the note the voice holds again from its first sample, within the room set aside.
+    fn restart(&mut self) {
+        fill_sines(&self.voice, self.rate, &mut self.sines);
+        fill_bands(&self.voice, &self.warm, &mut self.bands);
+        self.sample = 0;
+        self.let_go = None;
+        self.phase = 0.0;
+        self.origin = 0.0;
+        self.gliding = 0.0;
+        self.fading.clear();
+        self.read(self.base, self.vel);
+    }
+
+    // Starts again from the note and vel the engine gave it, when it gave one, as `held_note` builds a note.
+    fn refill(&mut self) {
+        let Some(refill) = &mut self.refill else {
+            return;
+        };
+        let Some((note, vel)) = refill.hold.given() else {
+            return;
+        };
+        let vel = vel.clamp(0.0, 1.0);
+        let breath = refill.breath;
+        self.register = breath.map_or(1.0, |b| {
+            register(self.figures, note, b.even, &mut refill.working)
+        });
+        self.gain = (refill.gain)(vel) as f32;
+        let legato = refill.legato;
+        self.figures.fill(&mut self.voice, note, vel);
+        vibrate(&mut self.voice, self.vibrato);
+        self.skip = legato.clamp(0.0, 1.0) * self.voice.vibrato.map_or(0.0, |v| v.settles);
+        self.falls = if breath.is_some() {
+            5.0
+        } else {
+            self.voice.falls()
+        };
+        self.under = self.voice.loudest() - 100.0;
+        self.base = note;
+        self.vel = vel;
+        self.blown = vel;
+        self.last_vel = vel;
+        self.breath = breath;
+        self.deepen = self.vary();
+        // A note built takes a draw for each of its sines each time its rate is set, so this one takes those of the rates set before the last again.
+        let (rates, set) = self.rates;
+        for rate in &rates[..Ord::min(set, rates.len()).saturating_sub(1)] {
+            let sines = self
+                .voice
+                .partials
+                .iter()
+                .filter(|(freq, shape)| {
+                    *freq < rate / 2.0 && shape.levels.iter().any(|l| *l > -140.0)
+                })
+                .count();
+            for _ in 0..sines {
+                self.uniform();
+            }
+        }
+        self.restart();
+    }
+
     // A held level at `t`: the shape's level until the note is let go, its last level after the last time, and falling at its slope after the letting go.
     // A band's level runs in straight lines of power between the times, as the fit reads it.
     fn level(&self, shape: &Shape, t: f64, power: bool) -> f64 {
@@ -1299,7 +1436,7 @@ impl Sustained {
     // Moves to the figures of `note` at `vel`: each sine goes on as the nearest harmonic of the new note, a band as the same band, and the rest fade out, all over the slur.
     fn revoice(&mut self, note: f64, vel: f64, t: f64, from: From) {
         if let Some(breath) = self.breath.filter(|_| from != From::Same) {
-            self.register = register(self.figures, note, breath.even);
+            self.register = register(self.figures, note, breath.even, &mut Voice::empty());
         }
         let voice = vibrated(self.figures.voice(note, vel), self.vibrato);
         let (old, new) = (hz(self.base), hz(note));
@@ -1617,29 +1754,16 @@ impl AudioNode for Sustained {
     type Outputs = U1;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
-        let mut struck = Struck {
-            voice: self.voice.clone(),
-            rate: sample_rate,
-            sines: vec![],
-            bands: vec![],
-            warm: vec![],
-            sample: 0,
-            gain: 1.0,
-            refill: None,
-        };
-        struck.set_sample_rate(sample_rate);
+        let (rates, set) = &mut self.rates;
+        if let Some(rate) = rates.get_mut(*set) {
+            *rate = sample_rate;
+        }
+        *set += 1;
         self.rate = sample_rate;
-        self.sample = 0;
-        self.let_go = None;
-        self.phase = 0.0;
-        self.origin = 0.0;
-        self.gliding = 0.0;
-        self.fading.clear();
-        self.sines = struck.sines;
-        self.bands = struck.bands;
-        self.sines.iter_mut().for_each(|s| s.amplitude = 0.0);
-        self.bands.iter_mut().for_each(|b| b.amplitude = 0.0);
-        self.read(self.base, self.vel);
+        self.warm = warm_bands(&self.voice, sample_rate);
+        self.sines = Vec::with_capacity(self.voice.partials.capacity());
+        self.bands = Vec::with_capacity(self.warm.len());
+        self.restart();
     }
 
     fn reset(&mut self) {
@@ -1647,6 +1771,9 @@ impl AudioNode for Sustained {
     }
 
     fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+        if self.sample == 0 && self.refill.is_some() {
+            self.refill();
+        }
         if self.sample > 0 && self.sample.is_multiple_of(BLOCK) {
             self.read(input[0] as f64, input[1] as f64);
         }
@@ -1681,7 +1808,7 @@ impl AudioNode for Sustained {
             band.amplitude += band.step;
         }
         self.sample += 1;
-        [(sum * self.sounding + breath) as f32].into()
+        [(sum * self.sounding + breath) as f32 * self.gain].into()
     }
 }
 
@@ -1963,8 +2090,8 @@ mod ready {
     }
 
     #[test]
-    fn a_struck_note_built_ready_and_given_another_note_plays_as_one_built_for_it() {
-        let struck = [
+    fn a_fitted_note_built_ready_and_given_another_note_plays_as_one_built_for_it() {
+        let fitted = [
             "piano",
             "guitar",
             "electric_bass",
@@ -1977,30 +2104,48 @@ mod ready {
             "xylophone",
             "glockenspiel",
             "timpani",
+            "violin",
+            "cello",
+            "flute_figured",
         ];
-        for name in struck {
+        for name in fitted {
             let synth = crate::synths::all()
                 .into_iter()
                 .find(|s| s.name == name)
                 .unwrap();
             for (note, vel) in [(48.0, 0.3), (73.0, 1.0)] {
                 let mut ctx = Context::ready(name.into());
-                let mut ready = (synth.build)(&options(&synth, 60.0, 0.7), &mut ctx);
-                let hold = ctx.take_ready().expect("a struck note builds ready");
+                let plain = options(&synth, 60.0, 0.7);
+                let mut ready = (synth.build)(&plain, &mut ctx);
+                let hold = ctx.take_ready().expect("a fitted note builds ready");
                 ready.sound.set_sample_rate(48_000.0);
                 ready.sound.allocate();
                 let mut built =
                     (synth.build)(&options(&synth, note, vel), &mut Context::new(name.into()));
                 built.sound.set_sample_rate(48_000.0);
                 built.sound.allocate();
-                assert_eq!(hold.give(note, vel), built.end, "{name} lasts otherwise");
-                let mut first = Vec::with_capacity(2 * 24_000);
+                let release = built.release.as_ref().map(|(_, seconds)| *seconds);
+                assert_eq!(
+                    hold.give(note, vel),
+                    (built.end, release.unwrap()),
+                    "{name} lasts otherwise"
+                );
+                // As the engine does, a held note's note and vel are set where it follows them.
+                let controls = plain.take_controls();
+                for (option, value) in [("note", note), ("vel", vel)] {
+                    if let Some(control) = controls.get(option) {
+                        control.target.set(value as f32);
+                    }
+                }
+                // A second and a half, past where a breath's wander comes in.
+                let frames = 72_000;
+                let mut first = Vec::with_capacity(2 * frames);
                 let made =
                     crate::allocations::allocations(|| samples_into(&mut ready, 64, &mut first));
                 assert_eq!(made, 0, "{name} allocates as it starts note {note}");
-                first.extend(samples(&mut ready, 24_000 - 64));
+                first.extend(samples(&mut ready, frames - 64));
                 assert!(
-                    first == samples(&mut built, 24_000),
+                    first == samples(&mut built, frames),
                     "{name} plays note {note} at vel {vel} otherwise"
                 );
             }

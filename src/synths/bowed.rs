@@ -418,12 +418,15 @@ fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, leve
                 .doc("1 changes bow from a note still sounding: the string speaks at once, from where the recordings settle, instead of from silence."),
         )
         .options(Spec::envelope(1.0, 0.3))
-        .build(move |o, _ctx| {
+        .build(move |o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let pizz = o.number("pizz").clamp(0.0, 1.0);
             let figures = figures();
-            let gain = level * (vel / figures.softest()).min(1.0);
-            let bowed = held_note(figures, gain, Some(o.number("vibrato")), o.number("legato"), None, o);
+            let gain = move |vel: f64| level * (vel / figures.softest()).min(1.0);
+            // A plucked note mixes in a pluck built for its note, so only a bowed one can be kept ready.
+            let built = &mut Context::new(o.owner.clone());
+            let ctx = if pizz <= 0.0 { ctx } else { built };
+            let bowed = held_note(figures, gain, Some(o.number("vibrato")), o.number("legato"), None, o, ctx);
             if pizz <= 0.0 {
                 return bowed;
             }

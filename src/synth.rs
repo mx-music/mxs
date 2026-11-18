@@ -96,15 +96,17 @@ pub struct Note {
     pub(crate) release: Option<(Shared, f64)>,
 }
 
-/// The hold the engine keeps on a voice built ready: the note and vel it plays, written before it starts, and how many seconds a note at a note and vel lasts.
+/// The hold the engine keeps on a voice built ready: the note and vel it plays, written before it starts, and how many seconds a note at a note and vel lasts and takes to fall silent once let go.
 pub(crate) struct Ready {
     note: AtomicU64,
     vel: AtomicU64,
-    lasts: Box<dyn Fn(f64, f64) -> f64 + Send + Sync>,
+    lasts: Box<dyn Fn(f64, f64) -> (f64, f64) + Send + Sync>,
 }
 
 impl Ready {
-    pub(crate) fn new(lasts: impl Fn(f64, f64) -> f64 + Send + Sync + 'static) -> Arc<Ready> {
+    pub(crate) fn new(
+        lasts: impl Fn(f64, f64) -> (f64, f64) + Send + Sync + 'static,
+    ) -> Arc<Ready> {
         Arc::new(Ready {
             note: AtomicU64::new(f64::NAN.to_bits()),
             vel: AtomicU64::new(0),
@@ -112,8 +114,8 @@ impl Ready {
         })
     }
 
-    /// Gives the voice the note and vel it plays, before the engine sends it on, and says how many seconds it lasts.
-    pub(crate) fn give(&self, note: f64, vel: f64) -> f64 {
+    /// Gives the voice the note and vel it plays, before the engine sends it on, and says how many seconds it lasts and takes to fall silent once let go.
+    pub(crate) fn give(&self, note: f64, vel: f64) -> (f64, f64) {
         self.note.store(note.to_bits(), Ordering::Relaxed);
         self.vel.store(vel.to_bits(), Ordering::Relaxed);
         (self.lasts)(note, vel)
