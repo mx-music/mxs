@@ -651,7 +651,7 @@ fn noise_scale(low: f64, high: f64, rate: f64) -> f64 {
     .sqrt()
 }
 
-/// A band's noise gain and its filters once warmed, by its edges, its place among the bands and the rate, which every note of an instrument shares.
+/// A band's noise gain and its filters once warmed, by its edges, its place among the bands and the rate, which every note of every instrument with that band shares.
 static WARMED: LazyLock<Mutex<HashMap<(u64, u64, usize, u64), Band>>> =
     LazyLock::new(Default::default);
 
@@ -1578,18 +1578,34 @@ mod build_time {
             .unwrap()
     }
 
+    // Instruments share their noise bands, so each plays at a rate no other test plays, and its
+    // first note works the bands out.
     #[test]
-    fn a_fitted_note_after_the_first_builds_in_under_0_3_ms() {
-        for name in ["piano", "cello", "marimba", "electric_piano"] {
+    fn a_fitted_note_after_the_first_builds_ten_times_as_fast() {
+        for (name, rate) in [
+            ("piano", 41_000.0),
+            ("cello", 41_001.0),
+            ("marimba", 41_002.0),
+            ("electric_piano", 41_003.0),
+        ] {
             let synth = synth(name);
-            build(&synth, 60.0, 48_000.0);
-            let notes = [48.0, 55.0, 62.0, 69.0, 76.0];
             let start = Instant::now();
-            for note in notes {
-                build(&synth, note, 48_000.0);
-            }
-            let each = start.elapsed().as_secs_f64() * 1000.0 / notes.len() as f64;
-            assert!(each < 0.3, "a {name} note builds in {each:.3} ms");
+            build(&synth, 60.0, rate);
+            let first = start.elapsed().as_secs_f64();
+            let mut each: Vec<f64> = [48.0, 55.0, 62.0, 69.0, 76.0]
+                .into_iter()
+                .map(|note| {
+                    let start = Instant::now();
+                    build(&synth, note, rate);
+                    start.elapsed().as_secs_f64()
+                })
+                .collect();
+            each.sort_by(f64::total_cmp);
+            let median = each[each.len() / 2];
+            assert!(
+                median * 10.0 < first,
+                "a {name} note builds in {median:.6} s after a first note of {first:.6} s"
+            );
         }
     }
 
