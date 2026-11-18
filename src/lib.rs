@@ -15,8 +15,8 @@ mod report;
 mod sample;
 mod spec;
 mod synth;
-mod time;
 pub mod synths;
+mod time;
 
 pub use device::{Device, Settings, devices};
 pub use engine::{Engine, Error, Event, Pass, Source, Target, VOICES};
