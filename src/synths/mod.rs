@@ -103,7 +103,7 @@ fn about(name: &str) -> &'static str {
             "A tanpura's drone, four strings plucked in turn with the note as Sa, fitted to \"Tanpura 10\" by sankalp on Freesound."
         }
         "violin" => {
-            "A violin, bowed or plucked: the bowed note is a model of a bowed string, so notes slurred in one bow are one note whose pitch changes. Fitted to the University of Iowa's violin from G3 to B7 and VSCO 2's solo violin."
+            "A violin, bowed or plucked, its bowed notes fitted partial by partial to the University of Iowa's arco violin at pp, mf and ff from G3 to B7, played there without vibrato, so its vibrato is a player's; a bowed note follows its note as it slides, so notes slurred in one bow are one note whose note changes."
         }
         "viola" => {
             "A viola, bowed or plucked as the violin is, fitted to the University of Iowa's viola from C3 to Bb6."

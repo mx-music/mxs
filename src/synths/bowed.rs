@@ -213,7 +213,7 @@ fn string(note: Net, bow: Bow) -> Net {
 /// Every bowed instrument mx ships.
 pub fn all() -> Vec<Synth> {
     vec![
-        bowed(
+        figured(
             "violin",
             Bowed {
                 peak: 333.0,
@@ -228,18 +228,8 @@ pub fn all() -> Vec<Synth> {
                 count: 32,
                 level: 0.0,
             },
-            Fit {
-                body: 384.3,
-                gains: [
-                    [0.0, 0.0, 12.2, -3.9, 5.1, -11.6, 4.5, 5.0],
-                    [0.0, 0.0, 7.2, 2.1, 1.4, -1.5, 8.0, 6.1],
-                    [0.0, 0.0, 3.8, 2.0, 3.4, -3.2, 3.5, 11.5],
-                ],
-                levels: [-25.05, -28.90, -30.45],
-                swell: [0.875, 0.65, 0.35],
-                rosin: [0.6, 0.23, 0.35],
-                hiss: [-35.5, -35.5, -30.5],
-            },
+            violin_figures,
+            VIOLIN_LEVEL,
         ),
         bowed(
             "viola",
@@ -443,6 +433,15 @@ fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, leve
             Note::envelope(bowed.sound * (1.0 - pizz) as f32 + pluck, o).within(end)
         })
 }
+
+/// The violin's figures, fitted partial by partial to the University of Iowa's arco violin at pp, mf and ff.
+fn violin_figures() -> &'static Figures {
+    static FIGURES: OnceLock<Figures> = OnceLock::new();
+    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/violin.mxh")))
+}
+
+/// The violin's gain at vel 1, as loud at vel 1 as its bowed model on average over G3 to C7, since its recordings' high notes stand up to 9 dB quieter.
+const VIOLIN_LEVEL: f64 = 1.39;
 
 /// The cello's figures, fitted partial by partial to the University of Iowa's arco cello at pp, mf and ff.
 fn cello_figures() -> &'static Figures {

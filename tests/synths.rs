@@ -588,3 +588,26 @@ fn a_plucked_cello_note_rings_and_ends_by_itself() {
     assert!(level(&sound, 0.0, 0.5) > -40.0);
     assert!(level(&sound, 11.0, 12.0) < -100.0);
 }
+
+#[test]
+fn a_violin_note_held_twice_as_long_as_its_recordings_holds_its_level_then_falls_once_let_go() {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    let options = [
+        ("note", 69.0),
+        ("vel", 0.6),
+        ("sustain", 10.0),
+        ("vibrato", 0.0),
+    ];
+    engine
+        .play(&[(0.0, Event::note(None, "violin", &options))])
+        .unwrap();
+    let sound = engine.render(12.0).unwrap().0;
+    let (early, late) = (level(&sound, 2.0, 3.0), level(&sound, 9.0, 10.0));
+    assert!(
+        (early - late).abs() < 1.0,
+        "{early} dB early, {late} dB late"
+    );
+    let after = level(&sound, 11.5, 12.0);
+    assert!(late - after > 20.0, "{late} dB held, {after} dB after");
+}
