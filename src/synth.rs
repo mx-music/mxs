@@ -5,6 +5,7 @@ use crate::options::{Context, Options};
 use crate::spec::Spec;
 use fundsp::prelude::*;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) type BuildNote = dyn Fn(&Options, &mut Context) -> Note + Send + Sync;
 type BuildEffect = dyn Fn(&Options, &mut Context) -> Net + Send + Sync;
@@ -95,6 +96,37 @@ pub struct Note {
     pub(crate) release: Option<(Shared, f64)>,
 }
 
+/// The hold the engine keeps on a voice built ready: the note and vel it plays, written before it starts, and how many seconds a note at a note and vel lasts.
+pub(crate) struct Ready {
+    note: AtomicU64,
+    vel: AtomicU64,
+    lasts: Box<dyn Fn(f64, f64) -> f64 + Send + Sync>,
+}
+
+impl Ready {
+    pub(crate) fn new(lasts: impl Fn(f64, f64) -> f64 + Send + Sync + 'static) -> Arc<Ready> {
+        Arc::new(Ready {
+            note: AtomicU64::new(f64::NAN.to_bits()),
+            vel: AtomicU64::new(0),
+            lasts: Box::new(lasts),
+        })
+    }
+
+    /// Gives the voice the note and vel it plays, before the engine sends it on, and says how many seconds it lasts.
+    pub(crate) fn give(&self, note: f64, vel: f64) -> f64 {
+        self.note.store(note.to_bits(), Ordering::Relaxed);
+        self.vel.store(vel.to_bits(), Ordering::Relaxed);
+        (self.lasts)(note, vel)
+    }
+
+    /// The note and vel given, or `None` before any is.
+    pub(crate) fn given(&self) -> Option<(f64, f64)> {
+        let note = f64::from_bits(self.note.load(Ordering::Relaxed));
+        let vel = f64::from_bits(self.vel.load(Ordering::Relaxed));
+        (!note.is_nan()).then_some((note, vel))
+    }
+}
+
 impl Note {
     /// A sound that rings until it fades by itself, after `seconds`.
     pub fn rings(sound: impl AudioUnit + 'static, seconds: f64) -> Note {
@@ -129,9 +161,17 @@ impl Note {
         };
         Note {
             sound,
-            end: attack + decay + sustain + release,
+            end: Note::envelope_seconds(options),
             release: Some((gate, release)),
         }
+    }
+
+    /// The seconds the envelope of a note with `options` lasts, let go at its end.
+    pub(crate) fn envelope_seconds(options: &Options) -> f64 {
+        options.number("attack")
+            + options.number("decay")
+            + options.number("sustain")
+            + options.number("release")
     }
 
     /// Ends the note after `seconds`, if it would end later.

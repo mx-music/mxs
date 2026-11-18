@@ -1,7 +1,7 @@
 //! mx's strings, plucked and struck: the guitar, the cavaquinho and bandolim, the harp, the sitar, the tanpura and the piano.
 
 use super::common::{along, bpf, hpf, lpf, net, partials, silent_after, sine_from, struck};
-use super::figures::{Figures, Voice, evened, fitted, kept};
+use super::figures::{Figures, Recipe, Voice, evened, fitted, kept, strike};
 use crate::nodes::{db, decay2, hit, hz, modes, segment_at, shape, struck_gliding, white_noise};
 use crate::{Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
@@ -32,7 +32,7 @@ fn guitar() -> Synth {
                 .doc("How hard the string is plucked."),
         )
         .options(Spec::envelope(1000.0, 2.0))
-        .build(|o, _ctx| kept(guitar_figures(), GUITAR_LEVEL, o))
+        .build(|o, ctx| kept(guitar_figures(), GUITAR_LEVEL, o, ctx))
 }
 
 /// The guitar's figures, fitted partial by partial to the University of Iowa's guitar.
@@ -54,7 +54,7 @@ fn electric_bass() -> Synth {
                 .doc("How hard the string is plucked."),
         )
         .options(Spec::envelope(1000.0, 0.1))
-        .build(|o, _ctx| fitted(ebass(), EBASS_LEVEL, BASS_GROWTH, o))
+        .build(|o, ctx| fitted(ebass(), EBASS_LEVEL, BASS_GROWTH, o, ctx))
 }
 
 /// The electric bass's figures, fitted partial by partial to NSynth's bass_electronic_018.
@@ -76,7 +76,7 @@ fn deep_bass() -> Synth {
                 .doc("How hard the string is plucked."),
         )
         .options(Spec::envelope(1000.0, 0.1))
-        .build(|o, _ctx| fitted(dbass(), DBASS_LEVEL, BASS_GROWTH, o))
+        .build(|o, ctx| fitted(dbass(), DBASS_LEVEL, BASS_GROWTH, o, ctx))
 }
 
 /// The deep bass's figures, fitted partial by partial to NSynth's bass_electronic_025 and bass_electronic_027.
@@ -165,7 +165,7 @@ fn plucked(
 }
 
 fn harp() -> Synth {
-    struck("harp", 2.0).build(|o, _ctx| evened(harp_figures(), HARP_LEVEL, o))
+    struck("harp", 2.0).build(|o, ctx| evened(harp_figures(), HARP_LEVEL, o, ctx))
 }
 
 /// The harp's figures, fitted partial by partial to the folk harp of the Versilian Community Sample Library.
@@ -417,8 +417,12 @@ pub fn piano() -> Synth {
                 .doc("How loud the hammer's knock under 600 Hz is: 1 as recorded, 0 left out."),
         )
         .options(Spec::envelope(1.0, 1.0))
-        .build(|options, _ctx| {
+        .build(|options, ctx| {
             let pedal = options.number("pedal");
+            // A note with the pedal all the way up or down plays one voice, which can be kept ready.
+            if pedal == 0.0 || pedal == 1.0 {
+                return strike(piano_at(pedal), piano_recipe(options, pedal), options, ctx);
+            }
             let sound = [(0.0, 1.0 - pedal), (1.0, pedal)]
                 .into_iter()
                 .filter(|(_, share)| *share > 0.0)
@@ -463,34 +467,56 @@ const KNOCK_UNDER: f64 = 600.0;
 
 /// What a piano note with `options` plays with its pedal up at 0 or down at 1, and its gain: its recordings are brought to the same peak, which leaves a key with a sharp strike weaker than the next, so every key at every velocity carries the same energy in its partials over their first half second, its differences from `uneven` included, and plays louder by vel alone.
 fn piano_voice(options: &Options, down: f64) -> (Voice, f64) {
-    let figures = if down > 0.0 {
+    let mut voice = Voice::empty();
+    let gain = piano_recipe(options, down).play(
+        options.number("note"),
+        options.number("vel"),
+        &mut voice,
+        &mut Voice::empty(),
+    );
+    (voice, gain)
+}
+
+/// The piano's figures with its pedal up at 0 or down at 1.
+fn piano_at(down: f64) -> &'static Figures {
+    if down > 0.0 {
         piano_pedal_figures()
     } else {
         piano_figures()
-    };
-    let note = options.number("note");
-    let vel = options.number("vel");
-    let mut voice = figures.voice(note, vel);
-    voice.bend(options.number("aftersound") / 0.5);
-    voice.noise_under(KNOCK_UNDER, options.number("knock"));
-    if !figures.recorded(note) {
-        let uneven = options.number("uneven");
-        let instrument = options.number("instrument");
-        let pitch = hz(note);
-        voice.vary(|partial_hz| {
-            uneven * UNEVEN * vary(instrument, note, (4.0 * partial_hz / pitch).round(), 0)
-        });
     }
-    // The partials alone: the noise's estimated energy runs up to 4 dB over what the bands play.
-    let evened = voice.energy().sqrt().recip();
-    let trim = db(BASS_TRIM * ((60.0 - note) / 12.0).clamp(0.0, 1.0)
-        + (TREBLE_TRIM * (note - 60.0).max(0.0)).max(TREBLE_MOST));
-    let level = if down > 0.0 {
-        PIANO_LEVEL * PEDAL_LEVEL
-    } else {
-        PIANO_LEVEL
+}
+
+/// How `piano_voice` fills a voice for a note and vel, with the rest of `options`, and its gain.
+fn piano_recipe(options: &Options, down: f64) -> Recipe {
+    let figures = piano_at(down);
+    let aftersound = options.number("aftersound");
+    let knock = options.number("knock");
+    let uneven = options.number("uneven");
+    let instrument = options.number("instrument");
+    let fill = move |note: f64, vel: f64, voice: &mut Voice| {
+        figures.fill(voice, note, vel);
+        voice.bend(aftersound / 0.5);
+        voice.noise_under(KNOCK_UNDER, knock);
+        if !figures.recorded(note) {
+            let pitch = hz(note);
+            voice.vary(|partial_hz| {
+                uneven * UNEVEN * vary(instrument, note, (4.0 * partial_hz / pitch).round(), 0)
+            });
+        }
     };
-    (voice, level * vel.powf(PIANO_GROWTH) * evened * trim)
+    let gain = move |note: f64, vel: f64, voice: &Voice, _: &mut Voice| {
+        // The partials alone: the noise's estimated energy runs up to 4 dB over what the bands play.
+        let evened = voice.energy().sqrt().recip();
+        let trim = db(BASS_TRIM * ((60.0 - note) / 12.0).clamp(0.0, 1.0)
+            + (TREBLE_TRIM * (note - 60.0).max(0.0)).max(TREBLE_MOST));
+        let level = if down > 0.0 {
+            PIANO_LEVEL * PEDAL_LEVEL
+        } else {
+            PIANO_LEVEL
+        };
+        level * vel.powf(PIANO_GROWTH) * evened * trim
+    };
+    Recipe::new(fill, gain)
 }
 
 /// What a piano note is made of, worked out from its options before any sound exists: the piano plays a note from these and nothing else.

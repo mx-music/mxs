@@ -13,6 +13,8 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
+#[cfg(test)]
+mod allocations;
 mod clock;
 mod device;
 pub mod effects;

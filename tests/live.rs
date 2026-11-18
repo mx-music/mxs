@@ -563,3 +563,70 @@ fn a_pass_handed_over_for_the_beat_being_played_sounds_within_30_ms() {
     println!("the click started {after:.1} ms after it was handed over");
     assert!((0.0..30.0).contains(&after), "{after} ms");
 }
+
+/// The most an event arrived after its time, in ms, from the engine's warnings.
+fn most_late(warnings: &[String]) -> Option<f64> {
+    warnings.iter().find_map(|w| {
+        let (_, after) = w.split_once("after their time, by up to ")?;
+        after.split_once(" ms")?.0.parse().ok()
+    })
+}
+
+#[test]
+#[ignore]
+fn a_chord_from_ready_voices_handed_over_now_starts_within_a_buffer_and_the_voices_are_replaced_within_100_ms()
+ {
+    let mut engine = live(128);
+    engine.keep_ready("piano", 10).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    engine.warnings();
+    let at = engine.now();
+    let chord: Vec<(f64, Event)> = [36.0, 43.0, 48.0, 52.0, 55.0, 60.0, 64.0, 67.0, 71.0, 76.0]
+        .iter()
+        .map(|&note| {
+            (
+                at,
+                Event::note(None, "piano", &[("note", note), ("vel", 0.7)]),
+            )
+        })
+        .collect();
+    let began = Instant::now();
+    engine.play(&chord).unwrap();
+    while engine.kept_ready("piano") < 10 {
+        assert!(
+            began.elapsed() < Duration::from_millis(100),
+            "{} of 10 kept ready after 100 ms",
+            engine.kept_ready("piano")
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    println!("the ready voices were replaced in {:?}", began.elapsed());
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(engine.sounding());
+    let warnings = engine.warnings();
+    let late = most_late(&warnings).unwrap_or(0.0);
+    println!("the chord was late by up to {late} ms: {warnings:?}");
+    assert!(late <= 128.0 / 48.0 + 1.0, "{warnings:?}");
+}
+
+#[test]
+#[ignore]
+fn a_note_no_ready_voice_can_play_handed_over_after_its_time_starts_within_5_ms_of_it_and_is_counted_late()
+ {
+    let mut engine = live(128);
+    engine.keep_ready("piano", 2).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    engine.warnings();
+    let louder = Event::note(None, "piano", &[("note", 62.0), ("amp", 0.5)]);
+    engine.play(&[(engine.now() - 0.001, louder)]).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(engine.sounding());
+    let warnings = engine.warnings();
+    let late = most_late(&warnings).expect("the note is counted late");
+    println!("the built note was late by up to {late} ms");
+    assert!(
+        warnings[0].starts_with("1 event arrived after their time"),
+        "{warnings:?}"
+    );
+    assert!(late < 5.0, "{warnings:?}");
+}

@@ -19,7 +19,7 @@ pub fn all() -> Vec<Synth> {
 }
 
 fn marimba() -> Synth {
-    struck("marimba", 0.3).build(|o, _ctx| kept(marimba_figures(), MARIMBA_LEVEL, o))
+    struck("marimba", 0.3).build(|o, ctx| kept(marimba_figures(), MARIMBA_LEVEL, o, ctx))
 }
 
 /// The marimba's figures, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets.
@@ -34,8 +34,12 @@ const MARIMBA_LEVEL: f64 = 1.53;
 fn vibraphone() -> Synth {
     struck("vibraphone", 0.3)
         .option(Spec::float("motor").default(0.0).range(0.0, f64::INFINITY).doc("How many times a second the discs in the tubes pulse the note; 0 leaves the motor off."))
-        .build(|o, _ctx| {
+        .build(|o, ctx| {
             let motor = o.number("motor");
+            // With the motor off the pulse is 1 throughout, so the note plays as kept, which can be kept ready.
+            if motor == 0.0 {
+                return kept(vibraphone_figures(), VIBRAPHONE_LEVEL, o, ctx);
+            }
             let pulse = shape(move |t| if motor > 0.0 { 1.0 - 0.25 * (1.0 - (2.0 * PI * motor * t).cos()) } else { 1.0 });
             let note = o.number("note");
             let vel = o.number("vel").clamp(0.0, 1.0);
@@ -56,7 +60,7 @@ fn vibraphone_figures() -> &'static Figures {
 const VIBRAPHONE_LEVEL: f64 = 14.7;
 
 fn xylophone() -> Synth {
-    struck("xylophone", 0.3).build(|o, _ctx| kept(xylophone_figures(), XYLOPHONE_LEVEL, o))
+    struck("xylophone", 0.3).build(|o, ctx| kept(xylophone_figures(), XYLOPHONE_LEVEL, o, ctx))
 }
 
 /// The xylophone's figures, fitted partial by partial to the University of Iowa's xylophone struck with rosewood mallets.
@@ -69,7 +73,8 @@ fn xylophone_figures() -> &'static Figures {
 const XYLOPHONE_LEVEL: f64 = 2.38;
 
 fn glockenspiel() -> Synth {
-    struck("glockenspiel", 0.3).build(|o, _ctx| kept(glockenspiel_figures(), GLOCKENSPIEL_LEVEL, o))
+    struck("glockenspiel", 0.3)
+        .build(|o, ctx| kept(glockenspiel_figures(), GLOCKENSPIEL_LEVEL, o, ctx))
 }
 
 /// The glockenspiel's figures, fitted partial by partial to the University of Iowa's orchestral bells struck with plastic mallets.
@@ -82,7 +87,7 @@ fn glockenspiel_figures() -> &'static Figures {
 const GLOCKENSPIEL_LEVEL: f64 = 6.95;
 
 fn timpani() -> Synth {
-    struck("timpani", 0.3).build(|o, _ctx| kept(timpani_figures(), TIMPANI_LEVEL, o))
+    struck("timpani", 0.3).build(|o, ctx| kept(timpani_figures(), TIMPANI_LEVEL, o, ctx))
 }
 
 /// The timpani's figures, fitted partial by partial to the five timpani of VSCO 2.

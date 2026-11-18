@@ -11,7 +11,7 @@ use crate::options::{Context, Control, Options};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Kind, Spec, Value};
-use crate::synth::{BuildNote, Effect, Note, Synth};
+use crate::synth::{BuildNote, Effect, Note, Ready, Synth};
 use crate::time::{Tempo, TempoMap};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use fundsp::prelude::*;
@@ -214,6 +214,8 @@ pub enum Error {
     Failed,
     /// The output device of this name went away, and the engine has to be started again.
     DeviceLost(String),
+    /// The synth of this name builds each note for its note and vel alone, so no voice of it can be kept ready.
+    CannotKeepReady(String),
 }
 
 impl std::fmt::Display for Error {
@@ -254,6 +256,10 @@ impl std::fmt::Display for Error {
             Error::DeviceLost(name) => write!(
                 f,
                 "the output device {name} went away, and the engine has to be started again"
+            ),
+            Error::CannotKeepReady(name) => write!(
+                f,
+                "{name} builds each note for its note and vel alone, so no voice of it can be kept ready"
             ),
         }
     }
@@ -548,6 +554,7 @@ impl Engine {
                 next: next.clone(),
                 clock: clock.clone(),
                 hub: hub.clone(),
+                ready: HashMap::new(),
             })),
             builder: None,
             next,
@@ -1086,11 +1093,22 @@ impl Engine {
             let followers = &mut self.book().followers;
             followers.retain(|f| !fixed.contains(&(f.0, f.1, f.2.as_str())));
         }
-        if let Some(builder) = &self.builder {
-            builder.hand(drafts);
+        let (drafts, taken, replace) = self.take_ready(events, drafts);
+        if self.builder.is_some() {
+            if !taken.is_empty() {
+                let mut book = self.book();
+                book.sweep();
+                book.commit(taken)?;
+            }
+            self.replace_ready(&replace);
+            if let Some(builder) = &self.builder {
+                builder.hand(drafts);
+            }
             return Ok(());
         }
-        let mut items = Vec::with_capacity(drafts.len());
+        self.replace_ready(&replace);
+        // A batch's changes are made once its sounds start, so the ready voices can go first.
+        let mut items = taken;
         for draft in drafts {
             items.push(match draft {
                 Draft::Sound(sound) => Item::Sound(Box::new(build(*sound, self.rate)?)),
@@ -1100,6 +1118,88 @@ impl Engine {
         let mut book = self.book();
         book.sweep();
         book.commit(items)
+    }
+
+    /// Takes a voice kept ready for each note of `events` that one can play, in place of its draft, with the synth of each taken, to replace it; the rest of the drafts are left to build.
+    fn take_ready(
+        &mut self,
+        events: &[(f64, Event)],
+        drafts: Vec<Draft>,
+    ) -> (Vec<Draft>, Vec<Item>, Vec<Arc<str>>) {
+        let mut book = self.book();
+        if book.ready.values().all(Vec::is_empty) {
+            return (drafts, Vec::new(), Vec::new());
+        }
+        let mut left = Vec::with_capacity(drafts.len());
+        let mut taken = Vec::new();
+        let mut replace = Vec::new();
+        for (draft, (_, event)) in drafts.into_iter().zip(events) {
+            match draft {
+                Draft::Sound(sound) => match book.take_ready(event, &sound) {
+                    Some(built) => {
+                        replace.push(sound.options.owner.clone());
+                        taken.push(Item::Sound(Box::new(built)));
+                    }
+                    None => left.push(Draft::Sound(sound)),
+                },
+                change => left.push(change),
+            }
+        }
+        (left, taken, replace)
+    }
+
+    /// Builds a voice to keep ready for each synth named, on the builder thread of a live engine and at once on an offline one.
+    fn replace_ready(&mut self, synths: &[Arc<str>]) {
+        let mut drafts = Vec::with_capacity(synths.len());
+        for synth in synths {
+            if let Ok(mut draft) = self.note_draft(None, synth, &[], 0.0, Out::Main) {
+                draft.ready = true;
+                drafts.push(Draft::Sound(Box::new(draft)));
+            }
+        }
+        if let Some(builder) = &self.builder {
+            builder.hand(drafts);
+            return;
+        }
+        let rate = self.rate;
+        let built: Vec<(Arc<str>, Built)> = drafts
+            .into_iter()
+            .filter_map(|draft| match draft {
+                Draft::Sound(sound) => {
+                    let owner = sound.options.owner.clone();
+                    build(*sound, rate).ok().map(|built| (owner, built))
+                }
+                Draft::Change(..) => None,
+            })
+            .collect();
+        self.book().keep(built);
+    }
+
+    /// Keeps `count` voices of `synth` ready, built before any note asks for one, so a note of it handed over with no option but note and vel starts from one in the block being filled, with nothing built or allocated on the audio thread.
+    /// Each voice taken is replaced off the audio thread: on a live engine's builder thread, and on an offline one as the note is handed over.
+    /// The voices are built here, so the call takes as long as building them; a count of 0 stops keeping voices of `synth` ready.
+    /// Only notes handed over by seconds or frames take a ready voice; a note in a pass is built as before.
+    /// A synth fitted to recordings of struck notes can be kept ready; one that builds each note for its note and vel alone is refused with [`Error::CannotKeepReady`].
+    pub fn keep_ready(&mut self, synth: &str, count: usize) -> Result<(), Error> {
+        self.check_running()?;
+        let mut kept = Vec::with_capacity(count);
+        for _ in 0..Ord::max(count, 1) {
+            let mut draft = self.note_draft(None, synth, &[], 0.0, Out::Main)?;
+            draft.ready = true;
+            let built = build(draft, self.rate)?;
+            if built.ready.is_none() {
+                return Err(Error::CannotKeepReady(synth.to_string()));
+            }
+            kept.push(built);
+        }
+        kept.truncate(count);
+        self.book().ready.insert(synth.to_string(), kept);
+        Ok(())
+    }
+
+    /// How many voices of `synth` are kept ready now.
+    pub fn kept_ready(&self, synth: &str) -> usize {
+        self.book().ready.get(synth).map_or(0, Vec::len)
     }
 
     /// An event checked, to play at `at` seconds into the output it names, or into `part` when one is given.
@@ -1410,6 +1510,7 @@ impl Engine {
             input: None,
             options: Options::new(owner, specs, values),
             make: Make::Note(build),
+            ready: false,
         })
     }
 
@@ -1437,6 +1538,7 @@ impl Engine {
             input: None,
             options: Options::new(owner, specs, values),
             make: Make::Sample(data),
+            ready: false,
         })
     }
 
@@ -1464,6 +1566,7 @@ impl Engine {
             input: Some((input, channels)),
             options: Options::new(owner, specs, values),
             make: Make::Input(channels),
+            ready: false,
         })
     }
 }
@@ -1496,6 +1599,8 @@ struct SoundDraft {
     input: Option<(usize, usize)>,
     options: Options,
     make: Make,
+    /// Whether it is built to be kept ready rather than played.
+    ready: bool,
 }
 
 enum Make {
@@ -1524,14 +1629,20 @@ struct Built {
     lasts: f64,
     controls: HashMap<String, Control>,
     release: Option<(Shared, f64)>,
+    /// The hold on a voice built to be kept ready.
+    ready: Option<Arc<Ready>>,
 }
 
 /// Builds a draft's sound, which is the costly part of starting a note and needs nothing of the engine.
 fn build(draft: SoundDraft, rate: f64) -> Result<Built, Error> {
     let options = &draft.options;
     let owner = options.owner.clone();
+    let mut ctx = match draft.ready {
+        true => Context::ready(owner.clone()),
+        false => Context::new(owner.clone()),
+    };
     let note = match draft.make {
-        Make::Note(build) => build(options, &mut Context::new(owner.clone())),
+        Make::Note(build) => build(options, &mut ctx),
         Make::Sample(data) => sample_note(data, options),
         Make::Input(1) => Note::rings(Net::wrap(Box::new(pass())), f64::INFINITY),
         Make::Input(_) => Note::rings(Net::wrap(Box::new(multipass::<U2>())), f64::INFINITY),
@@ -1560,6 +1671,7 @@ fn build(draft: SoundDraft, rate: f64) -> Result<Built, Error> {
         lasts: note.end,
         controls: options.take_controls(),
         release: note.release,
+        ready: ctx.take_ready(),
     })
 }
 
@@ -1598,9 +1710,40 @@ struct Book {
     clock: Arc<AtomicU64>,
     /// Where what the builder thread has to say goes, until [`Engine::warnings`] is asked.
     hub: Arc<Hub>,
+    /// The voices kept ready of each synth asked for, each built and waiting for its note and vel.
+    ready: HashMap<String, Vec<Built>>,
 }
 
 impl Book {
+    /// Adds voices built ready to those kept for their synths.
+    fn keep(&mut self, kept: Vec<(Arc<str>, Built)>) {
+        for (synth, built) in kept {
+            self.ready.entry(synth.to_string()).or_default().push(built);
+        }
+    }
+
+    /// A voice kept ready for the note `sound` drafts, given its note and vel and placed as the draft is, when `event` gives no other option and one is kept.
+    fn take_ready(&mut self, event: &Event, sound: &SoundDraft) -> Option<Built> {
+        let Event::Note { synth, options, .. } = event else {
+            return None;
+        };
+        if !options
+            .iter()
+            .all(|(name, _)| name == "note" || name == "vel")
+        {
+            return None;
+        }
+        let mut built = self.ready.get_mut(synth)?.pop()?;
+        let hold = built.ready.as_ref()?;
+        built.lasts = hold.give(sound.options.number("note"), sound.options.number("vel"));
+        built.id = sound.id;
+        built.at = sound.at;
+        built.beat = sound.beat;
+        built.stamp = sound.stamp;
+        built.out = sound.out;
+        Some(built)
+    }
+
     fn frames(&self, seconds: f64) -> u64 {
         (seconds.max(0.0) * self.rate).round() as u64
     }
@@ -2164,14 +2307,17 @@ impl Builder {
                     }
                     let mut said: Vec<String> = Vec::new();
                     let mut items = Vec::with_capacity(batch.len());
+                    let mut kept = Vec::new();
                     for draft in batch {
                         match draft {
                             Draft::Sound(sound) => {
                                 let owner = sound.options.owner.clone();
+                                let ready = sound.ready;
                                 let built = std::panic::catch_unwind(
                                     std::panic::AssertUnwindSafe(|| build(*sound, rate)),
                                 );
                                 match built {
+                                    Ok(Ok(built)) if ready => kept.push((owner, built)),
                                     Ok(Ok(built)) => items.push(Item::Sound(Box::new(built))),
                                     Ok(Err(error)) => {
                                         said.push(format!("{error}, so its note did not play"))
@@ -2186,6 +2332,7 @@ impl Builder {
                     }
                     if counted || !items.is_empty() || !said.is_empty() {
                         let mut book = book.lock().unwrap_or_else(|e| e.into_inner());
+                        book.keep(kept);
                         book.sweep();
                         if let Err(error) = book.commit(items) {
                             said.push(format!("{error}, so some events did not play"));

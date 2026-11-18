@@ -19,7 +19,7 @@ fn electric_piano() -> Synth {
                 .doc("How hard the key is struck."),
         )
         .options(Spec::envelope(1000.0, 0.15))
-        .build(|o, _ctx| fitted(epiano(), EPIANO_LEVEL, 0.4, o))
+        .build(|o, ctx| fitted(epiano(), EPIANO_LEVEL, 0.4, o, ctx))
 }
 
 /// The electric piano's figures, fitted partial by partial to NSynth's keyboard_electronic_098.
@@ -41,7 +41,7 @@ fn electric_guitar() -> Synth {
                 .doc("How hard the string is picked."),
         )
         .options(Spec::envelope(1000.0, 0.08))
-        .build(|o, _ctx| fitted(eguitar(), EGUITAR_LEVEL, 0.4, o))
+        .build(|o, ctx| fitted(eguitar(), EGUITAR_LEVEL, 0.4, o, ctx))
 }
 
 /// The electric guitar's figures, fitted partial by partial to NSynth's guitar_electronic_028.

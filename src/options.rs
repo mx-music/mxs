@@ -139,11 +139,38 @@ impl Options {
 pub struct Context {
     owner: Arc<str>,
     count: u64,
+    /// Whether the note is built to be kept ready, and the hold on it once built so.
+    ready: (bool, Option<Arc<crate::synth::Ready>>),
 }
 
 impl Context {
     pub(crate) fn new(owner: Arc<str>) -> Self {
-        Context { owner, count: 0 }
+        Context {
+            owner,
+            count: 0,
+            ready: (false, None),
+        }
+    }
+
+    /// A context that asks for the note to be built so the engine can keep it ready and give it another note and vel before it starts.
+    pub(crate) fn ready(owner: Arc<str>) -> Self {
+        Context {
+            ready: (true, None),
+            ..Context::new(owner)
+        }
+    }
+
+    pub(crate) fn asks_ready(&self) -> bool {
+        self.ready.0
+    }
+
+    pub(crate) fn built_ready(&mut self, hold: Arc<crate::synth::Ready>) {
+        self.ready.1 = Some(hold);
+    }
+
+    /// The hold on the note built, when it was built ready.
+    pub(crate) fn take_ready(&mut self) -> Option<Arc<crate::synth::Ready>> {
+        self.ready.1.take()
     }
 
     /// A seed for a random node, from the synth's name and how many seeds it asked for before, so a note sounds the same on every run.
