@@ -39,7 +39,7 @@ fn main() {
         Some(_) => Engine::offline(RATE),
         None => Engine::live().unwrap_or_else(|e| panic!("{e}")),
     };
-    // The engine plays the synths it knows by name, so give it all of mx's.
+    // The engine plays the synths it knows by name, so give it all that come with the crate.
     synths::all().into_iter().for_each(|s| engine.register(s));
 
     // 2. The notes, each stamped in seconds on the engine's clock; a short lead lets them queue before they sound.
