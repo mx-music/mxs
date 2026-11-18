@@ -1,10 +1,8 @@
 //! mx's strings, plucked and struck: the guitar, the cavaquinho and bandolim, the harp, the sitar, the tanpura and the piano.
 
 use super::common::{along, bpf, hpf, lpf, net, partials, silent_after, sine_from, struck};
-use super::figures::{Figures, evened, fitted, kept};
-use crate::nodes::{
-    db, decay2, hit, hz, modes, perc, segment_at, shape, struck_gliding, white_noise,
-};
+use super::figures::{Figures, Voice, evened, fitted, kept};
+use crate::nodes::{db, decay2, hit, hz, modes, segment_at, shape, struck_gliding, white_noise};
 use crate::{Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -378,8 +376,8 @@ impl AudioNode for Pulses {
     }
 }
 
-/// The piano: each harmonic a resonator struck once, with a thump of noise.
-/// Its options are `note`, `vel` for how hard the key is struck, `pedal` for the sustain pedal, `aftersound` for the fade in two stages, `uneven` and `instrument` for the keys' differences, and `knock` for the hammer's knock.
+/// The piano: the Steinway B of the Versilian Community Sample Library played from figures fitted partial by partial to its recordings, with the pedal and without.
+/// Its options are `note`, `vel` for how hard the key is struck, `pedal` for the sustain pedal, `aftersound` for the fade in two stages, `uneven` and `instrument` for the differences of the keys not recorded, and `knock` for the hammer's knock.
 pub fn piano() -> Synth {
     Synth::new("piano")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
@@ -399,13 +397,13 @@ pub fn piano() -> Synth {
             Spec::float("aftersound")
                 .default(0.5)
                 .range(0.0, 1.0)
-                .doc("How far each harmonic fades in two stages, fast after the strike and then slowly, as the Steinway's do."),
+                .doc("How far each partial fades in two stages, fast after the strike and then slowly: 0.5 as the Steinway's do, 0 at one rate, and 1 with a deeper fast stage."),
         )
         .option(
             Spec::float("uneven")
                 .default(1.0)
                 .range(0.0, 1.0)
-                .doc("How far each key differs from its neighbours in its harmonics' levels, fades and beating."),
+                .doc("How far each key that was not recorded differs from the recorded keys either side in its partials' levels."),
         )
         .option(
             Spec::integer("instrument")
@@ -416,46 +414,80 @@ pub fn piano() -> Synth {
             Spec::float("knock")
                 .default(1.0)
                 .range(0.0, 1.0)
-                .doc("How loud the hammer's knock through the soundboard is."),
+                .doc("How loud the hammer's knock under 600 Hz is: 1 as recorded, 0 left out."),
         )
         .options(Spec::envelope(1.0, 1.0))
-        .build(|options, ctx| {
-            let parts = piano_parts(options);
-            let bank = parts
-                .harmonics
-                .iter()
-                .map(|h| (h.hz, h.level, h.fade))
-                .chain(parts.partners.iter().map(|p| (p.hz, p.level, p.fade)))
-                .map(|(hz, level, fade)| crate::nodes::struck(hz, level, fade))
-                .reduce(|a, b| a & b)
-                .expect("a piano note has harmonics");
-            let strings = Net::wrap(Box::new(impulse::<U1>())) >> bank;
-            let thump = (white_noise(ctx.seed())
-                >> lowpass_hz(parts.thump.below_hz as f32, 0.707))
-                * shape(|t| perc(t, 0.001, 0.02));
-            let sound = (strings * STRINGS + thump * parts.thump.level as f32)
-                * parts.loudness as f32;
-            let Some(knock) = parts.knock else {
-                return Note::envelope(sound, options);
-            };
-            let board = knock
-                .resonances
-                .iter()
-                .map(|&hz| crate::nodes::struck(hz, 1.0, 0.5))
-                .reduce(|a, b| a & b)
-                .expect("the soundboard has resonances");
-            let blow = (white_noise(ctx.seed()) >> lowpass_hz(700.0, 0.707))
-                * shape(|t| perc(t, 0.001, 0.012));
-            let knocked = (blow >> board) * knock.level as f32;
-            Note::envelope(sound + knocked, options)
+        .build(|options, _ctx| {
+            let pedal = options.number("pedal");
+            let sound = [(0.0, 1.0 - pedal), (1.0, pedal)]
+                .into_iter()
+                .filter(|(_, share)| *share > 0.0)
+                .map(|(down, share)| {
+                    let (voice, gain) = piano_voice(options, down);
+                    let end = voice.silent_after();
+                    (voice.sound() * (gain * share) as f32, end)
+                })
+                .reduce(|(a, x), (b, y)| (a + b, x.max(y)))
+                .expect("a piano note has a voice");
+            Note::envelope(sound.0, options).within(sound.1)
         })
 }
 
-const KNOCK: f64 = 0.0007;
-const STRINGS: f32 = 0.019;
-const THUMP_SECONDS: f64 = 0.021;
-// The soundboard's resonances stay where they are whatever the key.
-const BOARD: [f64; 8] = [80.0, 105.0, 160.0, 230.0, 320.0, 350.0, 410.0, 520.0];
+/// The piano's figures without the pedal, fitted partial by partial to the Steinway's recordings.
+fn piano_figures() -> &'static Figures {
+    static FIGURES: OnceLock<Figures> = OnceLock::new();
+    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/piano.mxf")))
+}
+
+/// The piano's figures with the pedal down.
+fn piano_pedal_figures() -> &'static Figures {
+    static FIGURES: OnceLock<Figures> = OnceLock::new();
+    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/piano_pedal.mxf")))
+}
+
+/// The piano's gain at vel 1, as loud at C4 as the version measured band by band.
+const PIANO_LEVEL: f64 = 2.1;
+/// The gain of the figures with the pedal down against those without, so C4 at vel 1 with the pedal is as loud as the version measured band by band.
+const PEDAL_LEVEL: f64 = 0.834;
+/// How the piano grows louder with vel, as the version measured band by band did.
+const PIANO_GROWTH: f64 = 2.62;
+/// The most a partial of a key not recorded stands from the keys either side at `uneven: 1`, in dB, so the median is half of it, as the Steinway's keys stand from their neighbours.
+const UNEVEN: f64 = 10.0;
+/// How much quieter the keys from C3 down play than the recordings, brought to one level, give them, in dB, so their strikes peak under full scale; the trim eases off up to C4.
+const BASS_TRIM: f64 = -4.0;
+/// How much quieter each key above C4 plays per semitone, in dB, to the most of TREBLE_MOST, so the treble stands under C4 as it did before the refit.
+const TREBLE_TRIM: f64 = -0.2;
+const TREBLE_MOST: f64 = -7.0;
+/// The frequency under which the strike's noise is the hammer's knock, in Hz.
+const KNOCK_UNDER: f64 = 600.0;
+
+/// What a piano note with `options` plays with its pedal up at 0 or down at 1, and its gain: its recordings are brought to the same level, so a velocity carries the energy vel 1 has and plays louder by vel alone.
+fn piano_voice(options: &Options, down: f64) -> (Voice, f64) {
+    let figures = if down > 0.0 {
+        piano_pedal_figures()
+    } else {
+        piano_figures()
+    };
+    let note = options.number("note");
+    let vel = options.number("vel");
+    let mut voice = figures.voice(note, vel);
+    let loudness = (figures.voice(note, 1.0).energy() / voice.energy()).sqrt();
+    voice.bend(options.number("aftersound") / 0.5);
+    voice.noise_under(KNOCK_UNDER, options.number("knock"));
+    if !figures.recorded(note) {
+        let uneven = options.number("uneven");
+        let instrument = options.number("instrument");
+        voice.vary(|i| uneven * UNEVEN * vary(instrument, note, i as f64, 0));
+    }
+    let trim = db(BASS_TRIM * ((60.0 - note) / 12.0).clamp(0.0, 1.0)
+        + (TREBLE_TRIM * (note - 60.0).max(0.0)).max(TREBLE_MOST));
+    let level = if down > 0.0 {
+        PIANO_LEVEL * PEDAL_LEVEL
+    } else {
+        PIANO_LEVEL
+    };
+    (voice, level * vel.powf(PIANO_GROWTH) * loudness * trim)
+}
 
 /// What a piano note is made of, worked out from its options before any sound exists: the piano plays a note from these and nothing else.
 #[derive(Debug, Clone, PartialEq)]
@@ -468,7 +500,6 @@ pub struct PianoParts {
     pub thump: Thump,
     /// The hammer's knock through the soundboard, or `None` when `knock` is 0.
     pub knock: Option<Knock>,
-    pub(crate) loudness: f64,
 }
 
 /// One harmonic of a piano note's strings.
@@ -542,33 +573,81 @@ pub fn parts(given: &[(&str, f64)]) -> Result<(PianoParts, Vec<String>), crate::
         .map(|name| crate::engine::held_warning("piano", &specs, name))
         .collect();
     let options = Options::new("piano".into(), specs.into(), values);
-    let mut parts = piano_parts(&options);
-    let strings = STRINGS as f64 * parts.loudness;
-    parts.harmonics.iter_mut().for_each(|h| h.level *= strings);
-    parts.partners.iter_mut().for_each(|p| p.level *= strings);
-    parts.thump.level *= parts.loudness;
-    Ok((parts, warnings))
+    Ok((piano_parts(&options), warnings))
 }
 
-/// The parts of a piano note played with `options`, with the levels as the note sounds them.
+/// The parts of a piano note played with `options`, from the figures its pedal mostly plays, with the levels as the note sounds them.
+/// The loudest partial within 3% of a whole multiple of the note is that harmonic; any other is a twin of the harmonic nearest it.
 pub(crate) fn piano_parts(options: &Options) -> PianoParts {
-    let vel = options.number("vel");
-    let knock = options.number("knock");
-    let (harmonics, partners) = piano_modes(options);
-    let high = db(-(options.number("note") - 72.0).clamp(0.0, 7.0));
+    let (voice, gain) = piano_voice(options, (options.number("pedal") >= 0.5) as u8 as f64);
+    let freq = hz(options.number("note"));
+    let mut harmonics = vec![];
+    let mut partners = vec![];
+    let mut partials = voice.partials();
+    partials.sort_by(|a, b| b.1.total_cmp(&a.1));
+    for (hz, level, fade) in partials {
+        let ratio = hz / freq;
+        let number = ratio.round().max(1.0) as u32;
+        let level = db(level) * gain;
+        if (ratio - number as f64).abs() <= 0.03 * number as f64
+            && !harmonics.iter().any(|h: &Harmonic| h.number == number)
+        {
+            harmonics.push(Harmonic {
+                number,
+                hz,
+                level,
+                fade,
+            });
+        } else {
+            partners.push(Partner {
+                harmonic: number,
+                kind: PartnerKind::Twin,
+                hz,
+                level,
+                fade,
+            });
+        }
+    }
+    harmonics.sort_by_key(|h| h.number);
+    let noise = voice.noise();
+    let (_, loudest, seconds) =
+        noise.iter().copied().fold(
+            ((0.0, 0.0), -160.0, 0.0),
+            |a, b| if b.1 > a.1 { b } else { a },
+        );
+    let amplitude = |bands: &[&((f64, f64), f64, f64)]| {
+        bands
+            .iter()
+            .map(|(_, power, _)| 10f64.powf(power / 10.0))
+            .sum::<f64>()
+            .sqrt()
+            * gain
+    };
+    let all: Vec<_> = noise.iter().collect();
+    let knocked: Vec<_> = noise
+        .iter()
+        .filter(|((_, high), power, _)| *high <= KNOCK_UNDER && *power > -150.0)
+        .collect();
+    let below_hz = noise
+        .iter()
+        .filter(|(_, power, _)| *power >= loudest - 20.0)
+        .map(|((_, high), _, _)| *high)
+        .fold(0.0, f64::max);
     PianoParts {
         harmonics,
         partners,
         thump: Thump {
-            level: (vel as f32 * 0.1 * 0.3) as f64,
-            below_hz: (400.0 + vel as f32 * 2000.0) as f64,
-            seconds: THUMP_SECONDS,
+            level: amplitude(&all),
+            below_hz,
+            seconds,
         },
-        knock: (knock > 0.0).then(|| Knock {
-            level: (KNOCK * knock * high * (vel / 0.6).powf(1.5)) as f32 as f64,
-            resonances: BOARD.to_vec(),
+        knock: (!knocked.is_empty()).then(|| Knock {
+            level: amplitude(&knocked),
+            resonances: knocked
+                .iter()
+                .map(|((low, high), _, _)| (low * high).sqrt())
+                .collect(),
         }),
-        loudness: (vel / 0.6).powf(2.5),
     }
 }
 
@@ -589,114 +668,4 @@ fn vary(instrument: f64, note: f64, harmonic: f64, which: u64) -> f64 {
     hash = hash.wrapping_mul(0xff51_afd7_ed55_8ccd);
     hash ^= hash >> 33;
     (hash >> 11) as f64 / (1u64 << 52) as f64 - 1.0
-}
-
-/// The strings' harmonics of a note, then their partners, with the levels the resonators are struck at.
-fn piano_modes(options: &Options) -> (Vec<Harmonic>, Vec<Partner>) {
-    let aftersound = options.number("aftersound");
-    let uneven = options.number("uneven");
-    let instrument = options.number("instrument");
-    let note = options.number("note");
-    let freq = hz(note);
-    let vel = options.number("vel");
-    let pedal = options.number("pedal");
-    // 0 from C2 up, rising to 1 at A#0.
-    let low = ((36.0 - note) / 14.0).clamp(0.0, 1.0);
-    let soft = (1.0 - vel) / 0.7;
-    let stretch = (0.00016 * 2f64.powf((note - 52.0) / 7.4)).max(0.00014);
-    let slope = 12.0 * (0.6 / vel).powf(0.585);
-    let corner = 1000.0 * (vel / 0.6).min(1.0).powf(0.75);
-
-    let mut strings = Vec::new();
-    let mut beating = Vec::new();
-    for n in 1..=48 {
-        let number = n as u32;
-        let n = n as f64;
-        let hz = freq * n * ((1.0 + stretch * n * n) / (1.0 + stretch)).sqrt();
-        if hz >= 16000.0 || (n > 24.0 && low <= 0.0) {
-            continue;
-        }
-        let hammer = 20.0 * ((n * PI / 8.5).sin().abs() + 0.05).log10() * 0.45;
-        let bass = (30.0 - 6.0 * low) * (70.0 / hz).log2().max(0.0);
-        let tilt = low * (8.0 * soft * soft - 2.0) * n.log2();
-        let treble = slope * (hz / freq.max(corner)).log2().max(0.0);
-        let shape = -3.0 * n.log2() + hammer - bass - 0.4 * (note - 76.0).max(0.0);
-        let level = db(shape - treble - tilt - 16.0 * (n / 24.0).log2().max(0.0));
-        let fade = 10.0
-            * 2f64.powf((note - 66.0).max(0.0) / -14.0)
-            * 2f64.powf((hz / 1500.0).log2().max(0.0) * -0.9)
-            * 2f64.powf((160.0 / hz).log2().max(0.0) * -0.5)
-            * (1.0
-                + low
-                    * (0.5 - 0.75 * (-2.0 * (hz / 300.0).log2().powi(2)).exp()
-                        + 1.2 * soft * soft * ((hz / 300.0).log2() / 2.0).clamp(0.0, 1.0)));
-        // The undamped strings ring at the harmonics as brightly as at vel 1 and up to twice as long below 1 kHz, the note's own at half.
-        let sympathy = if n <= 24.0 {
-            db(shape - 8.6 * (hz / freq.max(1000.0)).log2().max(0.0)) * pedal * 0.65
-        } else {
-            0.0
-        };
-        let rung = level * (1.0 - pedal * 0.5) + sympathy;
-        let lasting =
-            fade + sympathy / (rung + 1e-9) * fade * ((1000.0 / hz).log2() / 2.0).clamp(0.0, 1.0);
-        if aftersound <= 0.0 && uneven <= 0.0 {
-            strings.push(Harmonic {
-                number,
-                hz,
-                level: rung,
-                fade: lasting,
-            });
-            // A note's strings are tuned a hair apart and beat against each other.
-            if n <= 10.0 {
-                beating.push(Partner {
-                    harmonic: number,
-                    kind: PartnerKind::Twin,
-                    hz: hz * 1.0001,
-                    level: level * 0.5,
-                    fade: fade * 1.5,
-                });
-            }
-            continue;
-        }
-        let key = |which| uneven * vary(instrument, note, n, which);
-        let gain = db(5.5 * (key(0) + key(1)));
-        let longer = 2f64.powf(0.5 * key(2));
-        let apart = 1.0
-            + 0.0001
-                * (1.0 + 5.0 * uneven * vary(instrument, note, 0.0, 3).abs())
-                * (1.0 + 0.5 * key(4));
-        let twin = if n <= 10.0 { level * 0.5 } else { 0.0 };
-        // The strike's sound fades fast and leaves the slow part, 20 dB under it, to ring on.
-        let slow = (rung + twin) * 0.1 * aftersound;
-        let fast = rung + twin * aftersound - slow;
-        // 0 up to G#3, rising to 1 at E4: the strike fades faster up the keyboard.
-        let upper = ((note - 56.0) / 8.0).clamp(0.0, 1.0);
-        let quick = (0.38 - 0.16 * upper).powf(aftersound);
-        strings.push(Harmonic {
-            number,
-            hz,
-            level: fast * gain,
-            fade: lasting * longer * quick,
-        });
-        if slow > 0.0 {
-            beating.push(Partner {
-                harmonic: number,
-                kind: PartnerKind::Slow,
-                hz: hz * apart,
-                level: slow * gain,
-                fade: lasting * longer * (2.5 - 0.5 * upper),
-            });
-        }
-        if twin * (1.0 - aftersound) > 0.0 {
-            beating.push(Partner {
-                harmonic: number,
-                kind: PartnerKind::Twin,
-                hz: hz * apart,
-                level: twin * (1.0 - aftersound) * gain,
-                fade: fade * longer * 1.5,
-            });
-        }
-    }
-
-    (strings, beating)
 }

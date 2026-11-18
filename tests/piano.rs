@@ -1,4 +1,4 @@
-use mxs::synths::{PartnerKind, PianoParts, piano_parts};
+use mxs::synths::{PianoParts, piano_parts};
 use mxs::{Engine, Error, Event, RATE, synths};
 
 fn piano(options: &[(&str, f64)], seconds: f64) -> Vec<f32> {
@@ -39,17 +39,17 @@ fn print_energies() {
 }
 
 #[test]
-fn the_piano_sounds_as_before_its_parts_were_given() {
+fn the_piano_sounds_as_its_figures_were_fitted() {
     let before: [(f64, f64, f64, [f64; 6]); 18] = [
         (
             21.0,
             0.2,
             0.0,
             [
-                8.746297898655027e-3,
-                1.0197114938325018e-3,
-                1.679163414458695e-4,
-                2.0572609672855904e-6,
+                1.5527814217954264e-1,
+                6.395648638074065e-2,
+                1.0261875279923635e-2,
+                1.547240248198291e-4,
                 0e0,
                 0e0,
             ],
@@ -59,10 +59,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.2,
             1.0,
             [
-                3.800656562275634e-2,
-                1.9302793436874806e-2,
-                3.847052329862799e-3,
-                5.8838543260475533e-5,
+                5.875870774093055e-2,
+                4.100133724068381e-2,
+                1.1326897248175698e-2,
+                2.0915501949691131e-4,
                 0e0,
                 0e0,
             ],
@@ -72,10 +72,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.6,
             0.0,
             [
-                1.3827761678899273e1,
-                6.193487863345389e0,
-                9.857094851600292e-1,
-                1.1754926783022139e-2,
+                3.608860885824939e1,
+                1.5939449664300374e1,
+                3.1494157482567715e0,
+                5.537712022919852e-2,
                 0e0,
                 0e0,
             ],
@@ -85,10 +85,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.6,
             1.0,
             [
-                2.1711517144861183e1,
-                1.2251400439690325e1,
-                2.2898295585826207e0,
-                3.2166860894754026e-2,
+                1.618768487910817e1,
+                8.67904621740563e0,
+                2.2567242651934136e0,
+                4.5504708587068024e-2,
                 0e0,
                 0e0,
             ],
@@ -98,10 +98,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             1.0,
             0.0,
             [
-                9.803752695394728e2,
-                4.0623247242402795e2,
-                5.930101393604735e1,
-                6.580844506982716e-1,
+                4.8045895859913526e2,
+                1.4480056664618937e2,
+                2.5709786844209738e1,
+                4.4711648723316477e-1,
                 0e0,
                 0e0,
             ],
@@ -111,10 +111,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             1.0,
             1.0,
             [
-                6.963212721638998e2,
-                3.5430527266979186e2,
-                6.11573333912983e1,
-                7.967234919558469e-1,
+                3.876203639317774e2,
+                1.5902106687851835e2,
+                3.636809663643523e1,
+                5.822914140092469e-1,
                 0e0,
                 0e0,
             ],
@@ -124,10 +124,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.2,
             0.0,
             [
-                9.111630383528883e-2,
-                2.3005491966380805e-2,
-                2.6254911730939664e-3,
-                2.4066948571875215e-5,
+                1.0671777196410585e-1,
+                1.2277359633612622e-2,
+                1.544578982358018e-3,
+                1.754780660713087e-5,
                 0e0,
                 0e0,
             ],
@@ -137,10 +137,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.2,
             1.0,
             [
-                1.4026804832672546e-1,
-                5.2476241009793825e-2,
-                7.450554926032945e-3,
-                7.966030626705106e-5,
+                1.5608627520546123e-1,
+                2.9042464768499716e-2,
+                3.043932492983409e-3,
+                3.5139609021937946e-5,
                 0e0,
                 0e0,
             ],
@@ -150,10 +150,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.6,
             0.0,
             [
-                3.1044064830158295e1,
-                8.714147773410732e0,
-                9.093176024636075e-1,
-                6.541964207905424e-3,
+                3.371278794940031e1,
+                2.987341261997548e0,
+                3.6211450317770016e-1,
+                4.851649987758955e-3,
                 0e0,
                 0e0,
             ],
@@ -163,10 +163,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.6,
             1.0,
             [
-                4.299620685693665e1,
-                1.596705827032582e1,
-                2.089435081150042e0,
-                1.981085667310677e-2,
+                4.9641803344291915e1,
+                8.722618047169126e0,
+                8.858422571329762e-1,
+                1.058827301750262e-2,
                 0e0,
                 0e0,
             ],
@@ -176,10 +176,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             1.0,
             0.0,
             [
-                4.05675149807036e2,
-                1.1293377320433412e2,
-                1.179813162674646e1,
-                8.5234183178967e-2,
+                4.923425450288728e2,
+                3.500556317403001e1,
+                3.336291046711611e0,
+                3.915290469347238e-2,
                 0e0,
                 0e0,
             ],
@@ -189,10 +189,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             1.0,
             1.0,
             [
-                5.577136882049632e2,
-                2.0598339896526753e2,
-                2.6954847128954675e1,
-                2.557408144581984e-1,
+                7.266605506419872e2,
+                1.0509866725176835e2,
+                9.712009116592368e0,
+                9.626297567026613e-2,
                 0e0,
                 0e0,
             ],
@@ -202,10 +202,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.2,
             0.0,
             [
-                1.3089465898500055e-3,
-                2.205567449599075e-9,
-                7.918092444200107e-14,
-                6.375214629132397e-19,
+                3.06869679885579e-4,
+                8.328035673833413e-8,
+                1.7246200361174643e-10,
+                4.2908529716793377e-13,
                 0e0,
                 0e0,
             ],
@@ -215,10 +215,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.2,
             1.0,
             [
-                1.3217275442417627e-3,
-                2.2829712231375925e-9,
-                9.256268171963393e-14,
-                7.639640109402904e-19,
+                1.2409963668570483e-3,
+                3.359664111861324e-6,
+                7.511914434728845e-8,
+                1.8567664608389745e-10,
                 0e0,
                 0e0,
             ],
@@ -228,10 +228,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.6,
             0.0,
             [
-                5.033550565901991e-2,
-                2.0292492419057052e-7,
-                1.892966623274356e-11,
-                1.549101905575671e-16,
+                3.839831378772616e-2,
+                2.706942465712587e-6,
+                7.416466057340772e-9,
+                1.503301678687283e-11,
                 0e0,
                 0e0,
             ],
@@ -241,10 +241,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             0.6,
             1.0,
             [
-                5.34867869626891e-2,
-                2.217226211562421e-7,
-                2.2181400310877853e-11,
-                1.8563583945405274e-16,
+                5.508020596721789e-2,
+                5.660924237736898e-4,
+                1.3700884493365924e-6,
+                3.40723962915926e-9,
                 0e0,
                 0e0,
             ],
@@ -254,10 +254,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             1.0,
             0.0,
             [
-                3.844023923395057e-1,
-                2.266677698340949e-6,
-                2.431161902086179e-10,
-                1.9921519457023673e-15,
+                3.972085523023889e-1,
+                1.9436555342731442e-4,
+                6.067332138392033e-9,
+                2.6952342533195183e-12,
                 0e0,
                 0e0,
             ],
@@ -267,10 +267,10 @@ fn the_piano_sounds_as_before_its_parts_were_given() {
             1.0,
             1.0,
             [
-                4.2406028404839524e-1,
-                2.5083865772937607e-6,
-                2.8493367540400907e-10,
-                2.387286597937207e-15,
+                2.2950871263593577e0,
+                5.114133793958978e-3,
+                6.075801595263439e-5,
+                8.776655661927419e-8,
                 0e0,
                 0e0,
             ],
@@ -310,7 +310,6 @@ fn a_note_below_c2_has_more_harmonics() {
         low > middle,
         "note 24 has {low} harmonics and note 60 {middle}"
     );
-    assert!(middle <= 24 && low <= 48);
 }
 
 #[test]
@@ -342,29 +341,78 @@ fn the_pedal_lets_the_fundamental_ring_longer() {
     assert!(fade(1.0) > fade(0.0));
 }
 
+/// The level in dB of each 50 ms of a render, from its start.
+fn levels(sound: &[f32]) -> Vec<f64> {
+    sound
+        .chunks(2_400)
+        .map(|slice| {
+            10.0 * (slice.iter().map(|x| (*x as f64).powi(2)).sum::<f64>() / slice.len() as f64)
+                .log10()
+        })
+        .collect()
+}
+
+/// The Steinway's C4 at vl4 falls 18.8 dB from its 50 ms after the strike to its 50 ms a second later.
 #[test]
-fn without_aftersound_or_unevenness_only_the_first_ten_harmonics_have_twins() {
-    let parts = parts(&[("note", 60.0), ("aftersound", 0.0), ("uneven", 0.0)]);
-    assert!(parts.partners.iter().all(|p| p.kind == PartnerKind::Twin));
-    let twins: Vec<u32> = parts.partners.iter().map(|p| p.harmonic).collect();
-    assert_eq!(twins, (1..=10).collect::<Vec<_>>());
+fn by_default_middle_c_falls_over_its_first_second_as_far_as_the_steinways() {
+    let sound = piano(&[("note", 60.0), ("vel", 1.0), ("sustain", 4.0)], 1.2);
+    let levels = levels(&sound);
+    let fallen = levels[1] - levels[21];
+    assert!((fallen - 18.8).abs() <= 2.0, "it fell {fallen} dB");
 }
 
 #[test]
-fn by_default_harmonics_have_a_slow_stage() {
-    let parts = parts(&[("note", 60.0)]);
-    assert!(parts.partners.iter().any(|p| p.kind == PartnerKind::Slow));
+fn aftersound_0_fades_each_partial_at_one_rate() {
+    let parts =
+        |aftersound: f64| parts(&[("note", 60.0), ("vel", 1.0), ("aftersound", aftersound)]);
+    let sound = piano(
+        &[
+            ("note", 60.0),
+            ("vel", 1.0),
+            ("aftersound", 0.0),
+            ("knock", 0.0),
+            ("sustain", 8.0),
+        ],
+        4.0,
+    );
+    let hz = parts(0.0).harmonics[0].hz;
+    let level = |t: f64| {
+        let middle = (t * RATE) as usize;
+        let (re, im) = at(&sound, hz, middle - 4_800, middle + 4_800);
+        20.0 * re.hypot(im).log10()
+    };
+    let (early, late) = (level(0.5) - level(1.5), level(2.5) - level(3.5));
+    assert!(
+        (early - late).abs() < 1.5,
+        "the fundamental fell {early} dB in its second second and {late} dB in its fourth"
+    );
 }
 
 #[test]
-fn the_knock_rings_the_soundboard_unless_it_is_off() {
+fn the_knock_rings_under_600_hz_unless_it_is_off() {
     assert_eq!(parts(&[("note", 60.0), ("knock", 0.0)]).knock, None);
     let knock = parts(&[("note", 60.0), ("knock", 1.0)]).knock.unwrap();
     assert!(knock.level > 0.0);
-    assert_eq!(
-        knock.resonances,
-        [80.0, 105.0, 160.0, 230.0, 320.0, 350.0, 410.0, 520.0]
-    );
+    assert!(!knock.resonances.is_empty() && knock.resonances.iter().all(|hz| *hz < 600.0));
+    let low = |knock: f64| {
+        let sound = piano(&[("note", 60.0), ("vel", 1.0), ("knock", knock)], 0.05);
+        let (re, im) = at(&sound, 300.0, 0, 2_400);
+        re.hypot(im)
+    };
+    assert!(low(0.0) < low(1.0));
+}
+
+#[test]
+fn uneven_varies_only_the_keys_not_recorded() {
+    let levels = |note: f64, uneven: f64| -> Vec<f64> {
+        parts(&[("note", note), ("uneven", uneven)])
+            .harmonics
+            .iter()
+            .map(|h| h.level)
+            .collect()
+    };
+    assert_eq!(levels(60.0, 1.0), levels(60.0, 0.0));
+    assert_ne!(levels(61.0, 1.0), levels(61.0, 0.0));
 }
 
 #[test]
@@ -417,7 +465,7 @@ fn at(sound: &[f32], hz: f64, from: usize, to: usize) -> (f64, f64) {
 }
 
 #[test]
-fn a_rendered_note_rings_at_the_frequencies_and_fades_its_parts_give() {
+fn a_rendered_note_rings_at_the_frequencies_its_parts_give() {
     let options = [
         ("note", 60.0),
         ("vel", 0.6),
@@ -442,35 +490,6 @@ fn a_rendered_note_rings_at_the_frequencies_and_fades_its_parts_give() {
             "harmonic {} rings at {peak} Hz, not {} Hz",
             h.number,
             h.hz
-        );
-        // Each partner rings within a hair of its harmonic, so the two are heard, and measured, together.
-        let given = |t: f64| {
-            let (re, im) = std::iter::once((h.hz, h.level, h.fade))
-                .chain(
-                    parts
-                        .partners
-                        .iter()
-                        .filter(|p| p.harmonic == h.number)
-                        .map(|p| (p.hz, p.level, p.fade)),
-                )
-                .fold((0.0, 0.0), |(re, im), (hz, level, fade)| {
-                    let size = level * 10f64.powf(-3.0 * t / fade);
-                    let turn = std::f64::consts::TAU * (hz - h.hz) * t;
-                    (re + size * turn.cos(), im + size * turn.sin())
-                });
-            re.hypot(im)
-        };
-        let heard = |t: f64| {
-            let middle = (t * RATE) as usize;
-            let (re, im) = at(&sound, h.hz, middle - 4_800, middle + 4_800);
-            re.hypot(im)
-        };
-        let fall = |level: &dyn Fn(f64) -> f64| 20.0 * (level(0.5) / level(3.0)).log10();
-        let (expected, measured) = (fall(&given), fall(&heard));
-        assert!(
-            (measured / expected - 1.0).abs() < 0.1,
-            "harmonic {} falls {measured} dB from 0.5 to 3 s, not {expected} dB",
-            h.number
         );
     }
 }

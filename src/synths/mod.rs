@@ -74,7 +74,7 @@ fn about(name: &str) -> &'static str {
         "acid" => "An acid bass, a wave under a resonant filter that closes as the note sounds.",
         "brass" => "A plain brass sound, brighter the harder it is blown.",
         "piano" => {
-            "A grand piano, fitted to the Steinway B of the Versilian Community Sample Library from A0 to C8: each harmonic a resonator struck once, with the hammer's knock and the sustain pedal. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partners that ring beside them as a slow stage or a beating twin, the thump of the strike and the knock through the soundboard."
+            "A grand piano fitted partial by partial to the Steinway B of the Versilian Community Sample Library from A#0 to G#7, with the sustain pedal and without, and played from A0 to C8. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partials between them as twins of the nearest harmonic, the noise of the strike and the knock under 600 Hz."
         }
         "guitar" => {
             "A nylon-string guitar fitted partial by partial to the University of Iowa's guitar from E2 to B5, and played down to B1, the low string of a 7-string guitar. A note rings until it fades by itself."

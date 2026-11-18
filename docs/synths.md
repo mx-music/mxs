@@ -160,17 +160,17 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.25 unless give
 
 ### `piano`
 
-A grand piano, fitted to the Steinway B of the Versilian Community Sample Library from A0 to C8: each harmonic a resonator struck once, with the hammer's knock and the sustain pedal. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partners that ring beside them as a slow stage or a beating twin, the thump of the strike and the knock through the soundboard.
+A grand piano fitted partial by partial to the Steinway B of the Versilian Community Sample Library from A#0 to G#7, with the sustain pedal and without, and played from A0 to C8. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partials between them as twins of the nearest harmonic, the noise of the strike and the knock under 600 Hz.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0.05 to 1 | 0.6 | How hard the key is struck. |
 | `pedal` | a number, 0 to 1 | 0 | How far the sustain pedal is down, letting the other strings ring. |
-| `aftersound` | a number, 0 to 1 | 0.5 | How far each harmonic fades in two stages, fast after the strike and then slowly, as the Steinway's do. |
-| `uneven` | a number, 0 to 1 | 1 | How far each key differs from its neighbours in its harmonics' levels, fades and beating. |
+| `aftersound` | a number, 0 to 1 | 0.5 | How far each partial fades in two stages, fast after the strike and then slowly: 0.5 as the Steinway's do, 0 at one rate, and 1 with a deeper fast stage. |
+| `uneven` | a number, 0 to 1 | 1 | How far each key that was not recorded differs from the recorded keys either side in its partials' levels. |
 | `instrument` | a whole number | 0 | Which piano's keys `uneven` draws, each number another instrument. |
-| `knock` | a number, 0 to 1 | 1 | How loud the hammer's knock through the soundboard is. |
+| `knock` | a number, 0 to 1 | 1 | How loud the hammer's knock under 600 Hz is: 1 as recorded, 0 left out. |
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 1 unless given.
 

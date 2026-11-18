@@ -165,6 +165,11 @@ impl Figures {
             .collect()
     }
 
+    /// Whether a recording was made at this note.
+    pub fn recorded(&self, note: f64) -> bool {
+        note.fract() == 0.0 && self.recordings.iter().any(|r| r.note as f64 == note)
+    }
+
     /// The softest velocity recorded, as vel from 0 to 1.
     pub fn softest(&self) -> f64 {
         self.recordings
@@ -321,6 +326,90 @@ impl Shape {
 }
 
 impl Voice {
+    /// Each partial's fade bent from the straight line between its first and last level: 0 makes it one straight line, 1 keeps it, and more deepens the bend.
+    pub fn bend(&mut self, by: f64) {
+        let (first, last) = (self.times[0], *self.times.last().unwrap());
+        for (_, shape) in &mut self.partials {
+            let (start, end) = (shape.levels[0], *shape.levels.last().unwrap());
+            for (level, t) in shape.levels.iter_mut().zip(&self.times) {
+                let line = start + (end - start) * (t - first) / (last - first);
+                *level = line + by * (*level - line);
+            }
+        }
+    }
+
+    /// The noise in the bands under `hz` made `by` times as loud; 0 leaves it out.
+    pub fn noise_under(&mut self, hz: f64, by: f64) {
+        for ((_, high), shape) in &mut self.noise {
+            if *high <= hz {
+                shape.levels.iter_mut().for_each(|level| {
+                    *level = if by > 0.0 {
+                        (*level + 20.0 * by.log10()).max(SILENT)
+                    } else {
+                        SILENT
+                    }
+                });
+            }
+        }
+    }
+
+    /// Each partial louder or quieter by `by` of its place from the lowest, in dB.
+    pub fn vary(&mut self, by: impl Fn(usize) -> f64) {
+        for (i, (_, shape)) in self.partials.iter_mut().enumerate() {
+            let change = by(i);
+            shape.levels.iter_mut().for_each(|level| *level += change);
+        }
+    }
+
+    /// Each partial as its frequency, its loudest level in dB, and the seconds it takes to fall 60 dB from it.
+    pub fn partials(&self) -> Vec<(f64, f64, f64)> {
+        self.partials
+            .iter()
+            .map(|(hz, shape)| {
+                let (loudest, fade) = self.fall(shape);
+                (*hz, loudest, fade)
+            })
+            .collect()
+    }
+
+    // A shape's loudest level, and the seconds it takes to fall 60 dB from it.
+    fn fall(&self, shape: &Shape) -> (f64, f64) {
+        let (at, loudest) =
+            shape
+                .levels
+                .iter()
+                .enumerate()
+                .fold(
+                    (0, f64::MIN),
+                    |(i, m), (j, l)| if *l > m { (j, *l) } else { (i, m) },
+                );
+        let last = self.times.len() - 1;
+        let fallen = (at..=last)
+            .find(|j| shape.levels[*j] <= loudest - 60.0)
+            .map(|j| self.times[j])
+            .unwrap_or_else(|| {
+                let left = 60.0 - (loudest - shape.levels[last]);
+                self.times[last]
+                    + if shape.tail < 0.0 {
+                        left / -shape.tail
+                    } else {
+                        60.0
+                    }
+            });
+        (loudest, fallen - self.times[at])
+    }
+
+    /// Each band of noise as its edges in Hz, its loudest power in dB, and the seconds it takes to fall 60 dB from it.
+    pub fn noise(&self) -> Vec<((f64, f64), f64, f64)> {
+        self.noise
+            .iter()
+            .map(|(band, shape)| {
+                let (loudest, fade) = self.fall(shape);
+                (*band, loudest, fade)
+            })
+            .collect()
+    }
+
     /// The energy of the partials over the first half second, which sets how loud a velocity plays.
     pub fn energy(&self) -> f64 {
         let steps = 100;
