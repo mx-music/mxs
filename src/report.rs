@@ -35,6 +35,10 @@ pub enum Topic {
     Output,
     /// What `Engine::warnings` gives, as it is noticed: at once for a value held to its range, and within a second for the counts of late events, stolen notes and late buffers.
     Warnings,
+    /// Where the beat is: a beat, its tempo and when it is heard, at once and whenever the tempo changes, every quarter beat while it moves.
+    Beats,
+    /// What becomes of the passes handed to the parts: that a part's last pass is about to end, and that a pass with a new label has started.
+    Passes,
 }
 
 impl Topic {
@@ -120,6 +124,37 @@ pub enum Report {
         /// The warning.
         message: String,
     },
+    /// The engine's `seconds` are the `beat`, played at `bpm` beats a minute from there; the last such report says where every later beat falls, until the next.
+    Beat {
+        /// The engine's seconds at which the beat falls.
+        seconds: f64,
+        /// The beat.
+        beat: f64,
+        /// The beats a minute from that beat on.
+        bpm: f64,
+        /// The system time at which the sound card plays the beat, which a live engine knows.
+        system: Option<SystemTime>,
+    },
+    /// A part's last pass ends within the beats its caller asked to be told at, and no other pass was handed over to follow it.
+    PassEnding {
+        /// The engine's seconds at which those beats before its end fall.
+        seconds: f64,
+        /// The part's name.
+        part: String,
+        /// The beat the pass ends at.
+        beat: f64,
+    },
+    /// The first event of a pass with another label than the pass before it starts.
+    PassStarted {
+        /// The engine's seconds at which the event starts.
+        seconds: f64,
+        /// The part's name.
+        part: String,
+        /// The pass's label.
+        label: u64,
+        /// The beat of the event.
+        beat: f64,
+    },
     /// Reports were dropped, the oldest first, as the subscriber did not take them in time; this stands where they were.
     Dropped {
         /// The engine's seconds of the report that follows.
@@ -138,6 +173,9 @@ impl Report {
             | Report::Voices { seconds, .. }
             | Report::Output { seconds, .. }
             | Report::Warning { seconds, .. }
+            | Report::Beat { seconds, .. }
+            | Report::PassEnding { seconds, .. }
+            | Report::PassStarted { seconds, .. }
             | Report::Dropped { seconds, .. } => *seconds,
         }
     }
@@ -150,6 +188,8 @@ impl Report {
             Report::Voices { .. } => Some(Topic::Voices),
             Report::Output { .. } => Some(Topic::Output),
             Report::Warning { .. } => Some(Topic::Warnings),
+            Report::Beat { .. } => Some(Topic::Beats),
+            Report::PassEnding { .. } | Report::PassStarted { .. } => Some(Topic::Passes),
             Report::Dropped { .. } => None,
         }
     }
@@ -168,7 +208,8 @@ struct Sink {
 
 struct Inner {
     sinks: Vec<Arc<Sink>>,
-    output: Option<Report>,
+    /// The last report of the output and of the beat, which a new subscriber to either is sent at once.
+    kept: Vec<Report>,
     names: HashMap<u64, String>,
     said: VecDeque<String>,
     /// Counts the changes to who subscribes to what, so the engine's thread sends the clock and the voices to a new subscriber at once.
@@ -193,7 +234,7 @@ impl Hub {
             wanted: AtomicU8::new(0),
             inner: Mutex::new(Inner {
                 sinks: Vec::new(),
-                output: None,
+                kept: Vec::new(),
                 names: HashMap::new(),
                 said: VecDeque::new(),
                 changes: 0,
@@ -250,13 +291,16 @@ impl Hub {
         lock(&self.inner).names.remove(&key);
     }
 
-    fn part_name(&self, key: u64) -> Option<String> {
+    pub fn part_name(&self, key: u64) -> Option<String> {
         lock(&self.inner).names.get(&key).cloned()
     }
 
-    /// Sets the output report, which each new subscriber to the output is sent at once.
-    pub fn set_output(&self, report: Report) {
-        lock(&self.inner).output = Some(report.clone());
+    /// Sends a report of the output or of the beat, and keeps it: each new subscriber to its kind is sent the last one at once.
+    pub fn keep(&self, report: Report) {
+        let mut inner = lock(&self.inner);
+        inner.kept.retain(|kept| kept.topic() != report.topic());
+        inner.kept.push(report.clone());
+        drop(inner);
         self.send(report);
     }
 
@@ -317,8 +361,9 @@ impl Reports {
         let mut queue = lock(&self.sink.queue);
         let new = queue.topics & topic.bit() == 0;
         queue.topics |= topic.bit();
-        if let (true, Topic::Output, Some(output)) = (new, topic, &inner.output) {
-            queue.reports.push_back(output.clone());
+        let kept = inner.kept.iter().find(|kept| kept.topic() == Some(topic));
+        if let (true, Some(kept)) = (new, kept) {
+            queue.reports.push_back(kept.clone());
             self.sink.ready.notify_all();
         }
         drop(queue);
@@ -801,7 +846,7 @@ mod tests {
             rate: 48_000.0,
             delay_ms: None,
         };
-        hub.set_output(output.clone());
+        hub.keep(output.clone());
         let reports = hub.subscribe(&[Topic::Output]);
         assert_eq!(reports.next(), Some(output));
     }

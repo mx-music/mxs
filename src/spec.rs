@@ -32,7 +32,7 @@ pub enum Kind {
     Db,
     /// A time in seconds.
     Seconds,
-    /// A time a song writes in beats, which mx turns into seconds at the tempo before it reaches the engine.
+    /// A time a song writes in beats: given in beats in a pass, and in seconds to `play`.
     Beats,
     /// Any number.
     Float,
@@ -94,7 +94,7 @@ impl Spec {
         Self::new(name, Kind::Seconds)
     }
 
-    /// An option a song writes in beats, which mx turns into seconds before it reaches the engine.
+    /// An option a song writes in beats: given in beats in a pass, and in seconds to `play`.
     pub fn beats(name: &str) -> Self {
         Self::new(name, Kind::Beats)
     }

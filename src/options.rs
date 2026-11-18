@@ -1,6 +1,6 @@
 //! A note's options as its synth's build function reads them, and the context it builds in.
 
-use crate::spec::{Spec, Value};
+use crate::spec::{Kind, Spec, Value};
 use fundsp::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -27,6 +27,30 @@ impl Options {
             specs,
             values,
             controls: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Turns the options given in beats into seconds, each beat lasting `per_beat` seconds: those declared in beats, their defaults too, and every `_slide`.
+    pub(crate) fn in_beats(&mut self, per_beat: f64) {
+        for spec in self.specs.iter().filter(|spec| spec.kind == Kind::Beats) {
+            let value = self.values.get(&spec.name).or(spec.default.as_ref());
+            if let Some(Value::Number(beats)) = value {
+                let seconds = Value::Number(beats * per_beat);
+                self.values.insert(spec.name.clone(), seconds);
+            }
+        }
+        let specs = &self.specs;
+        let declared = |name: &str| {
+            specs
+                .iter()
+                .any(|s| s.name == name && s.kind == Kind::Beats)
+        };
+        for (name, value) in &mut self.values {
+            if let (true, false, Value::Number(beats)) =
+                (name.ends_with("_slide"), declared(name), value)
+            {
+                *beats *= per_beat;
+            }
         }
     }
 

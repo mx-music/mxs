@@ -223,6 +223,55 @@ fn main() -> Result<(), mxs::Error> {
 - A levels report gives each part's level after its gain, by its name.
 - A name that no part was started under is refused, and the error names it.
 
+## Musical time
+
+The engine keeps a tempo map, which says at which of its seconds each beat falls, so a caller can hand events over in beats, bars ahead, and still change the tempo.
+
+```rust
+use mxs::{Engine, Event, Pass, RATE, Tempo, synths};
+
+fn main() -> Result<(), mxs::Error> {
+    let mut engine = Engine::offline(RATE);
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    engine.start_part("lead", &[])?;
+
+    engine.place_beats(0.0)?;
+    engine.set_tempo(0.0, Tempo::Hold(96.0))?;
+    let notes = [60.0, 64.0, 67.0, 72.0];
+    let events = notes.iter().enumerate().map(|(beat, note)| {
+        let options = [("note", *note), ("sustain", 0.5), ("release", 0.5)];
+        (beat as f64, Event::note(None, "piano", &options))
+    });
+    let pass = Pass {
+        from: 0.0,
+        to: 4.0,
+        label: 1,
+        notice: Some(1.0),
+        events: events.collect(),
+    };
+    engine.pass("lead", &pass)?;
+    engine.set_tempo(2.0, Tempo::Move { from: 96.0, to: 60.0, over: 2.0 })?;
+    engine.cut("lead", 3.0)?;
+    engine.render(4.0)?;
+    Ok(())
+}
+```
+
+- `place_beats` places beat 0 at one of the engine's seconds. It is at second 0 until placed.
+- `set_tempo` changes the tempo from a beat on, and replaces whatever the map held from that beat on. `Tempo::Hold` holds a tempo in beats a minute, and `Tempo::Move` moves evenly from one tempo to another over a number of beats, then holds the second. The tempo is 120 until changed.
+- `pass` hands a part a pass: a first beat, a last beat, a label of the caller's choosing, and events each at its beat. Each event starts at the frame its beat falls on.
+- In a pass, an option a synth or an effect declares in beats, and every `_slide`, is given in beats, and lasts as long as those beats last at the tempo of the event's beat. In `play` those options are in seconds, as before.
+- The engine builds each event of a pass and places it at its frame 150 ms before it sounds. A change to the map moves every event further off than that, and leaves the nearer ones where they were.
+- `cut` drops every event of a part at or after a beat that has not started, so that another pass can be handed over in its place. A note that started before the cut rings on, and a release dropped with the rest no longer ends it.
+- An event handed over after its beat plays at once when it is less than a quarter of a beat late, and is dropped otherwise. `warnings` counts both.
+- `start_part_in_beats` starts a part whose effects take their options in beats. Those an effect lets change while it runs, such as the time between an echo's repeats, follow the tempo as it changes, read again at each change and every quarter beat while the tempo moves. One set in seconds by `play` stops following.
+- `beat` gives the beat of the frame the engine fills next, `beat_at` the beat at one of its seconds, and `beat_seconds` the seconds at which a beat falls.
+- Beats are floating point numbers, so a third of a beat is approximate. Each event is placed from its own beat, never by adding lengths up.
+- Events at seconds play beside events in beats, wherever the map is.
+- An offline render gives the same samples whatever the length of each stretch `render` is asked for.
+- `fill` is the layer under the tempo map. It fills one block after another from events given at frames by `play_at_frames`, or at seconds, and needs neither the map nor a sound card. It does not place events in beats, which `render` does.
+- Reading song files, patterns and loops stays with the caller.
+
 ## What the engine reports
 
 `subscribe` takes the kinds of report wanted and returns the subscription, which the engine then sends reports to without being asked.
@@ -254,6 +303,8 @@ Every report carries the engine's seconds of the sample it describes.
 | `Topic::Voices` | How many notes sound. | About once a second. |
 | `Topic::Output` | The device's name, the rate in Hz, and the output's delay in milliseconds; an offline engine has no device and no delay. | At once. The engine keeps its device for as long as it runs, so no second one follows. |
 | `Topic::Warnings` | One warning, worded as `warnings` words it. | At once for a value held to its range or a note that could not be built, and within a second for the counts of late buffers, late events and stolen notes. |
+| `Topic::Beats` | A beat, the engine's seconds at which it falls, the tempo from that beat on, and the system time at which the sound card plays it, which a live engine knows. | At once, with the last one sent, then for each change to the tempo map, up to 150 ms before its beat, and every quarter beat while the tempo moves. |
+| `Topic::Passes` | `Report::PassStarted`: the part, the label and the beat of the first event of a pass whose label is another than that of the pass handed to the part before it. `Report::PassEnding`: the part and the last beat of its last pass, when that beat is the pass's `notice` in beats away and no other pass was handed to the part. | Once the engine's clock reaches the seconds the report carries. |
 
 - A kind nobody subscribes to is not worked out, and subscribing changes no sample of the output.
 - A live engine works its reports out on a thread of its own: the audio thread only copies its output into a ring buffer while levels are wanted, and never waits.

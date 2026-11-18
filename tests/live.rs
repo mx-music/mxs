@@ -1,10 +1,12 @@
 //! Checks of a live engine, which need BlackHole 2ch, a virtual sound card, so that nothing is heard, and a release build, as a debug one fills too slowly; run them with `cargo test --release --test live -- --ignored --test-threads 1`.
 
 use fundsp::prelude::*;
-use mxs::{Engine, Error, Event, Note, Report, Settings, Spec, Synth, Target, Topic, synths};
+use mxs::{
+    Engine, Error, Event, Note, Pass, Report, Settings, Spec, Synth, Target, Tempo, Topic, synths,
+};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 fn live(buffer: u32) -> Engine {
     let settings = Settings {
@@ -420,4 +422,144 @@ fn reports_left_untaken_for_ten_seconds_cost_no_buffer_and_the_next_says_how_man
     assert!((130..=170).contains(&dropped), "{dropped}");
     let kept = std::iter::from_fn(|| reports.next()).count();
     assert!((64..=66).contains(&kept), "{kept}");
+}
+
+/// A level of 0.25 from the note's first frame, for 10 ms.
+fn click() -> Synth {
+    Synth::new("click").build(|_, _| Note::rings(dc(0.25), 0.01))
+}
+
+/// The frames at which sound starts after at least 1 ms of silence.
+fn onsets(samples: &[f32]) -> Vec<usize> {
+    let mut onsets = Vec::new();
+    let mut silent = 48;
+    for (frame, sample) in samples.iter().enumerate() {
+        if sample.abs() > 0.01 {
+            if silent >= 48 {
+                onsets.push(frame);
+            }
+            silent = 0;
+        } else {
+            silent += 1;
+        }
+    }
+    onsets
+}
+
+/// Ends the recording of the output at `path` and gives its left channel.
+fn left_of(engine: &mut Engine, path: &std::path::Path) -> Vec<f32> {
+    engine.stop_recording_output().unwrap();
+    let samples: Vec<f32> = hound::WavReader::open(path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    let _ = std::fs::remove_file(path);
+    samples.chunks(2).map(|frame| frame[0]).collect()
+}
+
+#[test]
+#[ignore]
+fn events_in_beats_start_at_their_frames_live_and_a_tempo_change_and_a_cut_reach_those_to_come() {
+    let mut engine = live(512);
+    engine.register(click());
+    engine.start_part("lead", &[]).unwrap();
+    let reports = engine.subscribe(&[Topic::Beats, Topic::Passes]);
+    let from = engine.now() + 0.1;
+    let origin = from + 0.2;
+    let path = std::env::temp_dir().join(format!("mxs-live-beats-{}.wav", std::process::id()));
+    engine.record_output(&path, from).unwrap();
+    engine.place_beats(origin).unwrap();
+    let beats = (0..6).map(|beat| (f64::from(beat), Event::note(None, "click", &[])));
+    let pass = Pass {
+        from: 0.0,
+        to: 6.0,
+        label: 3,
+        notice: Some(2.0),
+        events: beats.collect(),
+    };
+    let began = Instant::now();
+    engine.pass("lead", &pass).unwrap();
+    let took = began.elapsed();
+    assert!(took < Duration::from_millis(1), "{took:?}");
+
+    // Beats 0 to 2 fall at 0, 0.5 and 1 s; from beat 2 on a beat lasts a quarter second, and beat 5 is cut.
+    while engine.now() < origin + 0.6 {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    engine.set_tempo(2.0, Tempo::Hold(240.0)).unwrap();
+    engine.cut("lead", 5.0).unwrap();
+    while engine.now() < from + 2.2 {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let left = left_of(&mut engine, &path);
+    let frame = |seconds: f64| (seconds * 48_000.0).round() as usize;
+    let expected: Vec<usize> = [0.0, 0.5, 1.0, 1.25, 1.5]
+        .iter()
+        .map(|after| frame(origin + after) - frame(from))
+        .collect();
+    assert_eq!(onsets(&left), expected);
+    assert_eq!(engine.warnings(), Vec::<String>::new());
+
+    let mut said = Vec::new();
+    while let Some(report) = reports.next() {
+        said.push(report);
+    }
+    let beats: Vec<(f64, f64, f64)> = said
+        .iter()
+        .filter_map(|report| match report {
+            Report::Beat {
+                seconds,
+                beat,
+                bpm,
+                system,
+            } => {
+                // The system time of a beat is as far from now as the beat is on the engine's clock, give or take the output's delay and the wait above.
+                let heard = system.expect("a live engine knows when a beat is heard");
+                let ahead = heard
+                    .duration_since(SystemTime::now())
+                    .map_or_else(|e| -e.duration().as_secs_f64(), |d| d.as_secs_f64());
+                let on_the_clock = seconds - engine.now();
+                assert!((ahead - on_the_clock).abs() < 0.2, "{ahead} {on_the_clock}");
+                Some((*seconds - origin, *beat, *bpm))
+            }
+            _ => None,
+        })
+        .collect();
+    // The first is of the engine's start, with beat 0 at second 0, then one for the map as placed and one for the tempo change.
+    assert_eq!(beats.len(), 3, "{said:?}");
+    assert_eq!(beats[0], (-origin, 0.0, 120.0));
+    assert!(beats[1].0.abs() < 1e-9 && beats[1].1 == 0.0 && beats[1].2 == 120.0);
+    assert!((beats[2].0 - 1.0).abs() < 1e-9 && beats[2].1 == 2.0 && beats[2].2 == 240.0);
+    let started = said.iter().find_map(|report| match report {
+        Report::PassStarted { label, beat, .. } => Some((*label, *beat)),
+        _ => None,
+    });
+    assert_eq!(started, Some((3, 0.0)));
+}
+
+#[test]
+#[ignore]
+fn a_pass_handed_over_for_the_beat_being_played_sounds_within_30_ms() {
+    let mut engine = live(512);
+    engine.register(click());
+    engine.start_part("lead", &[]).unwrap();
+    let from = engine.now() + 0.1;
+    let path = std::env::temp_dir().join(format!("mxs-live-now-{}.wav", std::process::id()));
+    engine.record_output(&path, from).unwrap();
+    while engine.now() < from + 0.2 {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let (beat, handed) = (engine.beat(), engine.now());
+    let pass = Pass {
+        events: vec![(beat, Event::note(None, "click", &[]))],
+        ..Pass::default()
+    };
+    engine.pass("lead", &pass).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let left = left_of(&mut engine, &path);
+    let started = from + onsets(&left)[0] as f64 / 48_000.0;
+    let after = (started - handed) * 1000.0;
+    println!("the click started {after:.1} ms after it was handed over");
+    assert!((0.0..30.0).contains(&after), "{after} ms");
 }

@@ -10,8 +10,9 @@ use crate::mixer::{
 use crate::options::{Context, Control, Options};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
 use crate::sample::{Player, SampleData};
-use crate::spec::{Spec, Value};
+use crate::spec::{Kind, Spec, Value};
 use crate::synth::{BuildNote, Effect, Note, Synth};
+use crate::time::{Tempo, TempoMap};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use fundsp::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -21,6 +22,12 @@ use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
+/// How long before its time an event in beats is built and placed at its frame; a tempo change moves every event further off than this.
+const LEAD: f64 = 0.15;
+/// How many beats after its beat an event in beats still plays, at once.
+const LATE: f64 = 0.25;
+/// How often a live engine looks for the events in beats that have come near.
+const TICK: Duration = Duration::from_millis(2);
 /// Seconds of silence a note's end fades over, so a note cut at its end does not click.
 const END_FADE: f64 = 0.01;
 /// How many notes sound at once unless the caller sets another limit: what one core fills in time with the berimbau, mx's costliest struck instrument.
@@ -92,6 +99,21 @@ pub enum Event {
         /// The ids the sounds were started with.
         ids: Vec<u64>,
     },
+}
+
+/// A stretch of a part's music, with its events at their beats.
+#[derive(Clone, Debug, Default)]
+pub struct Pass {
+    /// The beat it starts at.
+    pub from: f64,
+    /// The beat it ends at.
+    pub to: f64,
+    /// A number of the caller's choosing: a `Report::PassStarted` says when the first event of a pass starts whose label is another than that of the pass handed to the part before it.
+    pub label: u64,
+    /// How many beats before `to` a `Report::PassEnding` is sent, unless another pass was handed to the part by then; none for no report.
+    pub notice: Option<f64>,
+    /// Each event and its beat; the `chain` an event names is left aside, as the event plays into the pass's part.
+    pub events: Vec<(f64, Event)>,
 }
 
 /// What `record` writes to its file.
@@ -238,6 +260,8 @@ struct Registered<T> {
 struct Sound {
     key: u64,
     chain: Option<u64>,
+    /// The beat it was handed over at, when it came in a pass.
+    beat: Option<f64>,
     start: f64,
     end: f64,
     controls: HashMap<String, Control>,
@@ -417,8 +441,9 @@ impl Engine {
         engine.lost = lost;
         engine.device = opened.name;
         engine.timing = Some(opened.timing);
+        engine.book().timing = engine.timing.clone();
         engine.builder = Some(Builder::start(engine.book.clone(), opened.rate));
-        engine.hub.set_output(Report::Output {
+        engine.hub.keep(Report::Output {
             seconds: engine.now(),
             device: Some(engine.device.clone()),
             rate: engine.rate,
@@ -442,7 +467,7 @@ impl Engine {
         let sampler = Arc::from("sample");
         let next = Arc::new(AtomicU64::new(0));
         let sampler_specs: Vec<Spec> = sample_specs().into_iter().chain(placing_specs()).collect();
-        hub.set_output(Report::Output {
+        hub.keep(Report::Output {
             seconds: 0.0,
             device: None,
             rate,
@@ -467,6 +492,17 @@ impl Engine {
                 ids: HashMap::new(),
                 chains: HashMap::new(),
                 parts: HashMap::new(),
+                map: TempoMap::new(),
+                score: Vec::new(),
+                endings: HashMap::new(),
+                labels: HashMap::new(),
+                in_beats: HashMap::new(),
+                followers: Vec::new(),
+                pointed: f64::NEG_INFINITY,
+                cuts: (0, Vec::new()),
+                notices: Vec::new(),
+                timing: None,
+                voices: voices.clone(),
                 next: next.clone(),
                 clock: clock.clone(),
                 hub: hub.clone(),
@@ -658,7 +694,7 @@ impl Engine {
         &mut self,
         effects: &[(String, Vec<(String, Value)>)],
     ) -> Result<u64, Error> {
-        self.start_chain(None, effects)
+        self.start_chain(None, effects, false)
     }
 
     /// Starts a part by a name, with `effects` as `start_effects` takes them, none for a part without effects, and returns what a note, a sample or an input names as its `chain` to play into the part.
@@ -671,7 +707,20 @@ impl Engine {
         if self.book().parts.contains_key(name) {
             return Err(Error::PartExists(name.to_string()));
         }
-        self.start_chain(Some(name), effects)
+        self.start_chain(Some(name), effects, false)
+    }
+
+    /// Starts a part as `start_part` does, with the options its effects declare in beats given in beats, the ones left out too.
+    /// Each lasts those beats at the tempo of the beat the engine is playing, and those an effect lets change while it runs, such as the time between an echo's repeats, follow the tempo as it changes.
+    pub fn start_part_in_beats(
+        &mut self,
+        name: &str,
+        effects: &[(String, Vec<(String, Value)>)],
+    ) -> Result<u64, Error> {
+        if self.book().parts.contains_key(name) {
+            return Err(Error::PartExists(name.to_string()));
+        }
+        self.start_chain(Some(name), effects, true)
     }
 
     /// What a note names as its `chain` to play into the part started by `name`.
@@ -714,11 +763,19 @@ impl Engine {
         &mut self,
         name: Option<&str>,
         effects: &[(String, Vec<(String, Value)>)],
+        beats: bool,
     ) -> Result<u64, Error> {
         self.check_running()?;
         let mut unit: Net = Net::wrap(Box::new(multipass::<U2>()));
         let mut controls = Vec::new();
         let mut tail = 0.0;
+        let bpm = {
+            let book = self.book();
+            book.map
+                .bpm_at(book.pointed.max(book.map.beat_at(book.now())))
+        };
+        let mut in_beats = Vec::new();
+        let mut followers = Vec::new();
         for (name, given) in effects {
             let registered = self
                 .effects
@@ -728,7 +785,18 @@ impl Engine {
             let (build, effect_tail) =
                 (registered.item.build.clone(), registered.item.tail.clone());
             let values = self.check(&owner, &specs, given)?;
-            let options = Options::new(owner.clone(), specs, values);
+            let mut options = Options::new(owner.clone(), specs.clone(), values);
+            let timed = |spec: &&Spec| spec.kind == Kind::Beats;
+            let mut given = Vec::new();
+            if beats {
+                for spec in specs.iter().filter(timed) {
+                    let value = options.values.get(&spec.name).or(spec.default.as_ref());
+                    if let Some(Value::Number(beats)) = value {
+                        given.push((spec.name.clone(), *beats));
+                    }
+                }
+                options.in_beats(60.0 / bpm);
+            }
             let wet = build(&options, &mut Context::new(owner.clone()));
             if wet.inputs() != 2 || wet.outputs() != 2 {
                 return Err(Error::BadSound {
@@ -742,7 +810,24 @@ impl Engine {
                 | options.follow("mix")
                 | options.follow("amp");
             unit = unit >> (blended >> Net::wrap(Box::new(An(Blend))));
-            controls.push(options.take_controls());
+            let changing = options.take_controls();
+            let follows = |name: &String| changing.contains_key(name);
+            let index = controls.len();
+            followers.extend(
+                given
+                    .into_iter()
+                    .filter(|(name, _)| follows(name))
+                    .map(|(name, beats)| (index, name, beats)),
+            );
+            in_beats.push(
+                specs
+                    .iter()
+                    .filter(timed)
+                    .map(|spec| spec.name.clone())
+                    .filter(follows)
+                    .collect(),
+            );
+            controls.push(changing);
             tail += effect_tail(&options);
         }
         unit.set_sample_rate(self.rate);
@@ -760,6 +845,11 @@ impl Engine {
         let mut book = self.book();
         book.send(Command::StartChain(Box::new(chain)))?;
         book.chains.insert(key, controls);
+        book.in_beats.insert(key, in_beats);
+        let followers = followers
+            .into_iter()
+            .map(|(index, name, beats)| (key, index, name, beats));
+        book.followers.extend(followers);
         if let Some(name) = name {
             book.parts.insert(name.to_string(), key);
             book.hub.name_part(key, name);
@@ -924,49 +1014,20 @@ impl Engine {
     pub fn play(&mut self, events: &[(f64, Event)]) -> Result<(), Error> {
         self.check_running()?;
         let mut drafts = Vec::with_capacity(events.len());
+        let mut fixed = Vec::new();
         for (at, event) in events {
-            let chain_of = |chain: &Option<u64>| chain.map_or(Out::Main, Out::Chain);
-            drafts.push(match event {
-                Event::Note {
-                    id,
-                    synth,
-                    options,
-                    chain,
-                } => Draft::Sound(Box::new(self.note_draft(
-                    *id,
-                    synth,
-                    options,
-                    *at,
-                    chain_of(chain),
-                )?)),
-                Event::Sample {
-                    id,
-                    sample,
-                    options,
-                    chain,
-                } => Draft::Sound(Box::new(self.sample_draft(
-                    *id,
-                    *sample,
-                    options,
-                    *at,
-                    chain_of(chain),
-                )?)),
-                Event::Input {
-                    id,
-                    input,
-                    channels,
-                    options,
-                    chain,
-                } => Draft::Sound(Box::new(self.input_draft(
-                    *id,
-                    *input,
-                    *channels,
-                    options,
-                    *at,
-                    chain_of(chain),
-                )?)),
-                change => Draft::Change(*at, change.clone()),
-            });
+            if let Event::Set { target, options } = event
+                && let Target::Effect(chain, index) = target
+            {
+                let names = options.iter().map(|(name, _)| name.as_str());
+                fixed.extend(names.map(|name| (*chain, *index, name)));
+            }
+            drafts.push(self.draft(*at, event, None)?);
+        }
+        if !fixed.is_empty() {
+            // An effect's option set in seconds stops following the tempo.
+            let followers = &mut self.book().followers;
+            followers.retain(|f| !fixed.contains(&(f.0, f.1, f.2.as_str())));
         }
         if let Some(builder) = &self.builder {
             builder.hand(drafts);
@@ -984,6 +1045,157 @@ impl Engine {
         book.commit(items)
     }
 
+    /// An event checked, to play at `at` seconds into the output it names, or into `part` when one is given.
+    fn draft(&mut self, at: f64, event: &Event, part: Option<u64>) -> Result<Draft, Error> {
+        let out = |chain: &Option<u64>| part.or(*chain).map_or(Out::Main, Out::Chain);
+        Ok(match event {
+            Event::Note {
+                id,
+                synth,
+                options,
+                chain,
+            } => Draft::Sound(Box::new(self.note_draft(
+                *id,
+                synth,
+                options,
+                at,
+                out(chain),
+            )?)),
+            Event::Sample {
+                id,
+                sample,
+                options,
+                chain,
+            } => Draft::Sound(Box::new(self.sample_draft(
+                *id,
+                *sample,
+                options,
+                at,
+                out(chain),
+            )?)),
+            Event::Input {
+                id,
+                input,
+                channels,
+                options,
+                chain,
+            } => Draft::Sound(Box::new(self.input_draft(
+                *id,
+                *input,
+                *channels,
+                options,
+                at,
+                out(chain),
+            )?)),
+            change => Draft::Change(at, change.clone()),
+        })
+    }
+
+    /// Places beat 0 of the tempo map at `seconds` of the engine's clock; it is at 0 until placed.
+    /// The events in beats that are more than 150 ms from sounding move with it.
+    pub fn place_beats(&mut self, seconds: f64) -> Result<(), Error> {
+        self.check_running()?;
+        self.place(self.now() + LEAD, |book| {
+            book.map.place(seconds);
+            book.pointed = f64::NEG_INFINITY;
+        })
+    }
+
+    /// Changes the tempo from `beat` on, in place of whatever the map held from that beat on; the tempo is 120 beats a minute until changed.
+    /// Every event in beats that is more than 150 ms from sounding moves to where its beat now falls, and the effect options in beats follow.
+    pub fn set_tempo(&mut self, beat: f64, tempo: Tempo) -> Result<(), Error> {
+        self.check_running()?;
+        self.place(self.now() + LEAD, |book| {
+            book.map.set(beat, tempo);
+            book.repoint(beat);
+        })
+    }
+
+    /// The beat of the frame the engine fills next.
+    pub fn beat(&self) -> f64 {
+        self.beat_at(self.now())
+    }
+
+    /// The beat that falls at `seconds` of the engine's clock, by the tempo map as it is now.
+    pub fn beat_at(&self, seconds: f64) -> f64 {
+        self.book().map.beat_at(seconds)
+    }
+
+    /// The engine's seconds at which `beat` falls, by the tempo map as it is now.
+    pub fn beat_seconds(&self, beat: f64) -> f64 {
+        self.book().map.seconds_at(beat)
+    }
+
+    /// Hands a part a pass: events at their beats, which the engine places at the frames those beats fall on by the tempo map, 150 ms before each sounds.
+    /// An option a synth or an effect declares in beats, and every `_slide`, is given in beats, and lasts as long as those beats last at the tempo of the event's beat.
+    /// An event whose beat has passed plays at once when it is less than a quarter of a beat late, and is dropped otherwise; `warnings` counts both.
+    /// Every event is checked before any is kept, so a pass with a mistake plays nothing.
+    pub fn pass(&mut self, part: &str, pass: &Pass) -> Result<(), Error> {
+        self.check_running()?;
+        let key = self.part(part)?;
+        let mut scored = Vec::with_capacity(pass.events.len());
+        for (beat, event) in &pass.events {
+            scored.push(Scored {
+                beat: *beat,
+                part: key,
+                starts: None,
+                draft: self.draft(0.0, event, Some(key))?,
+            });
+        }
+        scored.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        let mut book = self.book();
+        if let Some(first) = scored.first_mut()
+            && book.labels.insert(key, pass.label) != Some(pass.label)
+        {
+            first.starts = Some(pass.label);
+        }
+        match pass.notice {
+            Some(notice) => book.endings.insert(key, (pass.to, notice, false)),
+            None => book.endings.remove(&key),
+        };
+        book.score.extend(scored);
+        book.score.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+        drop(book);
+        if let Some(builder) = &self.builder {
+            builder.hand(Vec::new());
+        }
+        Ok(())
+    }
+
+    /// Cuts a part from `beat`: every event in beats handed to it for that beat or after, which has not started, is dropped, so that another pass can be handed over in its place.
+    /// A note that started before the cut rings on, and a release dropped with the rest no longer ends it.
+    pub fn cut(&mut self, part: &str, beat: f64) -> Result<(), Error> {
+        self.check_running()?;
+        let key = self.part(part)?;
+        self.book().cut(key, beat)
+    }
+
+    /// Takes what falls before `horizon` seconds out of the events in beats and sends it on, to the builder thread of a live engine and to the mixer of an offline one, then makes `change` to the tempo map and takes what falls before `horizon` by the map as changed.
+    fn place(&self, horizon: f64, change: impl FnOnce(&mut Book)) -> Result<(), Error> {
+        let mut book = self.book();
+        let mut drafts = book.due(horizon);
+        change(&mut book);
+        drafts.extend(book.due(horizon));
+        book.tell();
+        if let Some(builder) = &self.builder {
+            drop(book);
+            builder.hand(drafts);
+            return Ok(());
+        }
+        if drafts.is_empty() {
+            return Ok(());
+        }
+        let mut items = Vec::with_capacity(drafts.len());
+        for draft in drafts {
+            items.push(match draft {
+                Draft::Sound(sound) => Item::Sound(Box::new(build(*sound, self.rate)?)),
+                Draft::Change(at, event) => Item::Change(at, event),
+            });
+        }
+        book.sweep();
+        book.commit(items)
+    }
+
     fn book(&self) -> std::sync::MutexGuard<'_, Book> {
         self.book.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -996,9 +1208,60 @@ impl Engine {
     }
 
     /// Renders the next `seconds` of an offline engine, as its left and right channels.
+    /// The samples are the same whatever the length of each stretch a render is asked for in.
     pub fn render(&mut self, seconds: f64) -> Result<(Vec<f32>, Vec<f32>), Error> {
-        self.check_running()?;
         let frames = self.frames(seconds) as usize;
+        let mut left = vec![0.0; frames];
+        let mut right = vec![0.0; frames];
+        self.fill_from(&mut left, &mut right, true)?;
+        Ok((left, right))
+    }
+
+    /// Fills `left` and `right`, of one length, with the next frames of an offline engine.
+    /// It is the layer under the tempo map and needs neither the map nor a sound card: it plays the events handed over at frames or at seconds, and of the events in beats only those `render` has already placed.
+    pub fn fill(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<(), Error> {
+        let frames = Ord::min(left.len(), right.len());
+        self.fill_from(&mut left[..frames], &mut right[..frames], false)
+    }
+
+    /// Plays events, each at a frame of the engine's clock, as `play` does at seconds.
+    pub fn play_at_frames(&mut self, events: &[(u64, Event)]) -> Result<(), Error> {
+        let rate = self.rate;
+        let timed = |(frame, event): &(u64, Event)| (*frame as f64 / rate, event.clone());
+        self.play(&events.iter().map(timed).collect::<Vec<_>>())
+    }
+
+    fn fill_from(&mut self, left: &mut [f32], right: &mut [f32], beats: bool) -> Result<(), Error> {
+        self.check_running()?;
+        if !matches!(self.output, Output::Offline(_)) {
+            return Err(Error::Live);
+        }
+        // Rendering outruns a recording's writer, so it goes a quarter second at a time, once the recordings have room for it.
+        let chunk = Ord::max((self.rate / 4.0) as usize, 1);
+        let mut filled = Ok(());
+        for (left, right) in left.chunks_mut(chunk).zip(right.chunks_mut(chunk)) {
+            if beats {
+                let horizon = self.now() + left.len() as f64 / self.rate + LEAD;
+                filled = self.place(horizon, |_| {});
+            }
+            filled = filled.and_then(|()| self.fill_chunk(left, right));
+            if filled.is_err() {
+                break;
+            }
+        }
+        if self.hub.wants(Topic::Warnings) {
+            count_warnings(&self.hub, &self.meter, &self.voices, self.rate, self.now());
+        }
+        let mut book = self.book();
+        book.drain();
+        if beats {
+            book.tell();
+        }
+        drop(book);
+        filled
+    }
+
+    fn fill_chunk(&mut self, left: &mut [f32], right: &mut [f32]) -> Result<(), Error> {
         let (meter, rate) = (self.meter.clone(), self.rate);
         let (hub, clock, voices) = (self.hub.clone(), self.clock.clone(), self.voices.clone());
         let (analyser, voiced) = (&mut self.analyser, &mut self.voiced);
@@ -1006,43 +1269,31 @@ impl Engine {
         let Output::Offline(mixer) = &mut self.output else {
             return Err(Error::Live);
         };
-        let mut left = vec![0.0; frames];
-        let mut right = vec![0.0; frames];
-        // Rendering outruns a recording's writer, so it goes a quarter second at a time, once the recordings have room for it.
-        let chunk = Ord::max((self.rate / 4.0) as usize, 1);
         let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            for (left, right) in left.chunks_mut(chunk).zip(right.chunks_mut(chunk)) {
-                mixer.receive();
-                while mixer.recording_room() < left.len() {
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-                let first = clock.load(Ordering::Acquire);
-                let began = Instant::now();
-                mixer.render(left, right);
-                meter.record(began.elapsed(), left.len(), rate, false);
-                if let Some(tapped) = tapped {
-                    tapped.report(analyser, &hub);
-                }
-                let seconds = (first + left.len() as u64) as f64 / rate;
-                let whole = seconds.floor() as u64;
-                if hub.wants(Topic::Voices) && *voiced != Some(whole) {
-                    *voiced = Some(whole);
-                    let sounding = voices.sounding.load(Ordering::Relaxed);
-                    hub.send(Report::Voices { seconds, sounding });
-                }
+            mixer.receive();
+            while mixer.recording_room() < left.len() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let first = clock.load(Ordering::Acquire);
+            let began = Instant::now();
+            mixer.render(left, right);
+            meter.record(began.elapsed(), left.len(), rate, false);
+            if let Some(tapped) = tapped {
+                tapped.report(analyser, &hub);
+            }
+            let seconds = (first + left.len() as u64) as f64 / rate;
+            let whole = seconds.floor() as u64;
+            if hub.wants(Topic::Voices) && *voiced != Some(whole) {
+                *voiced = Some(whole);
+                let sounding = voices.sounding.load(Ordering::Relaxed);
+                hub.send(Report::Voices { seconds, sounding });
             }
         }));
-        if self.hub.wants(Topic::Warnings) {
-            count_warnings(&self.hub, &self.meter, &self.voices, rate, self.now());
+        if rendered.is_err() {
+            self.failed.store(true, Ordering::Release);
+            return Err(Error::Failed);
         }
-        self.book().drain();
-        match rendered {
-            Ok(()) => Ok((left, right)),
-            Err(_) => {
-                self.failed.store(true, Ordering::Release);
-                Err(Error::Failed)
-            }
-        }
+        Ok(())
     }
 
     fn frames(&self, seconds: f64) -> u64 {
@@ -1096,6 +1347,8 @@ impl Engine {
         Ok(SoundDraft {
             id,
             at,
+            beat: None,
+            stamp: 0,
             out,
             input: None,
             options: Options::new(owner, specs, values),
@@ -1121,6 +1374,8 @@ impl Engine {
         Ok(SoundDraft {
             id,
             at,
+            beat: None,
+            stamp: 0,
             out,
             input: None,
             options: Options::new(owner, specs, values),
@@ -1146,12 +1401,23 @@ impl Engine {
         Ok(SoundDraft {
             id,
             at,
+            beat: None,
+            stamp: 0,
             out,
             input: Some((input, channels)),
             options: Options::new(owner, specs, values),
             make: Make::Input(channels),
         })
     }
+}
+
+/// An event handed over in a pass, which waits for its beat to come near.
+struct Scored {
+    beat: f64,
+    part: u64,
+    /// The label of its pass, when it is the first event of a pass with another label than the one before.
+    starts: Option<u64>,
+    draft: Draft,
 }
 
 /// An event checked and not yet built.
@@ -1164,6 +1430,10 @@ enum Draft {
 struct SoundDraft {
     id: Option<u64>,
     at: f64,
+    /// The beat it was handed over at, when it came in a pass.
+    beat: Option<f64>,
+    /// How many cuts had been made when it was taken to be built.
+    stamp: u64,
     out: Out,
     /// The first input channel and how many the sound reads, for live input.
     input: Option<(usize, usize)>,
@@ -1188,6 +1458,8 @@ enum Item {
 struct Built {
     id: Option<u64>,
     at: f64,
+    beat: Option<f64>,
+    stamp: u64,
     out: Out,
     input: Option<(usize, usize)>,
     unit: Net,
@@ -1223,6 +1495,8 @@ fn build(draft: SoundDraft, rate: f64) -> Result<Built, Error> {
     Ok(Built {
         id: draft.id,
         at: draft.at,
+        beat: draft.beat,
+        stamp: draft.stamp,
         out: draft.out,
         input: draft.input,
         unit,
@@ -1243,6 +1517,26 @@ struct Book {
     chains: HashMap<u64, Vec<HashMap<String, Control>>>,
     /// The chain of each part started by a name and not stopped.
     parts: HashMap<String, u64>,
+    map: TempoMap,
+    /// The events handed over in beats and not yet placed at their frames, in the order of their beats.
+    score: Vec<Scored>,
+    /// For each part, the end of the last pass handed to it, the beats before it to say so at, and whether that was said.
+    endings: HashMap<u64, (f64, f64, bool)>,
+    /// The label of the last pass handed to each part.
+    labels: HashMap<u64, u64>,
+    /// For each chain and each of its effects, the options declared in beats that change while it runs.
+    in_beats: HashMap<u64, Vec<Vec<String>>>,
+    /// The effect options given in beats, which follow the tempo: the chain, the effect's index, the option and its beats.
+    followers: Vec<(u64, usize, String, f64)>,
+    /// The last beat at which the tempo was read for the followers and the beat reports.
+    pointed: f64,
+    /// The cuts made, the last ones kept: how many came before each, its part and its beat.
+    cuts: (u64, Vec<(u64, u64, f64)>),
+    /// The reports of passes, each held until the clock reaches its seconds.
+    notices: Vec<(f64, Report)>,
+    /// A live engine's clock against the system's, for the beat reports.
+    timing: Option<Arc<Mutex<Timing>>>,
+    voices: Arc<Voices>,
     next: Arc<AtomicU64>,
     clock: Arc<AtomicU64>,
     /// Where what the builder thread has to say goes, until `warnings` is asked.
@@ -1272,7 +1566,13 @@ impl Book {
     fn drain(&mut self) {
         while let Ok(garbage) = self.garbage.pop() {
             if let Garbage::Chain(chain) = &garbage {
-                self.hub.forget_part(chain.key);
+                let key = chain.key;
+                self.hub.forget_part(key);
+                self.followers.retain(|follower| follower.0 != key);
+                self.score.retain(|scored| scored.part != key);
+                self.in_beats.remove(&key);
+                self.endings.remove(&key);
+                self.labels.remove(&key);
             }
         }
     }
@@ -1313,6 +1613,7 @@ impl Book {
         let sound = Sound {
             key,
             chain,
+            beat: built.beat,
             start: built.at,
             end: built.at + built.lasts,
             controls: built.controls,
@@ -1321,12 +1622,214 @@ impl Book {
         (Box::new(voice), sound)
     }
 
+    fn now(&self) -> f64 {
+        self.clock.load(Ordering::Acquire) as f64 / self.rate
+    }
+
+    /// Whether anything waits for its time: an event in beats, a report of a pass, or a beat at which the tempo is another.
+    fn pending(&self) -> bool {
+        !self.score.is_empty()
+            || !self.notices.is_empty()
+            || self.endings.values().any(|(_, _, told)| !told)
+            || self.map.next_point(self.pointed).is_some()
+    }
+
+    /// Takes what falls before `horizon` seconds out of what waits: the events in beats, placed at their seconds with their options in beats turned into seconds, and for each beat at which the tempo is another, a change to the effect options that follow it.
+    /// It sends the reports of those beats, and holds those of the passes that start and of those about to end.
+    fn due(&mut self, horizon: f64) -> Vec<Draft> {
+        let now = self.now();
+        let playing = self.map.beat_at(now);
+        let until = self.map.beat_at(horizon);
+        let count = self.score.partition_point(|scored| scored.beat < until);
+        let taken: Vec<Scored> = self.score.drain(..count).collect();
+        let mut due = Vec::with_capacity(taken.len());
+        let mut dropped = 0;
+        for scored in taken {
+            // A release or a stop is kept however late, so that no note is left ringing.
+            let ends = matches!(
+                scored.draft,
+                Draft::Change(_, Event::Stop { .. } | Event::Release { .. })
+            );
+            if playing - scored.beat >= LATE && !ends {
+                dropped += 1;
+                continue;
+            }
+            let (beat, part) = (scored.beat, scored.part);
+            let at = self.map.seconds_at(beat);
+            let per_beat = 60.0 / self.map.bpm_at(beat);
+            if let (Some(label), Some(part)) = (scored.starts, self.hub.part_name(part)) {
+                let seconds = at.max(now);
+                let started = Report::PassStarted {
+                    seconds,
+                    part,
+                    label,
+                    beat,
+                };
+                self.notices.push((seconds, started));
+            }
+            due.push(match scored.draft {
+                Draft::Sound(mut sound) => {
+                    sound.at = at;
+                    sound.beat = Some(beat);
+                    sound.stamp = self.cuts.0;
+                    sound.options.in_beats(per_beat);
+                    Draft::Sound(sound)
+                }
+                Draft::Change(_, Event::Set { target, options }) => {
+                    let options = self.in_seconds(&target, options, per_beat);
+                    Draft::Change(at, Event::Set { target, options })
+                }
+                Draft::Change(_, event) => Draft::Change(at, event),
+            });
+        }
+        self.voices.dropped.fetch_add(dropped, Ordering::Relaxed);
+        for (part, (to, notice, told)) in &mut self.endings {
+            let seconds = self.map.seconds_at(*to - *notice);
+            if !*told && seconds < horizon {
+                *told = true;
+                if let Some(part) = self.hub.part_name(*part) {
+                    let ending = Report::PassEnding {
+                        seconds,
+                        part,
+                        beat: *to,
+                    };
+                    self.notices.push((seconds, ending));
+                }
+            }
+        }
+        // Of the beats already past, only the last still says what the tempo is.
+        let mut points = Vec::new();
+        while let Some(point) = self.map.next_point(self.pointed) {
+            let at = self.map.seconds_at(point);
+            if at >= horizon {
+                break;
+            }
+            self.pointed = point;
+            if at <= now {
+                points.clear();
+            }
+            points.push((point, at));
+        }
+        for (beat, seconds) in points {
+            let bpm = self.map.bpm_at(beat);
+            let system = self.timing.as_ref().and_then(|timing| {
+                let timing = timing.lock().unwrap_or_else(|e| e.into_inner());
+                let heard = timing.system(seconds)? + timing.latency.unwrap_or(0.0);
+                Some(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(heard.max(0.0)))
+            });
+            self.hub.keep(Report::Beat {
+                seconds,
+                beat,
+                bpm,
+                system,
+            });
+            for (chain, index, name, beats) in &self.followers {
+                let target = Target::Effect(*chain, *index);
+                let options = vec![(name.clone(), beats * 60.0 / bpm)];
+                let set = Event::Set { target, options };
+                due.push(Draft::Change(seconds.max(now), set));
+            }
+        }
+        due
+    }
+
+    /// A change's options in seconds, given in beats in a pass: each `_slide`, and an effect's options declared in beats, which follow the tempo from then on.
+    fn in_seconds(
+        &mut self,
+        target: &Target,
+        options: Vec<(String, f64)>,
+        per_beat: f64,
+    ) -> Vec<(String, f64)> {
+        let mut seconds = Vec::with_capacity(options.len());
+        for (name, value) in options {
+            let effect = match target {
+                Target::Effect(chain, index) => Some((*chain, *index)),
+                _ => None,
+            };
+            let declared = effect.filter(|(chain, index)| {
+                let names = self.in_beats.get(chain).and_then(|names| names.get(*index));
+                names.is_some_and(|names| names.contains(&name))
+            });
+            if let Some((chain, index)) = declared {
+                self.followers
+                    .retain(|f| (f.0, f.1, f.2.as_str()) != (chain, index, name.as_str()));
+                self.followers.push((chain, index, name.clone(), value));
+            }
+            let timed = declared.is_some() || name.ends_with("_slide");
+            seconds.push((name, if timed { value * per_beat } else { value }));
+        }
+        seconds
+    }
+
+    /// Sends the reports of passes whose seconds the clock has reached.
+    fn tell(&mut self) {
+        let now = self.now();
+        let mut reached = Vec::new();
+        self.notices.retain(|(seconds, report)| {
+            let keep = *seconds > now;
+            if !keep {
+                reached.push(report.clone());
+            }
+            keep
+        });
+        reached.sort_by(|a, b| a.seconds().total_cmp(&b.seconds()));
+        reached.into_iter().for_each(|report| self.hub.send(report));
+    }
+
+    /// Reads the tempo again from `beat` on, after the map changed there.
+    fn repoint(&mut self, beat: f64) {
+        self.pointed = self.pointed.min(beat.next_down());
+    }
+
+    /// Drops what a part was handed for `beat` and after: the events not yet placed, and the sounds placed that have not started.
+    fn cut(&mut self, part: u64, beat: f64) -> Result<(), Error> {
+        self.score
+            .retain(|scored| scored.part != part || scored.beat < beat);
+        self.endings.remove(&part);
+        self.notices.retain(|(_, report)| match report {
+            Report::PassStarted { beat: starts, .. } => *starts < beat,
+            _ => true,
+        });
+        let (count, cuts) = &mut self.cuts;
+        cuts.push((*count, part, beat));
+        *count += 1;
+        let kept = cuts.len().saturating_sub(32);
+        cuts.drain(..kept);
+        let now = self.now();
+        let later = |sound: &Sound| {
+            sound.chain == Some(part) && sound.start > now && sound.beat.is_some_and(|b| b >= beat)
+        };
+        let keys: Vec<u64> = self
+            .sounds
+            .values()
+            .filter(|sound| later(sound))
+            .map(|sound| sound.key)
+            .collect();
+        for key in keys {
+            self.sounds.remove(&key);
+            self.send(Command::Drop { key })?;
+        }
+        Ok(())
+    }
+
+    /// Whether a sound of a pass was cut while it was being built.
+    fn was_cut(&self, built: &Built) -> bool {
+        let (Some(beat), Out::Chain(part)) = (built.beat, built.out) else {
+            return false;
+        };
+        let cut = |(before, of, from): &(u64, u64, f64)| {
+            *before >= built.stamp && *of == part && beat >= *from
+        };
+        self.cuts.1.iter().any(cut)
+    }
+
     /// Sends a batch to the mixer: its sounds first, so that a change can reach a note of the same batch.
     fn commit(&mut self, items: Vec<Item>) -> Result<(), Error> {
         let mut commands = Vec::with_capacity(items.len());
         let mut changes = Vec::new();
         for item in items {
             match item {
+                Item::Sound(built) if self.was_cut(&built) => {}
                 Item::Sound(built) => {
                     let id = built.id;
                     let (voice, sound) = self.start(*built);
@@ -1474,6 +1977,20 @@ fn count_warnings(hub: &Hub, meter: &Meter, voices: &Voices, rate: f64, seconds:
             format!("{late} {events} after their time, by up to {ms:.1} ms, and played at once"),
         );
     }
+    let dropped = voices.dropped.swap(0, Ordering::Relaxed);
+    if dropped > 0 {
+        let events = if dropped == 1 {
+            "event was"
+        } else {
+            "events were"
+        };
+        hub.warn(
+            seconds,
+            format!(
+                "{dropped} {events} dropped, handed over a quarter of a beat or more after the beat"
+            ),
+        );
+    }
     let stolen = voices.stolen.swap(0, Ordering::Relaxed);
     if stolen > 0 {
         let limit = voices.limit.load(Ordering::Relaxed);
@@ -1567,7 +2084,27 @@ impl Builder {
         let thread = std::thread::Builder::new()
             .name("mxs builder".to_string())
             .spawn(move || {
-                for batch in handed {
+                // Asleep until a batch is handed over, unless something in beats waits for its time.
+                let mut pending = true;
+                loop {
+                    let handed_over = match pending {
+                        true => handed.recv_timeout(TICK).map_err(|error| {
+                            matches!(error, mpsc::RecvTimeoutError::Disconnected)
+                        }),
+                        false => handed.recv().map_err(|_| true),
+                    };
+                    let (mut batch, counted) = match handed_over {
+                        Ok(batch) => (batch, true),
+                        Err(false) => (Vec::new(), false),
+                        Err(true) => break,
+                    };
+                    {
+                        let mut book = book.lock().unwrap_or_else(|e| e.into_inner());
+                        let horizon = book.now() + LEAD;
+                        batch.extend(book.due(horizon));
+                        book.tell();
+                        pending = book.pending();
+                    }
                     let mut said: Vec<String> = Vec::new();
                     let mut items = Vec::with_capacity(batch.len());
                     for draft in batch {
@@ -1590,18 +2127,21 @@ impl Builder {
                             Draft::Change(at, event) => items.push(Item::Change(at, event)),
                         }
                     }
-                    let mut book = book.lock().unwrap_or_else(|e| e.into_inner());
-                    book.sweep();
-                    if let Err(error) = book.commit(items) {
-                        said.push(format!("{error}, so some events did not play"));
+                    if counted || !items.is_empty() || !said.is_empty() {
+                        let mut book = book.lock().unwrap_or_else(|e| e.into_inner());
+                        book.sweep();
+                        if let Err(error) = book.commit(items) {
+                            said.push(format!("{error}, so some events did not play"));
+                        }
+                        let now = book.now();
+                        said.into_iter()
+                            .for_each(|message| book.hub.warn(now, message));
                     }
-                    let now = book.clock.load(Ordering::Acquire) as f64 / book.rate;
-                    said.into_iter()
-                        .for_each(|message| book.hub.warn(now, message));
-                    drop(book);
-                    let (count, settled) = &*counting;
-                    *count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
-                    settled.notify_all();
+                    if counted {
+                        let (count, settled) = &*counting;
+                        *count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+                        settled.notify_all();
+                    }
                 }
             })
             .expect("the builder thread starts");

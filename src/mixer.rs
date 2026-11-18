@@ -30,6 +30,8 @@ pub(crate) struct Voices {
     pub stolen: AtomicU64,
     pub late: AtomicU64,
     pub most_late: AtomicU64,
+    /// Events in beats dropped for coming a quarter of a beat or more after their beat.
+    pub dropped: AtomicU64,
 }
 
 impl Voices {
@@ -40,6 +42,7 @@ impl Voices {
             stolen: AtomicU64::new(0),
             late: AtomicU64::new(0),
             most_late: AtomicU64::new(0),
+            dropped: AtomicU64::new(0),
         })
     }
 }
@@ -174,6 +177,10 @@ pub(crate) enum Command {
         key: u64,
         at: u64,
     },
+    /// Takes back a sound that has not started.
+    Drop {
+        key: u64,
+    },
     Record(Box<Recorder>),
     StopRecording,
     RecordOutput(Box<Recorder>),
@@ -304,6 +311,15 @@ impl Mixer {
                     if let Some(voice) = self.voices.iter_mut().find(|v| v.key == key) {
                         let at = Ord::max(Ord::max(at, voice.start), self.now);
                         voice.end = Ord::min(voice.end, at + voice.fade);
+                    }
+                }
+                Command::Drop { key } => {
+                    let now = self.now;
+                    if let Some(voice) = self.voices.iter_mut().find(|v| v.key == key)
+                        && voice.start >= now
+                    {
+                        voice.stolen = true;
+                        voice.end = now;
                     }
                 }
                 Command::Record(recorder) => {
