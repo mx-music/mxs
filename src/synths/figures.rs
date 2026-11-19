@@ -644,10 +644,10 @@ impl Voice {
         }
     }
 
-    /// The noise in the bands under `hz` made `by` times as loud; 0 leaves it out.
+    /// The noise in the bands whose centre is under `hz` made `by` times as loud; 0 leaves it out.
     pub fn noise_under(&mut self, hz: f64, by: f64) {
-        for ((_, high), shape) in &mut self.noise {
-            if *high <= hz {
+        for ((low, high), shape) in &mut self.noise {
+            if (*low * *high).sqrt() <= hz {
                 shape.levels.iter_mut().for_each(|level| {
                     *level = if by > 0.0 {
                         (*level + 20.0 * by.log10()).max(SILENT)
@@ -2150,5 +2150,31 @@ mod ready {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod noise_under {
+    use super::{Figures, SILENT};
+
+    #[test]
+    fn leaves_out_the_band_that_crosses_the_frequency_by_its_centre_and_keeps_the_next() {
+        let figures = Figures::read(include_bytes!("figures/piano.mxf"));
+        let before = figures.voice(84.0, 0.6);
+        let mut after = figures.voice(84.0, 0.6);
+        after.noise_under(600.0, 0.0);
+        let band = |voice: &super::Voice, low: f64| {
+            voice
+                .noise
+                .iter()
+                .find(|((l, _), _)| (*l - low).abs() < 1.0)
+                .unwrap()
+                .1
+                .levels
+                .clone()
+        };
+        assert!(band(&after, 516.0).iter().all(|level| *level <= SILENT));
+        assert!(band(&before, 516.0).iter().any(|level| *level > SILENT));
+        assert_eq!(band(&after, 602.0), band(&before, 602.0));
     }
 }
