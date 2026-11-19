@@ -1,5 +1,5 @@
 use fundsp::prelude::*;
-use mxs::{Analysed, Engine, Event, Note, RATE, Report, Synth, Topic};
+use mxs::{Engine, Event, Note, Origin, RATE, Report, Synth, Topic};
 use std::time::Duration;
 
 /// A mono 32-bit float WAV file of `samples` at the engine's rate.
@@ -40,7 +40,7 @@ fn analysed(samples: &[f32], interval: f64, seconds: f64) -> Vec<Report> {
         .load_sample_bytes("input.wav", &wav(samples))
         .unwrap();
     engine
-        .analyse(Analysed::Sample(sample), interval, 0.0)
+        .analyse(Origin::Sample(sample), interval, 0.0)
         .unwrap();
     // A subscriber keeps 64 reports waiting, so they are read as the render goes.
     let mut heard = Vec::new();
@@ -184,7 +184,7 @@ fn the_main_output_renders_the_same_samples_with_an_analysis_on_it() {
         engine.register(tone());
         let _reports = engine.subscribe(&[Topic::Analysis]);
         if analysing {
-            engine.analyse(Analysed::Output, 0.01, 0.0).unwrap();
+            engine.analyse(Origin::Output, 0.01, 0.0).unwrap();
         }
         engine
             .play(&[(0.0, Event::note(None, "tone", &[]))])
@@ -203,7 +203,7 @@ fn an_analysis_of_a_chain_hears_what_plays_into_it_and_stops_when_asked() {
         .for_each(|e| engine.register_effect(e));
     let reports = engine.subscribe(&[Topic::Analysis]);
     let chain = engine.start_effects(&[]).unwrap();
-    let id = engine.analyse(Analysed::Chain(chain), 0.01, 0.0).unwrap();
+    let id = engine.analyse(Origin::Chain(chain), 0.01, 0.0).unwrap();
     let mut note = Event::note(None, "tone", &[]);
     if let Event::Note { chain: into, .. } = &mut note {
         *into = Some(chain);
@@ -231,7 +231,7 @@ fn a_caller_that_takes_no_reports_for_10_seconds_is_told_how_many_were_dropped()
     let sample = engine
         .load_sample_bytes("input.wav", &wav(&sine(220.0, 0.5, 10.0)))
         .unwrap();
-    engine.analyse(Analysed::Sample(sample), 0.05, 0.0).unwrap();
+    engine.analyse(Origin::Sample(sample), 0.05, 0.0).unwrap();
     engine.render(10.0).unwrap();
     let Some(Report::Dropped {
         reports: dropped, ..

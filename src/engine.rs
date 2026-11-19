@@ -5,12 +5,12 @@ use crate::device::{self, Format, Range, Settings};
 use crate::listen::Listening;
 use crate::load::{Load, Meter};
 use crate::mixer::{
-    CAPACITY, Chain, Change, Command, Garbage, Heard, INPUTS, Input, Listened, Listener, Mixer,
-    Out, PartChange, Recorder, Voice, Voices,
+    CAPACITY, Chain, Change, Command, Garbage, Heard, INPUTS, Input, Kept, Listened, Listener,
+    Mixer, Out, PartChange, Recorder, Voice, Voices,
 };
 use crate::options::{Context, Control, Options};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
-use crate::sample::{Player, SampleData};
+use crate::sample::{Grains, Player, SampleData, Samples};
 use crate::spec::{Kind, Spec, Value};
 use crate::synth::{BuildNote, Effect, Given, Note, Ready, Synth};
 use crate::time::{Tempo, TempoMap};
@@ -76,6 +76,17 @@ pub enum Event {
         /// The effect chain the sample plays into, if any.
         chain: Option<u64>,
     },
+    /// Overlapping grains of a sample or a buffer, with the options [`Engine::grains_specs`] lists.
+    Grains {
+        /// What a later change reaches the grains by.
+        id: Option<u64>,
+        /// The sample or buffer, as [`Engine::load_sample`] or [`Engine::create_buffer`] returned it.
+        sample: u64,
+        /// The options of the grains.
+        options: Vec<(String, Value)>,
+        /// The effect chain the grains play into, if any.
+        chain: Option<u64>,
+    },
     /// Channels of the sound card's input, from `input`, numbered from 0, with amp and pan, playing until stopped.
     Input {
         /// What a later change reaches the input by.
@@ -133,12 +144,12 @@ pub enum Source {
     Sample(u64),
 }
 
-/// A sound an analysis hears, for [`Engine::analyse`].
+/// Where the sound comes from that an analysis hears, for [`Engine::analyse`], or that a recording into a buffer takes, for [`Engine::record_buffer`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Analysed {
+pub enum Origin {
     /// One channel of the sound card's input, numbered from 0.
     Input(usize),
-    /// A sample [`Engine::load_sample`] returned, played once in place of the input, to the analysis alone.
+    /// A sample [`Engine::load_sample`] returned, played once in place of the input, to the analysis or the recording alone.
     Sample(u64),
     /// An effect chain's output, or a part's, after its gain, mute and solo.
     Chain(u64),
@@ -389,6 +400,7 @@ pub struct Engine {
     synths: HashMap<String, Registered<Synth>>,
     effects: HashMap<String, Registered<Effect>>,
     sampler: (Arc<str>, Arc<[Spec]>),
+    grainer: (Arc<str>, Arc<[Spec]>),
     input: (Arc<str>, Arc<[Spec]>),
     inputs: usize,
     recording: Option<Recording>,
@@ -587,6 +599,10 @@ impl Engine {
             synths: HashMap::new(),
             effects: HashMap::new(),
             sampler: (sampler, sampler_specs.into()),
+            grainer: (
+                Arc::from("grains"),
+                grains_specs().into_iter().chain(placing_specs()).collect(),
+            ),
             input: (Arc::from("input"), placing_specs().into()),
             inputs: 0,
             recording: None,
@@ -771,6 +787,11 @@ impl Engine {
     /// The options every sample takes.
     pub fn sample_specs(&self) -> Vec<Spec> {
         self.sampler.1.to_vec()
+    }
+
+    /// The options grains take, from [`Event::Grains`].
+    pub fn grains_specs(&self) -> Vec<Spec> {
+        self.grainer.1.to_vec()
     }
 
     /// The options the sound card's input takes, from [`Event::Input`].
@@ -1030,24 +1051,49 @@ impl Engine {
 
     /// Starts an analysis of `sound` from `at` seconds and returns its id: the subscribers to [`Topic::Analysis`] are sent its loudness and its pitch every `interval` seconds, and each onset as it happens, until [`Engine::stop_analysis`].
     /// It leaves the sound as it is, and several run at once.
-    pub fn analyse(&mut self, sound: Analysed, interval: f64, at: f64) -> Result<u64, Error> {
+    pub fn analyse(&mut self, sound: Origin, interval: f64, at: f64) -> Result<u64, Error> {
         self.check_running()?;
-        self.settle();
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let (listening, rate) = (self.listening.clone(), self.rate);
+        let interval = Ord::max((interval * rate).round() as u64, 1);
+        let key = self.listen(id, sound, at, None, |start| {
+            let (samples, heard) = rtrb::RingBuffer::new(rate as usize);
+            let (spans, spanned) = rtrb::RingBuffer::new(4096);
+            let analysis = Listening::new(id, heard, spanned, rate, interval, start);
+            listening
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(analysis);
+            Kept::Rings { samples, spans }
+        })?;
+        self.analyses.insert(id, key);
+        Ok(id)
+    }
+
+    /// Starts copying `sound` from `at` seconds, for `frames` or until stopped, into what `keep` makes from the frame it starts at, and returns the key of the voice that plays a sound to it alone.
+    fn listen(
+        &mut self,
+        id: u64,
+        sound: Origin,
+        at: f64,
+        frames: Option<u64>,
+        keep: impl FnOnce(u64) -> Kept,
+    ) -> Result<Option<u64>, Error> {
+        self.settle();
         let (listened, draft) = match sound {
-            Analysed::Input(input) => (
+            Origin::Input(input) => (
                 Listened::Own,
                 Some(self.input_draft(None, input, 1, &[], at, Out::Listen(id))?),
             ),
-            Analysed::Sample(sample) => (
+            Origin::Sample(sample) => (
                 Listened::Own,
                 Some(self.sample_draft(None, sample, &[], at, Out::Listen(id))?),
             ),
-            Analysed::Chain(chain) if self.book().chains.contains_key(&chain) => {
+            Origin::Chain(chain) if self.book().chains.contains_key(&chain) => {
                 (Listened::Chain(chain), None)
             }
-            Analysed::Chain(chain) => return Err(Error::UnknownChain(chain)),
-            Analysed::Output => (Listened::Main, None),
+            Origin::Chain(chain) => return Err(Error::UnknownChain(chain)),
+            Origin::Output => (Listened::Main, None),
         };
         let started = match draft {
             Some(draft) => {
@@ -1062,37 +1108,115 @@ impl Engine {
             Some((voice, _)) => voice.start,
             None => Ord::max(self.frames(at), self.clock.load(Ordering::Acquire)),
         };
-        let interval = Ord::max((interval * self.rate).round() as u64, 1);
-        let (samples, heard) = rtrb::RingBuffer::new(self.rate as usize);
-        let (spans, spanned) = rtrb::RingBuffer::new(4096);
+        let stop = frames.map(|frames| start + frames);
         let listener = Listener {
             id,
             listened,
             start,
-            stop: None,
+            stop,
             sound: BufferVec::new(2),
-            samples,
-            spans,
+            kept: keep(start),
         };
-        let listening = Listening::new(id, heard, spanned, self.rate, interval, start);
-        self.listening
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(listening);
         let mut book = self.book();
         book.send(Command::Listen(Box::new(listener)))?;
-        let key = match started {
-            Some((voice, sound)) => {
-                let key = voice.key;
-                book.sounds.insert(sound.key, sound);
-                book.send(Command::Start(voice))?;
-                Some(key)
-            }
-            None => None,
+        let Some((voice, sound)) = started else {
+            return Ok(None);
         };
-        drop(book);
-        self.analyses.insert(id, key);
+        let key = voice.key;
+        book.sounds.insert(sound.key, sound);
+        book.send(Command::Start(voice))?;
+        if let Some(at) = stop {
+            book.send(Command::Stop { key, at })?;
+        }
+        Ok(Some(key))
+    }
+
+    /// Creates a silent buffer of `seconds` at the engine's rate, with one channel or two, and returns the number events name it by, as [`Engine::load_sample`] does.
+    /// It plays as a sample does, and [`Engine::record_buffer`] records into it.
+    pub fn create_buffer(&mut self, seconds: f64, channels: usize) -> Result<u64, Error> {
+        let frames = self.frames(seconds) as usize;
+        let data = SampleData {
+            channels: (0..channels.clamp(1, 2))
+                .map(|_| Samples::silent(frames))
+                .collect(),
+            rate: self.rate,
+            peak: 0.0,
+        };
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        self.samples.insert(id, Arc::new(data));
         Ok(id)
+    }
+
+    /// Records `sound` into `buffer` from its first frame, from `at` seconds for `seconds`, keeping what was there scaled by `level`: 0 replaces it and 1 adds over it.
+    /// A one-channel buffer takes the sound's two channels summed at the level of a sound in the middle; a sample played in place of an input plays to the recording alone.
+    /// Several recordings into buffers run at once, and a sound that plays the buffer meanwhile plays what has been written by the time it reads each frame.
+    pub fn record_buffer(
+        &mut self,
+        buffer: u64,
+        sound: Origin,
+        at: f64,
+        seconds: f64,
+        level: f64,
+    ) -> Result<(), Error> {
+        self.check_running()?;
+        let data = self
+            .samples
+            .get(&buffer)
+            .ok_or(Error::UnknownSample(buffer))?
+            .clone();
+        let frames = Ord::min(self.frames(seconds), data.frames() as u64);
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let level = level as f32;
+        self.listen(id, sound, at, Some(frames), |_| Kept::Buffer {
+            data,
+            level,
+        })?;
+        Ok(())
+    }
+
+    /// Records into `buffer` as [`Engine::record_buffer`] does, from `beat` for `beats`, at the seconds those beats fall on by the tempo map as it is when called.
+    pub fn record_buffer_in_beats(
+        &mut self,
+        buffer: u64,
+        sound: Origin,
+        beat: f64,
+        beats: f64,
+        level: f64,
+    ) -> Result<(), Error> {
+        let (from, to) = (self.beat_seconds(beat), self.beat_seconds(beat + beats));
+        self.record_buffer(buffer, sound, from, to - from, level)
+    }
+
+    /// Writes a sample or a buffer, as it is now, to a 32-bit float WAV file at `path`, with its channels and its rate.
+    pub fn save_sample(&self, sample: u64, path: impl AsRef<Path>) -> Result<(), Error> {
+        let data = self
+            .samples
+            .get(&sample)
+            .ok_or(Error::UnknownSample(sample))?;
+        let shown = path.as_ref().display();
+        let spec = hound::WavSpec {
+            channels: data.channels.len() as u16,
+            sample_rate: data.rate.round() as u32,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let failed = |e: hound::Error| Error::Record(format!("cannot write {shown}: {e}"));
+        let mut wav = hound::WavWriter::create(path.as_ref(), spec).map_err(failed)?;
+        for frame in 0..data.frames() {
+            for channel in &data.channels {
+                wav.write_sample(channel.get(frame).unwrap_or(0.0))
+                    .map_err(failed)?;
+            }
+        }
+        wav.finalize().map_err(failed)
+    }
+
+    /// Lets go of a sample or a buffer: events can no longer name it, and it is freed once the sounds playing it and the recordings into it have ended.
+    pub fn free_sample(&mut self, sample: u64) -> Result<(), Error> {
+        self.samples
+            .remove(&sample)
+            .map(drop)
+            .ok_or(Error::UnknownSample(sample))
     }
 
     /// Stops the analysis `id` at `at` seconds; the reports of what it heard up to then are still sent.
@@ -1405,6 +1529,18 @@ impl Engine {
                 options,
                 chain,
             } => Draft::Sound(Box::new(self.sample_draft(
+                *id,
+                *sample,
+                options,
+                at,
+                out(chain),
+            )?)),
+            Event::Grains {
+                id,
+                sample,
+                options,
+                chain,
+            } => Draft::Sound(Box::new(self.grains_draft(
                 *id,
                 *sample,
                 options,
@@ -1728,6 +1864,34 @@ impl Engine {
         })
     }
 
+    fn grains_draft(
+        &mut self,
+        id: Option<u64>,
+        sample: u64,
+        given: &[(String, Value)],
+        at: f64,
+        out: Out,
+    ) -> Result<SoundDraft, Error> {
+        let data = self
+            .samples
+            .get(&sample)
+            .ok_or(Error::UnknownSample(sample))?
+            .clone();
+        let (owner, specs) = self.grainer.clone();
+        let values = self.check(&owner, &specs, given)?;
+        Ok(SoundDraft {
+            id,
+            at,
+            beat: None,
+            stamp: 0,
+            out,
+            input: None,
+            options: Options::new(owner, specs, values),
+            make: Make::Grains(data),
+            ready: false,
+        })
+    }
+
     fn input_draft(
         &mut self,
         id: Option<u64>,
@@ -1792,6 +1956,7 @@ struct SoundDraft {
 enum Make {
     Note(Arc<BuildNote>),
     Sample(Arc<SampleData>),
+    Grains(Arc<SampleData>),
     /// Live input of this many channels.
     Input(usize),
 }
@@ -1832,6 +1997,7 @@ fn build(draft: SoundDraft, rate: f64) -> Result<Built, Error> {
     let note = match draft.make {
         Make::Note(build) => build(options, &mut ctx),
         Make::Sample(data) => sample_note(data, options),
+        Make::Grains(data) => grains_note(data, options),
         Make::Input(1) => Note::rings(Net::wrap(Box::new(pass())), f64::INFINITY),
         Make::Input(_) => Note::rings(Net::wrap(Box::new(multipass::<U2>())), f64::INFINITY),
     };
@@ -3023,6 +3189,50 @@ fn sample_specs() -> Vec<Spec> {
     ]
 }
 
+fn grains_specs() -> Vec<Spec> {
+    vec![
+        Spec::float("position").default(0.5).range(0.0, 1.0).doc("Where in the sample the grains are taken from, as a fraction of its length."),
+        Spec::float("duration").default(0.1).range(0.001, 10.0).doc("How long each grain lasts, in seconds."),
+        Spec::float("density").default(20.0).range(0.01, 1000.0).doc("How many grains start a second."),
+        Spec::float("pitch").default(0.0).range(-48.0, 48.0).doc("The grains' pitch, in semitones from the sample's own."),
+        Spec::float("spread").default(0.0).range(0.0, 1.0).doc("How far each grain's position strays at random either way, as a fraction of the sample's length."),
+        Spec::float("width").default(0.0).range(0.0, 1.0).doc("How far each grain strays at random across the stereo field, from 0, in the middle, to 1, anywhere from left to right."),
+        Spec::float("seed").default(0.0).doc("The seed of the random positions and places; grains with the same seed play the same."),
+        Spec::beats("attack").default(0.0).range(0.0, f64::INFINITY).doc("How long the grains take to rise to full level."),
+        Spec::beats("sustain").default(1.0).range(0.0, f64::INFINITY).doc("How long they then hold."),
+        Spec::beats("release").default(0.0).range(0.0, f64::INFINITY).doc("How long they then take to fall silent."),
+    ]
+}
+
+fn grains_note(data: Arc<SampleData>, options: &Options) -> Note {
+    let moving = [
+        "position", "duration", "density", "pitch", "spread", "width",
+    ];
+    let inputs = moving
+        .iter()
+        .map(|name| options.follow(name))
+        .reduce(|all, next| all | next)
+        .expect("grains have options");
+    let seed = options.number("seed").to_bits();
+    let grains = inputs >> Net::wrap(Box::new(An(Grains::new(data, seed))));
+    let (attack, sustain, release) = (
+        options.number("attack"),
+        options.number("sustain"),
+        options.number("release"),
+    );
+    let level = crate::nodes::shape(move |t| {
+        if t < attack {
+            t / attack
+        } else if t < attack + sustain {
+            1.0
+        } else {
+            (1.0 - (t - attack - sustain) / release).clamp(0.0, 1.0)
+        }
+    });
+    let level = level >> Net::wrap(Box::new(split::<U2>()));
+    Note::rings(grains * level, attack + sustain + release)
+}
+
 fn sample_note(data: Arc<SampleData>, options: &Options) -> Note {
     let rate = options.number("rate");
     let (from, to) = (options.number("start"), options.number("finish"));
@@ -3408,7 +3618,7 @@ mod tests {
     fn an_analysis_of_an_input_hears_it_alone_and_reports_its_pitch() {
         let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 1);
         let reports = engine.subscribe(&[Topic::Analysis]);
-        engine.analyse(Analysed::Input(0), 0.01, 0.0).unwrap();
+        engine.analyse(Origin::Input(0), 0.01, 0.0).unwrap();
         let mut pitches = Vec::new();
         for block in 0..48 {
             for i in 0..1000 {
@@ -3432,5 +3642,58 @@ mod tests {
             pitches.iter().all(|hz| (hz - 220.0).abs() < 0.5),
             "{pitches:?}"
         );
+    }
+
+    /// Renders `seconds` of an engine whose one input is fed `signal` from frame 0.
+    fn render_signal(
+        engine: &mut Engine,
+        feed: &mut rtrb::Producer<f32>,
+        seconds: f64,
+        signal: impl Fn(usize) -> f32,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let (mut left, mut right) = (Vec::new(), Vec::new());
+        let frames = engine.frames(seconds) as usize;
+        while left.len() < frames {
+            let n = Ord::min(1000, frames - left.len());
+            (left.len()..left.len() + n).for_each(|i| feed.push(signal(i)).unwrap());
+            let (l, r) = engine.render(n as f64 / engine.rate).unwrap();
+            left.extend(l);
+            right.extend(r);
+        }
+        (left, right)
+    }
+
+    #[test]
+    fn an_input_recorded_into_a_buffer_from_1_second_plays_back_from_3_seconds_exactly() {
+        let signal = |i: usize| 0.5 * ((i as f32 * 0.0137).sin() + (i as f32 * 0.091).sin()) / 2.0;
+        let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 1);
+        let buffer = engine.create_buffer(2.0, 2).unwrap();
+        engine
+            .record_buffer(buffer, Origin::Input(0), 1.0, 2.0, 0.0)
+            .unwrap();
+        let sample = Event::Sample {
+            id: None,
+            sample: buffer,
+            options: vec![],
+            chain: None,
+        };
+        engine.play(&[(3.0, sample)]).unwrap();
+        let (left, right) = render_signal(&mut engine, &mut feed, 5.0, signal);
+        assert!(left[..144_000].iter().all(|x| *x == 0.0));
+
+        let (mut straight, mut feed) = Engine::offline_with_input(48_000.0, 1);
+        let input = Event::Input {
+            id: None,
+            input: 0,
+            channels: 1,
+            options: vec![],
+            chain: None,
+        };
+        straight.play(&[(1.0, input)]).unwrap();
+        let (expected, _) = render_signal(&mut straight, &mut feed, 3.0, signal);
+        // The buffer fades its last 10 ms as it plays, as every sound does at its end.
+        let played = 144_000..240_000 - 480;
+        assert_eq!(left[played.clone()], expected[48_000..144_000 - 480]);
+        assert_eq!(left[played.clone()], right[played]);
     }
 }

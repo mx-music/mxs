@@ -2,8 +2,8 @@
 
 use fundsp::prelude::*;
 use mxs::{
-    Analysed, Engine, Error, Event, Note, Pass, Report, Settings, Spec, Synth, Target, Tempo,
-    Topic, synths,
+    Engine, Error, Event, Note, Origin, Pass, Report, Settings, Spec, Synth, Target, Tempo, Topic,
+    synths,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -639,7 +639,7 @@ fn each_report_of_an_analysis_reaches_the_caller_within_30_ms_of_its_time() {
     let reports = engine.subscribe(&[Topic::Analysis]);
     std::thread::sleep(Duration::from_millis(500));
     let start = engine.now() + 0.1;
-    engine.analyse(Analysed::Output, 0.01, start).unwrap();
+    engine.analyse(Origin::Output, 0.01, start).unwrap();
     let notes: Vec<(f64, Event)> = (0..8)
         .map(|k| {
             (
@@ -674,7 +674,7 @@ fn an_analysis_whose_reports_go_untaken_for_10_seconds_leaves_no_buffer_late() {
     std::thread::sleep(Duration::from_millis(500));
     engine.load();
     let start = engine.now() + 0.1;
-    engine.analyse(Analysed::Output, 0.01, start).unwrap();
+    engine.analyse(Origin::Output, 0.01, start).unwrap();
     let notes: Vec<(f64, Event)> = (0..40)
         .map(|k| {
             (
@@ -695,4 +695,46 @@ fn an_analysis_whose_reports_go_untaken_for_10_seconds_leaves_no_buffer_late() {
     };
     println!("{dropped} reports dropped, {load:?}");
     assert!(dropped > 900);
+}
+
+#[test]
+#[ignore]
+fn creating_a_60_second_stereo_buffer_while_piano_plays_makes_no_event_late() {
+    let mut engine = live(512);
+    std::thread::sleep(Duration::from_millis(500));
+    engine.load();
+    engine.warnings();
+    let start = engine.now() + 0.2;
+    let notes: Vec<(f64, Event)> = (0..32)
+        .map(|i| {
+            let note = 48.0 + [0.0, 4.0, 7.0, 12.0][i % 4] + (i / 16) as f64 * 2.0;
+            (
+                start + i as f64 * 0.125,
+                Event::note(None, "piano", &[("note", note)]),
+            )
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+    let created = Instant::now();
+    engine.create_buffer(60.0, 2).unwrap();
+    let took = created.elapsed();
+    let later: Vec<(f64, Event)> = (0..16)
+        .map(|i| {
+            (
+                engine.now() + 0.1 + i as f64 * 0.125,
+                Event::note(None, "piano", &[("note", 60.0)]),
+            )
+        })
+        .collect();
+    engine.play(&later).unwrap();
+    std::thread::sleep(Duration::from_secs(4));
+    let load = engine.load();
+    let warnings = engine.warnings();
+    println!("created in {took:?}, {load:?}, {warnings:?}");
+    assert_eq!(load.late, 0, "{load:?}");
+    assert!(
+        warnings.iter().all(|w| !w.contains("after their time")),
+        "{warnings:?}"
+    );
 }

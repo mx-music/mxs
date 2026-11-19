@@ -3,6 +3,7 @@
 
 use crate::options::Control;
 use crate::report::{PartSpan, Tap};
+use crate::sample::SampleData;
 use fundsp::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -45,34 +46,70 @@ pub(crate) enum Listened {
     Main,
 }
 
-/// Copies what an analysis hears, summed to one channel, from `start` until `stop`, into rings the reporting side reads; it never waits.
+/// Where a listener puts what it hears.
+pub(crate) enum Kept {
+    /// Summed to one channel, into rings an analysis reads.
+    Rings {
+        samples: rtrb::Producer<f32>,
+        spans: rtrb::Producer<(u64, u32)>,
+    },
+    /// Into a buffer from its first frame, over what was there scaled by `level`.
+    Buffer { data: Arc<SampleData>, level: f32 },
+}
+
+/// Copies what an analysis or a recording into a buffer hears from `start` until `stop`; it never waits.
 pub(crate) struct Listener {
     pub id: u64,
     pub listened: Listened,
     pub start: u64,
     pub stop: Option<u64>,
     pub sound: BufferVec,
-    pub samples: rtrb::Producer<f32>,
-    pub spans: rtrb::Producer<(u64, u32)>,
+    pub kept: Kept,
+}
+
+/// A sound's two channels summed to one, at the level of a sound in the middle.
+fn mono(left: f32, right: f32) -> f32 {
+    (left + right) * std::f32::consts::FRAC_1_SQRT_2
 }
 
 impl Listener {
-    /// Copies frames `from..to` of its sound, the block starting at `now`, when the rings have room for all of them.
+    /// Copies the frames of its sound in the block starting at `now` that fall from its start to its stop; an analysis copies only when its rings have room for all of them.
     fn copy(&mut self, now: u64, n: usize) {
         let from = self.start.saturating_sub(now) as usize;
         let to = match self.stop {
             Some(stop) => Ord::min(stop.saturating_sub(now) as usize, n),
             None => n,
         };
-        if from >= to || self.samples.slots() < to - from || self.spans.slots() == 0 {
+        if from >= to {
             return;
         }
-        for k in from..to {
-            let mono = (self.sound.at_f32(0, k) + self.sound.at_f32(1, k))
-                * std::f32::consts::FRAC_1_SQRT_2;
-            let _ = self.samples.push(mono);
+        match &mut self.kept {
+            Kept::Rings { samples, spans } => {
+                if samples.slots() < to - from || spans.slots() == 0 {
+                    return;
+                }
+                for k in from..to {
+                    let _ = samples.push(mono(self.sound.at_f32(0, k), self.sound.at_f32(1, k)));
+                }
+                let _ = spans.push((now + from as u64, (to - from) as u32));
+            }
+            Kept::Buffer { data, level } => {
+                let first = (now + from as u64 - self.start) as usize;
+                for k in from..to {
+                    let (left, right) = (self.sound.at_f32(0, k), self.sound.at_f32(1, k));
+                    let frame = first + k - from;
+                    if let [only] = &data.channels[..] {
+                        let old = only.get(frame).unwrap_or(0.0);
+                        only.set(frame, old * *level + mono(left, right));
+                    } else {
+                        for (channel, x) in data.channels.iter().zip([left, right]) {
+                            let old = channel.get(frame).unwrap_or(0.0);
+                            channel.set(frame, old * *level + x);
+                        }
+                    }
+                }
+            }
         }
-        let _ = self.spans.push((now + from as u64, (to - from) as u32));
     }
 }
 

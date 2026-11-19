@@ -3,9 +3,52 @@
 use fundsp::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// One channel of a sample, which a recording into a buffer can write while voices read it.
+pub(crate) struct Samples(Box<[AtomicU32]>);
+
+impl Samples {
+    pub fn silent(frames: usize) -> Samples {
+        Samples((0..frames).map(|_| AtomicU32::new(0)).collect())
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn get(&self, frame: usize) -> Option<f32> {
+        self.0
+            .get(frame)
+            .map(|x| f32::from_bits(x.load(Ordering::Relaxed)))
+    }
+
+    pub fn set(&self, frame: usize, x: f32) {
+        if let Some(at) = self.0.get(frame) {
+            at.store(x.to_bits(), Ordering::Relaxed);
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = f32> + '_ {
+        self.0
+            .iter()
+            .map(|x| f32::from_bits(x.load(Ordering::Relaxed)))
+    }
+}
+
+impl From<Vec<f32>> for Samples {
+    fn from(samples: Vec<f32>) -> Samples {
+        Samples(
+            samples
+                .into_iter()
+                .map(|x| AtomicU32::new(x.to_bits()))
+                .collect(),
+        )
+    }
+}
 
 pub(crate) struct SampleData {
-    pub channels: Vec<Vec<f32>>,
+    pub channels: Vec<Samples>,
     pub rate: f64,
     /// The loudest sample in any channel, as a level from 0.
     pub peak: f32,
@@ -36,7 +79,7 @@ impl SampleData {
         let peak = data
             .channels
             .iter()
-            .flatten()
+            .flat_map(Samples::iter)
             .fold(0.0f32, |peak, x| peak.max(x.abs()));
         Ok(SampleData { peak, ..data })
     }
@@ -105,7 +148,7 @@ fn decode_flac(shown: &str, bytes: &[u8]) -> Result<SampleData, String> {
         channels[i % count].push(sample as f32 * scale);
     }
     Ok(SampleData {
-        channels,
+        channels: channels.into_iter().map(Samples::from).collect(),
         rate: info.sample_rate as f64,
         peak: 0.0,
     })
@@ -155,7 +198,7 @@ impl Pcm {
             channels[i % self.channels].push(self.value(chunk));
         }
         Ok(SampleData {
-            channels,
+            channels: channels.into_iter().map(Samples::from).collect(),
             rate: self.rate,
             peak: 0.0,
         })
@@ -377,8 +420,8 @@ impl Player {
         let i = self.position.floor();
         let fraction = (self.position - i) as f32;
         let i = i as usize;
-        let a = samples.get(i).copied().unwrap_or(0.0);
-        let b = samples.get(i + 1).copied().unwrap_or(0.0);
+        let a = samples.get(i).unwrap_or(0.0);
+        let b = samples.get(i + 1).unwrap_or(0.0);
         a + (b - a) * fraction
     }
 }
@@ -401,5 +444,132 @@ impl AudioNode for Player {
         };
         self.position += input[0] as f64 * self.step * self.direction;
         frame.into()
+    }
+}
+
+/// The most grains that sound at once; a grain due while all of them sound is left out.
+const GRAINS: usize = 128;
+
+#[derive(Clone, Copy, Default)]
+struct Grain {
+    position: f64,
+    step: f64,
+    age: f64,
+    length: f64,
+    left: f32,
+    right: f32,
+}
+
+/// Plays overlapping slices of a sample, each rising from silence and falling back to it by a Hann window.
+/// Its inputs are where the grains are taken from as a fraction of the sample's length, how long each lasts in seconds, how many start a second, their pitch in semitones, how far their positions spread at random as a fraction of the length, and how widely they spread across the stereo field from 0 to 1.
+#[derive(Clone)]
+pub(crate) struct Grains {
+    data: Arc<SampleData>,
+    grains: Box<[Grain]>,
+    rate: f64,
+    /// Frames until the next grain starts.
+    next: f64,
+    random: u64,
+}
+
+impl Grains {
+    pub fn new(data: Arc<SampleData>, seed: u64) -> Grains {
+        Grains {
+            data,
+            grains: vec![Grain::default(); GRAINS].into(),
+            rate: DEFAULT_SR,
+            next: 0.0,
+            random: seed ^ 0x9e37_79b9_7f4a_7c15,
+        }
+    }
+
+    /// A number from -1 to 1, by splitmix64.
+    fn random(&mut self) -> f64 {
+        self.random = self.random.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = self.random;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1u64 << 52) as f64 - 1.0
+    }
+
+    fn start(&mut self, input: &Frame<f32, U6>) {
+        let frames = self.data.frames() as f64;
+        let spread = f64::from(input[4]).clamp(0.0, 1.0) * self.random();
+        let position = (f64::from(input[0]) + spread).clamp(0.0, 1.0) * frames;
+        let pan = f64::from(input[5]).clamp(0.0, 1.0) * self.random();
+        let length = (f64::from(input[1]) * self.rate).max(2.0);
+        let step = 2f64.powf(f64::from(input[3]) / 12.0) * self.data.rate / self.rate;
+        let (left, right) = if self.data.channels.len() == 1 {
+            let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
+            (angle.cos() as f32, angle.sin() as f32)
+        } else {
+            ((1.0 - pan).min(1.0) as f32, (1.0 + pan).min(1.0) as f32)
+        };
+        if let Some(grain) = self.grains.iter_mut().find(|g| g.age >= g.length) {
+            *grain = Grain {
+                position,
+                step,
+                age: 0.0,
+                length,
+                left,
+                right,
+            };
+        }
+    }
+
+    fn at(&self, channel: usize, position: f64) -> f32 {
+        let samples = &self.data.channels[Ord::min(channel, self.data.channels.len() - 1)];
+        let i = position.floor();
+        let fraction = (position - i) as f32;
+        let i = i as usize;
+        let a = samples.get(i).unwrap_or(0.0);
+        let b = samples.get(i + 1).unwrap_or(0.0);
+        a + (b - a) * fraction
+    }
+}
+
+impl AudioNode for Grains {
+    const ID: u64 = 0x6d78_0073;
+    type Inputs = U6;
+    type Outputs = U2;
+
+    fn set_sample_rate(&mut self, rate: f64) {
+        self.rate = rate;
+    }
+
+    fn reset(&mut self) {
+        self.grains.fill(Grain::default());
+        self.next = 0.0;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U6>) -> Frame<f32, U2> {
+        if self.next <= 0.0 {
+            self.start(input);
+            self.next += self.rate / f64::from(input[2]).max(0.01);
+        }
+        self.next -= 1.0;
+        let stereo = self.data.channels.len() > 1;
+        let (mut left, mut right) = (0.0, 0.0);
+        for k in 0..self.grains.len() {
+            let grain = self.grains[k];
+            if grain.age >= grain.length {
+                continue;
+            }
+            let phase = grain.age / grain.length;
+            let window = (0.5 - 0.5 * (std::f64::consts::TAU * phase).cos()) as f32;
+            let l = self.at(0, grain.position) * window;
+            let r = if stereo {
+                self.at(1, grain.position) * window
+            } else {
+                l
+            };
+            left += l * grain.left;
+            right += r * grain.right;
+            let grain = &mut self.grains[k];
+            grain.position += grain.step;
+            grain.age += 1.0;
+        }
+        [left, right].into()
     }
 }
