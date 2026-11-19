@@ -39,11 +39,6 @@ fn from_zero(mut wave: impl AudioUnit + 'static) -> Net {
     net(wave)
 }
 
-/// The note's frequency, gliding with its note option.
-fn pitch(options: &Options) -> Net {
-    to_hz(options.follow("note"))
-}
-
 fn to_hz(note: Net) -> Net {
     note >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32))
 }
@@ -88,37 +83,98 @@ fn wave(name: &str, cutoff: f64, release: f64) -> crate::SynthDecl {
 fn saw() -> Synth {
     wave("saw", 100.0, 1.0)
         .options(Spec::expressions(&["bend", "brightness"]))
-        .build(|o, _| {
-            let sound = to_hz(summed(o.follow("note"), o.follow("bend"))) >> saw_wave();
-            let cutoff = summed(
-                o.follow("cutoff"),
-                o.follow("brightness") >> net(map(brighter)),
-            );
-            Note::envelope(filtered_at(o, cutoff, sound) * 0.5, o)
-        })
+        .build(|o, _| Note::envelope(brightened(o, bent(o) >> saw_wave()) * 0.5, o))
+}
+
+/// The note's frequency, gliding with its note and bend options.
+fn bent(options: &Options) -> Net {
+    to_hz(options.follow("note") >> moved_by(options, "bend", |x| x))
+}
+
+/// A unit that adds `by` of the option `name`, as it glides, to its input.
+fn moved_by(options: &Options, name: &str, by: fn(f32) -> f32) -> Net {
+    let moved =
+        (net(pass()) | options.follow(name)) >> net(map(move |x: &Frame<f32, U2>| x[0] + by(x[1])));
+    net(Unhashed(moved))
+}
+
+/// A unit that hands the hash it is pinged with on untouched, so the oscillators after it take the phase they took before it was there.
+#[derive(Clone)]
+struct Unhashed(Net);
+
+impl AudioUnit for Unhashed {
+    fn reset(&mut self) {
+        self.0.reset();
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.0.set_sample_rate(sample_rate);
+    }
+
+    fn tick(&mut self, input: &[f32], output: &mut [f32]) {
+        self.0.tick(input, output);
+    }
+
+    fn process(&mut self, size: usize, input: &BufferRef, output: &mut BufferMut) {
+        self.0.process(size, input, output);
+    }
+
+    fn inputs(&self) -> usize {
+        self.0.inputs()
+    }
+
+    fn outputs(&self) -> usize {
+        self.0.outputs()
+    }
+
+    fn route(&mut self, input: &SignalFrame, frequency: f64) -> SignalFrame {
+        self.0.route(input, frequency)
+    }
+
+    fn get_id(&self) -> u64 {
+        self.0.get_id()
+    }
+
+    fn ping(&mut self, probe: bool, hash: AttoHash) -> AttoHash {
+        self.0.ping(probe, hash.clone());
+        hash
+    }
+
+    fn footprint(&self) -> usize {
+        self.0.footprint()
+    }
+
+    fn allocate(&mut self) {
+        self.0.allocate();
+    }
+}
+
+/// The low-pass of [`filtered`], its cutoff moved by brightness.
+fn brightened(options: &Options, sound: Net) -> Net {
+    let cutoff = options.follow("cutoff") >> moved_by(options, "brightness", brighter);
+    filtered_at(options, cutoff, sound)
 }
 
 /// The semitones a brightness moves a low-pass's cutoff by: two octaves either way of 0.5.
-fn brighter(x: &Frame<f32, U1>) -> f32 {
-    (x[0] - 0.5) * 48.0
-}
-
-fn summed(a: Net, b: Net) -> Net {
-    (a | b) >> net(map(|x: &Frame<f32, U2>| x[0] + x[1]))
+fn brighter(brightness: f32) -> f32 {
+    (brightness - 0.5) * 48.0
 }
 
 fn square() -> Synth {
-    wave("square", 100.0, 1.0).build(|o, _| {
-        Note::envelope(
-            filtered(o, pitch(o) >> net(fundsp::prelude::square())) * (0.5 * db(-3.8)) as f32,
-            o,
-        )
-    })
+    wave("square", 100.0, 1.0)
+        .options(Spec::expressions(&["bend", "brightness"]))
+        .build(|o, _| {
+            Note::envelope(
+                brightened(o, bent(o) >> net(fundsp::prelude::square())) * (0.5 * db(-3.8)) as f32,
+                o,
+            )
+        })
 }
 
 fn tri() -> Synth {
     wave("tri", 100.0, 1.0)
-        .build(|o, _| Note::envelope(filtered(o, pitch(o) >> net(triangle())) * 0.6, o))
+        .options(Spec::expressions(&["bend", "brightness"]))
+        .build(|o, _| Note::envelope(brightened(o, bent(o) >> net(triangle())) * 0.6, o))
 }
 
 fn pulse() -> Synth {
@@ -129,10 +185,11 @@ fn pulse() -> Synth {
                 .range(0.01, 0.99)
                 .doc("The part of each cycle that is up."),
         )
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, _| {
             let width =
                 o.follow("pulse_width") >> net(map(|x: &Frame<f32, U1>| x[0].clamp(0.01, 0.99)));
-            Note::envelope(filtered(o, (pitch(o) | width) >> pulse_wave()) * 0.5, o)
+            Note::envelope(brightened(o, (bent(o) | width) >> pulse_wave()) * 0.5, o)
         })
 }
 
@@ -156,11 +213,12 @@ fn fm() -> Synth {
                 .doc("How far the modulator swings the frequency, in times the note's."),
         )
         .options(Spec::envelope(0.0, 1.0))
+        .options(Spec::expressions(&["bend"]))
         .build(|o, _| {
-            let modulator = (pitch(o) | o.follow("divisor"))
+            let modulator = (bent(o) | o.follow("divisor"))
                 >> net(map(|x: &Frame<f32, U2>| x[0] / x[1].max(0.01)))
                 >> net(sine::<f32>());
-            let carrier = (pitch(o) | modulator | o.follow("depth"))
+            let carrier = (bent(o) | modulator | o.follow("depth"))
                 >> net(map(|x: &Frame<f32, U3>| x[0] + x[1] * x[0] * x[2]))
                 >> net(sine::<f32>());
             Note::envelope(carrier * 0.6, o)
@@ -204,16 +262,18 @@ fn supersaw() -> Synth {
                 .default(0.2)
                 .doc("How far in semitones the saws spread around the note."),
         )
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, _| {
             let mut saws = Net::wrap(Box::new(zero()));
             for offset in [-1.0f32, -0.62, -0.3, 0.0, 0.3, 0.62, 1.0] {
-                let freq = (o.follow("note") | o.follow("detune"))
+                let note = o.follow("note") >> moved_by(o, "bend", |x| x);
+                let freq = (note | o.follow("detune"))
                     >> net(map(move |x: &Frame<f32, U2>| {
                         hz((x[0] + offset * x[1]) as f64) as f32
                     }));
                 saws = saws + (freq >> saw_wave());
             }
-            Note::envelope(filtered(o, saws) * 0.18, o)
+            Note::envelope(brightened(o, saws) * 0.18, o)
         })
 }
 
@@ -232,18 +292,20 @@ fn acid() -> Synth {
                 .doc("How much the filter rings at its cutoff."),
         )
         .options(Spec::envelope(0.0, 0.5))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, _| {
             let spring = segments(&[30.0, 0.0], &[0.18], &[-4.0]);
-            let cutoff = (o.follow("cutoff") | spring)
-                >> net(map(|x: &Frame<f32, U2>| {
-                    hz((x[0] + x[1]) as f64).clamp(20.0, 18_000.0) as f32
+            let cutoff = (o.follow("cutoff") | spring | o.follow("brightness"))
+                >> net(map(|x: &Frame<f32, U3>| {
+                    let moved = x[0] + x[1] + brighter(x[2]);
+                    hz(moved as f64).clamp(20.0, 18_000.0) as f32
                 }));
             let q = o.follow("res")
                 >> net(map(|x: &Frame<f32, U1>| {
                     1.0 / (1.0 - x[0].clamp(0.0, 1.0) * 0.93)
                 }));
-            let half = pitch(o) >> net(map(|x: &Frame<f32, U1>| x[0] * 0.5));
-            let sound = (pitch(o) >> saw_wave()) + ((half | net(dc(0.5))) >> pulse_wave()) * 0.25;
+            let half = bent(o) >> net(map(|x: &Frame<f32, U1>| x[0] * 0.5));
+            let sound = (bent(o) >> saw_wave()) + ((half | net(dc(0.5))) >> pulse_wave()) * 0.25;
             let filtered = (sound | cutoff | q) >> net(lowpass::<f32>());
             let driven = filtered >> net(map(|x: &Frame<f32, U1>| (x[0] * 1.6).tanh() * 0.45));
             Note::envelope(driven, o)

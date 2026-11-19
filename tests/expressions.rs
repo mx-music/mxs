@@ -227,3 +227,57 @@ fn a_synth_that_had_no_vel_plays_at_half_its_level_at_vel_0_3_and_as_before_at_0
         }
     }
 }
+
+/// The pitch a held middle C of `synth` measures before and 10 ms after `change` reaches it, and its share above the fourth harmonic then.
+fn changed(synth: &str, options: &[(&str, f64)], change: (&str, f64)) -> ((f64, f64), (f64, f64)) {
+    let middle = 261.63;
+    let mut engine = engine();
+    engine
+        .play(&[(0.0, Event::held(1, synth, options))])
+        .unwrap();
+    let set = Event::Set {
+        target: Target::Sounds(vec![1]),
+        options: vec![(change.0.into(), change.1)],
+    };
+    engine.play(&[(1.0, set)]).unwrap();
+    let (sound, _) = engine.render(1.5).unwrap();
+    let window = |from: f64| &sound[(from * RATE) as usize..((from + 0.05) * RATE) as usize];
+    let (before, after) = (window(0.95), window(1.01));
+    let was = peak_between(before, 0.9 * middle, 1.05 * middle);
+    let high = if change.0 == "bend" { 1.2 } else { 1.05 };
+    let is = peak_between(
+        after,
+        if change.0 == "bend" { 1.05 } else { 0.9 } * middle,
+        high * middle,
+    );
+    let shares = (share_above(before, 4.5 * was), share_above(after, 4.5 * is));
+    ((was, is), shares)
+}
+
+#[test]
+fn a_bend_of_two_semitones_reaches_a_held_note_of_each_basic_wave_within_10_ms() {
+    for synth in ["square", "tri", "pulse", "supersaw", "acid", "fm"] {
+        let ((was, is), _) = changed(synth, &[("note", 60.0)], ("bend", 2.0));
+        let moved = 12.0 * (is / was).log2();
+        assert!(
+            (moved - 2.0).abs() < 0.1,
+            "{synth} moved {moved} semitones, {was} to {is} Hz"
+        );
+    }
+}
+
+#[test]
+fn brightness_1_brightens_a_held_note_of_each_basic_wave_under_a_low_pass_within_10_ms() {
+    for synth in ["square", "tri", "pulse", "supersaw", "acid"] {
+        let (_, (dull, bright)) = changed(
+            synth,
+            &[("note", 60.0), ("cutoff", 70.0)],
+            ("brightness", 1.0),
+        );
+        println!("{synth}: share above the fourth harmonic {dull:.4} to {bright:.4}");
+        assert!(
+            bright > 1.2 * dull,
+            "{synth}'s share above its fourth harmonic went from {dull} to {bright}"
+        );
+    }
+}

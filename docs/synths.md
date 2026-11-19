@@ -63,6 +63,8 @@ A square wave under a resonant low-pass filter.
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
@@ -76,6 +78,8 @@ A triangle wave under a resonant low-pass filter.
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
@@ -90,6 +94,8 @@ A pulse wave of any width under a resonant low-pass filter.
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 | `pulse_width` | a number, 0.01 to 0.99 | 0.3 | The part of each cycle that is up. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
@@ -116,6 +122,7 @@ A sine wave whose frequency another sine wave swings.
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `divisor` | a number, 0.01 or more | 2 | The note's frequency over the modulator's. |
 | `depth` | a number | 1 | How far the modulator swings the frequency, in times the note's. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
@@ -143,6 +150,8 @@ Sawtooth waves spread around the note, under a resonant low-pass filter.
 | `cutoff` | a MIDI note | 110 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 | `detune` | a number | 0.2 | How far in semitones the saws spread around the note. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
@@ -156,6 +165,8 @@ An acid bass, a wave under a resonant filter that closes as the note sounds.
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 70 | The MIDI note the filter closes to. |
 | `res` | a number, 0 to 1 | 0.7 | How much the filter rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 0.5 unless given.
 
