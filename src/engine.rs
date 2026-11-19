@@ -712,6 +712,11 @@ impl Engine {
         self.sampler.1.to_vec()
     }
 
+    /// The options the sound card's input takes, from [`Event::Input`].
+    pub fn input_specs(&self) -> Vec<Spec> {
+        self.input.1.to_vec()
+    }
+
     /// The options every effect takes besides its own: mix, pre_amp and amp.
     pub fn effect_specs(&self) -> Vec<Spec> {
         blending_specs()

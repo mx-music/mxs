@@ -135,3 +135,17 @@ fn a_bend_of_two_semitones_and_a_brighter_sound_reach_a_held_piano_violin_and_sa
         );
     }
 }
+
+#[test]
+fn samples_and_the_sound_cards_input_take_none_of_the_expressions_notes_take() {
+    let engine = Engine::offline(RATE);
+    let names = |specs: Vec<mxs::Spec>| specs.into_iter().map(|s| s.name).collect::<Vec<_>>();
+    assert_eq!(
+        names(engine.note_specs()),
+        ["amp", "pan", "bend", "brightness", "pressure"]
+    );
+    assert_eq!(names(engine.input_specs()), ["amp", "pan"]);
+    let sample = names(engine.sample_specs());
+    assert!(sample.contains(&"amp".to_string()));
+    assert!(!sample.contains(&"bend".to_string()), "{sample:?}");
+}
