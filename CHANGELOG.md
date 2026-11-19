@@ -1,3 +1,33 @@
+# Changelog for mxs v0.2
+
+## v0.2.0 (2026-11-19)
+
+### 1. Breaking changes
+
+  * [engine] `Event::Note` has a `held` field; `Event::note` builds it as before, and code that writes the struct out gives `held: false`
+  * [synths] The winds' bore option `cutoff` is now `least_corner`, so that `cutoff` always names a low-pass's corner
+
+### 2. Enhancements
+
+  * [engine] `Event::held` starts a note that sounds until an `Event::Release` lets it go, from a voice kept ready when there is one; a note that rings by itself rings on when it is let go
+  * [synths] Every synth takes `bend`, `brightness` and `pressure` while a note sounds: nearly all follow bend, those under a low-pass or with a spectral tilt follow brightness, and pressure plays the winds, violin and cello harder, from `vel` towards 1
+  * [synths] Every note takes `vibrato` and `pedal`, the flute's and tenor sax's vibrato in semitones
+  * [synths] The fifteen synths without `vel` take one, which scales their level
+  * [engine] `Engine::play_midi` plays a MIDI input on a part, each key held until it comes up and started from a voice kept ready, with the sustain pedal and the pitch bend wheel; `change_midi`, `stop_midi` and `midi_inputs` go with it, and `Topic::Keys` reports each key and an input that goes away
+  * [engine] `Engine::input_specs` says which options the sound card's input takes
+  * [engine] `Engine::effect_tails` says how many seconds each effect sounds on after its input stops
+  * [graph] Add `saturate`, `clip`, `fold` and `ladder`, and let a filter's q move; an option that takes names can be compared with a name, and is refused anywhere else
+  * [engine] `Engine::analyse` reports the loudness, pitch and onsets of an input, a sample, a chain or the output under `Topic::Analysis`, until `stop_analysis`
+  * [engine] `Engine::create_buffer` and `record_buffer` record into a buffer while playing, `save_sample` writes a sample or buffer to a WAV file, and `free_sample` lets one go
+  * [engine] `Event::Grains` plays a sample or a buffer as overlapping grains, with the options `grains_specs` lists
+  * [engine] A sample takes `stretch` and `pitch`, which change its length and its pitch apart, and the `pitch_shift` effect shifts a chain's pitch
+  * [engine] Voices are filled on worker threads, one per performance core, once eight or more sound at once, with the same output sample for sample; `Engine::set_workers` changes their number
+  * [engine] An offline engine renders in WebAssembly, which has no clock, with the same samples as natively
+
+### 3. Bug fixes
+
+  * [synths] A fitted note leaves out the noise band that crosses the knock's 600 Hz when its centre is under it
+
 # Changelog for mxs v0.1
 
 ## v0.1.6 (2026-11-19)
