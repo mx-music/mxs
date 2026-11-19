@@ -73,7 +73,7 @@
 //! | `neg`, `abs`, `log2`, `exp`, `sin`, `cos` | Of one value. |
 //! | `hz`, `db` | The frequency of a MIDI note, and the gain of a level in decibels. |
 //! | `clamp(x, low, high)` | `x` held from `low` to `high`. |
-//! | `lt`, `gt`, `le`, `ge`, `eq`, `ne` | 1 when the comparison of two values holds, and 0 otherwise. |
+//! | `lt`, `gt`, `le`, `ge`, `eq`, `ne` | 1 when the comparison of two values holds, and 0 otherwise; `eq` and `ne` also compare an option that takes names with one of its names, and an option that takes names goes nowhere else. |
 //! | `select(condition, then, otherwise)` | `then` when `condition` is not 0, and `otherwise` when it is. |
 //! | `or_else(option, fallback)` | An option's value when the note gave one, and `fallback` otherwise. |
 //!
@@ -83,7 +83,7 @@
 //! Their arguments are in this module's source.
 
 use crate::nodes::{self, db, hz};
-use crate::{Context, Effect, Note, Options, Spec, Synth, Value};
+use crate::{Context, Effect, Kind, Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
 
 /// A value of a graph: a number, a name such as a noise's colour, one of the note's options, a list, or a call of the vocabulary.
@@ -175,6 +175,7 @@ impl Synth {
     pub fn graph(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth, String> {
         for clause in &clauses {
             known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
+            named_options(&clause.graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
             if calls(&clause.graph, "input") {
                 return Err(format!("{name}: a synth has no input; an effect takes one"));
             }
@@ -206,6 +207,7 @@ impl Effect {
     /// An effect built from a graph: `graph` is one channel's sound, its `input` that channel coming in, and it is built once for each channel.
     pub fn graph(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, String> {
         known(&graph).map_err(|reason| format!("{name}: {reason}"))?;
+        named_options(&graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
         let owner = name.to_string();
         let decl = specs
             .into_iter()
@@ -261,6 +263,56 @@ fn calls(graph: &Graph, node: &str) -> bool {
         }
         _ => false,
     })
+}
+
+/// Refuses an option that takes names anywhere but in eq or ne with a name it takes, as a number is read from every other option.
+fn named_options(graph: &Graph, specs: &[Spec]) -> Result<(), String> {
+    let takes = |option: &str| {
+        specs
+            .iter()
+            .find(|s| s.name == option)
+            .and_then(|s| match &s.kind {
+                Kind::Name(values) => Some(values.clone()),
+                _ => None,
+            })
+    };
+    stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
+        Graph::Call { name, args, .. }
+            if let ("eq" | "ne", [a, b]) = (name.as_str(), args.as_slice())
+                && let Some((option, given)) = compared(a, b)
+                && let Some(values) = takes(option) =>
+        {
+            if values.iter().any(|v| v == given) {
+                Ok(())
+            } else {
+                let names = match values.split_last() {
+                    Some((last, [])) => last.clone(),
+                    Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+                    None => String::new(),
+                };
+                Err(format!("{option} takes {names}, not {given}"))
+            }
+        }
+        Graph::Call { args, named, .. } => args
+            .iter()
+            .chain(named.iter().map(|(_, v)| v))
+            .try_for_each(|g| named_options(g, specs)),
+        Graph::List(items) => items.iter().try_for_each(|g| named_options(g, specs)),
+        Graph::Option(option) if takes(option).is_some() => Err(format!(
+            "{option} takes names, which only eq and ne compare with a name"
+        )),
+        _ => Ok(()),
+    })
+}
+
+/// The option and the name of a comparison of one with the other, either way round.
+fn compared<'g>(a: &'g Graph, b: &'g Graph) -> Option<(&'g str, &'g str)> {
+    match (a, b) {
+        (Graph::Option(option), Graph::Name(name)) | (Graph::Name(name), Graph::Option(option)) => {
+            Some((option, name))
+        }
+        _ => None,
+    }
 }
 
 fn known(graph: &Graph) -> Result<(), String> {
@@ -387,6 +439,13 @@ impl Build<'_> {
         // An option as a signal that glides to each new value the song gives while the note sounds.
         if let ("follow", [Graph::Option(option)]) = (name, args) {
             return Ok(V::Sig(self.options.follow(option)));
+        }
+        // An option that takes names, compared with a name when the note starts.
+        if let ("eq" | "ne", [a, b]) = (name, args)
+            && let Some((option, given)) = compared(a, b)
+        {
+            let same = matches!(self.options.value(option), Value::Name(n) if n == given);
+            return Ok(V::Num(((name == "eq") == same) as u8 as f64));
         }
         if name == "air_jet" {
             return self.air_jet(named);

@@ -326,3 +326,70 @@ fn a_deeply_nested_graph_plays_on_a_thread_with_a_small_stack() {
         .unwrap();
     assert!(sound.iter().any(|x| x.abs() > 0.01));
 }
+
+fn shape_specs() -> Vec<Spec> {
+    vec![Spec::name("shape", &["saw", "sine"]).default("sine")]
+}
+
+fn picking(by: Graph) -> Vec<Clause> {
+    let graph = rings(
+        call(
+            "select",
+            vec![
+                by,
+                Graph::call("sine", vec![], vec![("hz", n(100.0))]),
+                n(0.0),
+            ],
+        ),
+        1.0,
+    );
+    vec![Clause {
+        matches: vec![],
+        graph,
+    }]
+}
+
+fn name(n: &str) -> Graph {
+    Graph::Name(n.to_string())
+}
+
+#[test]
+fn eq_and_ne_compare_an_option_that_takes_names_with_a_name() {
+    let picked = |by: fn() -> Graph, shape: &str| {
+        let synth = Synth::graph("picky", shape_specs(), picking(by())).unwrap();
+        let samples = render(synth, &[("shape", Value::Name(shape.to_string()))]);
+        samples.iter().fold(0.0f32, |m, x| m.max(x.abs()))
+    };
+    let is_saw = || call("eq", vec![opt("shape"), name("saw")]);
+    let not_saw = || call("ne", vec![name("saw"), opt("shape")]);
+    assert!(picked(is_saw, "saw") > 0.1);
+    assert_eq!(picked(is_saw, "sine"), 0.0);
+    assert_eq!(picked(not_saw, "saw"), 0.0);
+    assert!(picked(not_saw, "sine") > 0.1);
+}
+
+#[test]
+fn a_name_an_option_does_not_take_is_refused_when_the_synth_is_registered() {
+    let refused = Synth::graph(
+        "picky",
+        shape_specs(),
+        picking(call("eq", vec![opt("shape"), name("square")])),
+    );
+    assert_eq!(
+        refused.err(),
+        Some("picky: shape takes saw or sine, not square".to_string())
+    );
+}
+
+#[test]
+fn other_arithmetic_on_an_option_that_takes_names_is_refused_when_the_synth_is_registered() {
+    let refused = Synth::graph(
+        "picky",
+        shape_specs(),
+        picking(call("add", vec![opt("shape"), n(1.0)])),
+    );
+    assert_eq!(
+        refused.err(),
+        Some("picky: shape takes names, which only eq and ne compare with a name".to_string())
+    );
+}
