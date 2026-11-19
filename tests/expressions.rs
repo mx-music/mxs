@@ -200,3 +200,30 @@ fn letting_go_of_a_marimba_guitar_or_piano_fades_it_over_its_release() {
         );
     }
 }
+
+#[test]
+fn a_synth_that_had_no_vel_plays_at_half_its_level_at_vel_0_3_and_as_before_at_0_6() {
+    for synth in ["saw", "organ", "clap"] {
+        let render = |vel: Option<f64>| {
+            let mut engine = engine();
+            let mut options = vec![("note", 60.0)];
+            options.extend(vel.map(|v| ("vel", v)));
+            engine
+                .play(&[(0.0, Event::note(None, synth, &options))])
+                .unwrap();
+            engine.render(0.5).unwrap().0
+        };
+        let (plain, given, soft) = (render(None), render(Some(0.6)), render(Some(0.3)));
+        assert!(
+            plain == given,
+            "{synth} at vel 0.6 plays otherwise than given none"
+        );
+        assert!(plain.iter().any(|s| s.abs() > 0.01));
+        for (soft, plain) in soft.iter().zip(&plain) {
+            assert!(
+                (soft - 0.5 * plain).abs() <= 1e-6 * plain.abs(),
+                "{synth}: {soft} against {plain}"
+            );
+        }
+    }
+}

@@ -45,6 +45,7 @@ A sawtooth wave under a resonant low-pass filter.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 | `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
@@ -59,6 +60,7 @@ A square wave under a resonant low-pass filter.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 
@@ -71,6 +73,7 @@ A triangle wave under a resonant low-pass filter.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 
@@ -83,6 +86,7 @@ A pulse wave of any width under a resonant low-pass filter.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 | `pulse_width` | a number, 0.01 to 0.99 | 0.3 | The part of each cycle that is up. |
@@ -96,6 +100,7 @@ Noise under a resonant low-pass filter.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 110 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 
@@ -108,6 +113,7 @@ A sine wave whose frequency another sine wave swings.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `divisor` | a number, 0.01 or more | 2 | The note's frequency over the modulator's. |
 | `depth` | a number | 1 | How far the modulator swings the frequency, in times the note's. |
 
@@ -120,6 +126,7 @@ A plain plucked string, which rings for as long as asked and dulls as it rings.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `ring` | seconds, 0 or more | 3 | How many seconds the string takes to fall 60 dB. |
 | `coef` | a number, -0.99 to 0.99 | 0.3 | How fast the string loses its brightness. |
 
@@ -132,6 +139,7 @@ Sawtooth waves spread around the note, under a resonant low-pass filter.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 110 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
 | `detune` | a number | 0.2 | How far in semitones the saws spread around the note. |
@@ -145,6 +153,7 @@ An acid bass, a wave under a resonant filter that closes as the note sounds.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `cutoff` | a MIDI note | 70 | The MIDI note the filter closes to. |
 | `res` | a number, 0 to 1 | 0.7 | How much the filter rings at its cutoff. |
 
@@ -797,6 +806,7 @@ A pipe organ fitted to VSCO 2's organ, with a quiet set, a stopped flute, and a 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `loud` | a number, 0 to 1 | 0 | 1 plays the loud set, a principal chorus, instead of the quiet stopped flute. |
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 0.15 unless given.
@@ -925,6 +935,7 @@ A hand clap.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 60 | The clap's pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 
 ### `crash`
 
@@ -1004,6 +1015,7 @@ A rimshot.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 74 | The rim's pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 
 ### `cross_stick`
 
@@ -1123,6 +1135,7 @@ The low timbale.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 62 | The drum's pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 
 ### `high_timbale`
 
@@ -1131,6 +1144,7 @@ The high timbale.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 67 | The drum's pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 
 ### `timbale_shell`
 
@@ -1139,6 +1153,7 @@ A stroke on the timbale's shell, as cáscara is played.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `note` | a MIDI note | 93 | The shell's pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 
 ### `guiro`
 
