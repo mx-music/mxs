@@ -702,7 +702,7 @@ impl Engine {
         self.effects.values().map(|r| &r.item)
     }
 
-    /// The options every note takes besides its synth's: amp and pan, and the expressions bend, brightness and pressure.
+    /// The options every note takes besides its synth's: amp and pan, the expressions bend, brightness and pressure, and vibrato and pedal.
     pub fn note_specs(&self) -> Vec<Spec> {
         note_specs()
     }
@@ -2798,6 +2798,18 @@ const READY_OPTIONS: [&str; 5] = ["note", "vel", "bend", "brightness", "pressure
 fn note_specs() -> Vec<Spec> {
     let mut specs = placing_specs();
     specs.extend(Spec::expressions(&["bend", "brightness", "pressure"]));
+    specs.push(
+        Spec::float("vibrato")
+            .default(0.0)
+            .range(0.0, 2.0)
+            .doc("The vibrato's depth in semitones, on a synth that lists it among its own; the others ignore it."),
+    );
+    specs.push(
+        Spec::float("pedal")
+            .default(0.0)
+            .range(0.0, 1.0)
+            .doc("How far the sustain pedal is down, on a synth that lists it among its own; the others ignore it."),
+    );
     specs
 }
 

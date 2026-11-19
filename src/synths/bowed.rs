@@ -339,12 +339,9 @@ fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
                 .range(0.0, 1.0)
                 .doc("1 plucks the string instead of bowing it."),
         )
-        .option(
-            Spec::float("vibrato")
-                .default(0.25)
-                .range(0.0, 2.0)
-                .doc("The vibrato's depth in semitones, reached as the note holds."),
-        )
+        .option(Spec::float("vibrato").default(0.25).range(0.0, 2.0).doc(
+            "The vibrato's depth in semitones, reached as the note holds, read as the note starts.",
+        ))
         .options(Spec::envelope(1.0, 0.3))
         .options(Spec::expressions(&["bend", "brightness"]));
     bow_options(synth).build(move |o, ctx| {
@@ -410,7 +407,7 @@ fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, leve
             Spec::float("vibrato")
                 .default(0.25)
                 .range(0.0, 2.0)
-                .doc("The vibrato's depth in semitones, reached as the note holds; the recordings are played without one."),
+                .doc("The vibrato's depth in semitones, reached as the note holds, read as the note starts; the recordings are played without one."),
         )
         .option(
             Spec::float("legato")

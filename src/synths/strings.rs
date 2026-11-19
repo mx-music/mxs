@@ -401,7 +401,7 @@ pub fn piano() -> Synth {
             Spec::float("pedal")
                 .default(0.0)
                 .range(0.0, 1.0)
-                .doc("How far the sustain pedal is down, letting the other strings ring."),
+                .doc("How far the sustain pedal is down, letting the other strings ring; read as the note starts."),
         )
         .option(
             Spec::float("aftersound")

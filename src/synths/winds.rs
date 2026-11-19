@@ -3,7 +3,7 @@
 //! The bore is a delay line as long as the note's period, so a change of note carries the same column of air to the new pitch, and the breath's pressure follows vel while the note holds.
 //! After the model come a peak at each band mx measures, its gain fitted to each instrument's recordings at pp, mf and ff and following vel between them.
 
-use super::common::{effort, followed_effort, moved_by, tilted};
+use super::common::{combined, effort, followed_effort, moved_by, tilted};
 use crate::nodes::{db, hz, shape, white_noise};
 use crate::synth::SynthDecl;
 use crate::{Context, Note, Options, Spec, Synth};
@@ -50,7 +50,6 @@ pub fn all() -> Vec<Synth> {
         reed_wind(
             "clarinet",
             5.0,
-            1.0,
             Bore {
                 conical: false,
                 cutoff: 1500.0,
@@ -66,49 +65,42 @@ pub fn all() -> Vec<Synth> {
         reed_wind(
             "oboe",
             5.0,
-            1.0,
             cone(1000.0, 1500.0, [0.46, 0.03], [2.0, 0.2, 0.1]),
             &OBOE,
         ),
         reed_wind(
             "bassoon",
             5.5,
-            1.0,
             cone(400.0, 800.0, [0.5, 0.03], [2.0, 0.3, 0.1]),
             &BASSOON,
         ),
         reed_wind(
             "tenor_sax",
             4.94,
-            TENOR_SAX_VIBRATO,
             cone(800.0, 1500.0, [0.64, 0.03], [0.8, 0.25, 0.08]),
             &TENOR_SAX,
         ),
         reed_wind(
             "trumpet",
             4.9,
-            1.0,
             cone(1200.0, 1500.0, [0.68, 0.065], [2.0, 0.2, 0.04]),
             &TRUMPET,
         ),
         reed_wind(
             "trombone",
             4.95,
-            1.0,
             cone(700.0, 1000.0, [0.67, 0.065], [2.0, 0.35, 0.05]),
             &TROMBONE,
         ),
         reed_wind(
             "horn",
             5.0,
-            1.0,
             cone(500.0, 800.0, [0.79, 0.065], [2.5, 0.35, 0.08]),
             &HORN,
         ),
         reed_wind(
             "tuba",
             5.0,
-            1.0,
             cone(300.0, 300.0, [0.77, 0.065], [2.5, 0.4, 0.08]),
             &TUBA,
         ),
@@ -893,11 +885,11 @@ fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
 
 /// The note's frequency, following its note option as the player's fingers do, swung by a vibrato `depth` semitones deep at `rate` that waits a quarter second, then grows in over 1.2.
 /// The player takes back the cents the model plays sharp, `sharp` at pp, mf and ff, and drifts by about `jitter` cents.
-fn pitch(o: &Options, depth: f64, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, seed: u64) -> Net {
-    let swing = shape(move |t| {
+fn pitch(o: &Options, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, seed: u64) -> Net {
+    let swing = Net::wrap(Box::new(shape(move |t| {
         let grown = ((t - 0.25) / 1.2).clamp(0.0, 1.0);
-        (std::f64::consts::TAU * rate * t).sin() * depth * grown * grown
-    });
+        (std::f64::consts::TAU * rate * t).sin() * grown * grown
+    }))) >> combined(o, "vibrato", |swing, depth| swing * depth);
     let fingers = Fingers {
         held: 0.0,
         before: 0.0,
@@ -1045,7 +1037,7 @@ const FLUTE: Fit = Fit {
 };
 
 fn flute() -> Synth {
-    wind_options("flute", 0.17, "The vibrato's depth, reached as the note holds: a flute's vibrato is in the breath, which swells and eases by 0.6 of it, so 0.17 swings a held note's level 1.6 to 2.3 dB, as a played Syrinx's 2 and under VSCO 2's 2 to 4, and its pitch follows.")
+    wind_options("flute", 0.045, "The vibrato's depth in semitones, reached as the note holds, read as the note starts: a flute's vibrato is in the breath, whose swing at the default swings a held note's level 1.6 to 2.3 dB, as a played Syrinx's 2 and under VSCO 2's 2 to 4; that depth is at vel 0.6, and a softer note swings less and a louder one more, as its breath does; past 0.13 semitones the pitch swings further than the breath takes it.")
         .option(Spec::float("lift").default(0.5).range(0.0, 1.0).doc("How much louder a higher note sounds, as a player blows it harder, as the power of its pitch over middle C; 0 sounds every note alike."))
         .option(Spec::float("wander").default(0.2).range(0.0, 4.0).doc("How much the breath drifts while a note holds, as a player's does; 0 holds it still."))
         .option(Spec::float("catch").default(0.15).range(0.0, 1.0).doc("How far the breath falls while a slur moves the pitch; 0 glides smoothly."))
@@ -1058,8 +1050,16 @@ fn flute() -> Synth {
         .build(|o, ctx| {
             let vel = effort(o).clamp(0.0, 1.0);
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
-            let pitch = o.follow("note") >> moved_by(o, "bend", |x| x) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
-            let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed()) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
+            let vibrato = o.number("vibrato");
+            // The breath swings up to the depth that measured clean, and the pitch swings the rest of the way itself, which adds a quarter turn behind the breath's; both are softer the softer the note.
+            let swing = (vibrato * FLUTE_BREATH).min(0.5);
+            let rest = (vel / 0.6).powf(0.65) * (vibrato.powi(2) - (swing / FLUTE_BREATH).powi(2)).max(0.0).sqrt();
+            let mut note = o.follow("note") >> moved_by(o, "bend", |x| x);
+            if rest > 0.002 {
+                note = (note | drifting_swing(rest, 5.3, ctx.seed())) >> Net::wrap(Box::new(map(|x: &Frame<f32, U2>| x[0] + x[1])));
+            }
+            let pitch = note >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
+            let throb = drifting_swing(0.6 * swing * vel.powf(0.65), 5.3, ctx.seed()) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
             let rise = rise(o, &FLUTE);
             let jet = played_jet(pitch, breath(o, &FLUTE, rise) * throb, ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(3000.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64), o.number("lift"));
             // The breath hisses above 3 kHz where the jet strikes the edge, pulsing as it crosses, after the bands, so they do not colour it.
@@ -1074,6 +1074,9 @@ fn flute() -> Synth {
             Note::envelope(tilted(o, (jet >> (tone | hiss) >> Net::wrap(Box::new(join::<U2>()))) * quiet), o)
         })
 }
+
+/// The flute breath's vibrato for each semitone a held note at vel 0.6 swings, which swings the breath by 0.6 of it: measured as 0.267 semitones a unit from 0.03 to 0.7 on notes 65, 72 and 79, and set so that the default of 0.045 semitones is the 0.17 the breath was fitted with.
+const FLUTE_BREATH: f64 = 0.17 / 0.045;
 
 /// The flute's figures, fitted partial by partial to the University of Iowa's flute played with vibrato at pp, mf and ff.
 fn flute_figures() -> &'static super::figures::Figures {
@@ -1097,7 +1100,7 @@ fn flute_figured() -> Synth {
         .option(
             Spec::float("vibrato")
                 .range(0.0, 2.0)
-                .doc("The vibrato's depth in semitones, in place of the recordings'."),
+                .doc("The vibrato's depth in semitones, in place of the recordings', read as the note starts."),
         )
         .option(Spec::float("inhale").default(0.0).range(0.0, 1.0).doc(
             "1 takes a breath once the note is let go, as a player does at the end of a phrase.",
@@ -1211,8 +1214,6 @@ const BASSOON: Fit = Fit {
     sharp: [[8.7327, 0.0, 0.0], [7.517, 0.0, 0.0], [5.1921, 0.0, 0.0]],
     lift: -4.60,
 };
-/// The semitones the tenor sax's vibrato at 1 swings, which measures 10.8 cents deep, as VCSL's tenor saxophone played with vibrato.
-const TENOR_SAX_VIBRATO: f64 = 0.145;
 const TENOR_SAX: Fit = Fit {
     gains: [
         [-4.5, -12.0, -5.2, -3.0, -0.5, -0.3, 2.9, 8.5, 5.6, 4.6, 2.8],
@@ -1294,13 +1295,9 @@ const TUBA: Fit = Fit {
 const SPEAKS: f64 = 0.01;
 const KICK: f64 = 0.05;
 
-/// A reed or brass wind whose vibrato option swings `unit` semitones at 1.
-fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static Fit) -> Synth {
-    let doc = if unit == 1.0 {
-        "The vibrato's depth in semitones, reached as the note holds."
-    } else {
-        "The vibrato's depth, reached as the note holds, where 1 is the depth of the recordings played with vibrato."
-    };
+/// A reed or brass wind.
+fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Synth {
+    let doc = "The vibrato's depth in semitones, reached as the note holds; a change while the note sounds reaches it.";
     let fitting = |name: &str, high: f64, what: &str| {
         let doc = format!("{what}, in place of the fitted one; for fitting.");
         Spec::float(name).range(0.0, high).doc(&doc)
@@ -1393,14 +1390,7 @@ fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static
             let sharp = o
                 .given("sharp")
                 .map_or(fit.sharp, |cents| [[cents as f32, 0.0, 0.0]; 3]);
-            let pitch = pitch(
-                o,
-                o.number("vibrato") * unit,
-                rate,
-                sharp,
-                or("jitter", bore.jitter),
-                ctx.seed(),
-            );
+            let pitch = pitch(o, rate, sharp, or("jitter", bore.jitter), ctx.seed());
             let steeps = o
                 .given("steep")
                 .map_or(fit.steep, |steep| [steep as f32; 3]);

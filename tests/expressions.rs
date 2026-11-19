@@ -163,12 +163,21 @@ fn samples_and_the_sound_cards_input_take_none_of_the_expressions_notes_take() {
     let names = |specs: Vec<mxs::Spec>| specs.into_iter().map(|s| s.name).collect::<Vec<_>>();
     assert_eq!(
         names(engine.note_specs()),
-        ["amp", "pan", "bend", "brightness", "pressure"]
+        [
+            "amp",
+            "pan",
+            "bend",
+            "brightness",
+            "pressure",
+            "vibrato",
+            "pedal"
+        ]
     );
     assert_eq!(names(engine.input_specs()), ["amp", "pan"]);
     let sample = names(engine.sample_specs());
     assert!(sample.contains(&"amp".to_string()));
     assert!(!sample.contains(&"bend".to_string()), "{sample:?}");
+    assert!(!sample.contains(&"vibrato".to_string()), "{sample:?}");
 }
 
 #[test]
@@ -497,18 +506,7 @@ fn a_bend_and_brightness_reach_a_held_note_of_the_brass_sitar_organs_and_the_tab
 
 /// The left channel of a held note of `synth` given `options`, with `change` handed over at 1 second when given, over 1.5 seconds.
 fn held_render(synth: &str, options: &[(&str, f64)], change: Option<(&str, f64)>) -> Vec<f32> {
-    let mut engine = engine();
-    engine
-        .play(&[(0.0, Event::held(1, synth, options))])
-        .unwrap();
-    if let Some((name, value)) = change {
-        let set = Event::Set {
-            target: Target::Sounds(vec![1]),
-            options: vec![(name.into(), value)],
-        };
-        engine.play(&[(1.0, set)]).unwrap();
-    }
-    engine.render(1.5).unwrap().0
+    held_for(1.5, synth, options, change)
 }
 
 #[test]
@@ -570,4 +568,106 @@ fn a_held_clarinet_note_at_vel_0_4_given_pressure_0_5_plays_as_one_at_vel_0_7() 
 fn a_piano_note_given_pressure_1_plays_as_one_given_none() {
     let pressed = held_render("piano", &[("note", 60.0), ("pressure", 1.0)], None);
     assert!(pressed == held_render("piano", &[("note", 60.0)], None));
+}
+
+#[test]
+fn a_saw_marimba_and_kick_note_given_vibrato_0_5_and_pedal_1_plays_as_one_given_neither() {
+    for synth in ["saw", "marimba", "kick"] {
+        let given = held_render(synth, &[("vibrato", 0.5), ("pedal", 1.0)], None);
+        assert!(given.iter().any(|s| s.abs() > 0.01), "{synth} is silent");
+        assert!(given == held_render(synth, &[], None), "{synth}");
+    }
+}
+
+/// The pitch at each period, in semitones from `pitch`, between rising zero crossings of the sound band-passed around it.
+fn pitch_track(samples: &[f32], pitch: f64) -> Vec<f64> {
+    let w = 2.0 * PI * pitch / RATE;
+    let alpha = w.sin() / 6.0;
+    let (b0, a0, a1, a2) = (alpha, 1.0 + alpha, -2.0 * w.cos(), 1.0 - alpha);
+    let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
+    let band: Vec<f64> = samples
+        .iter()
+        .map(|x| {
+            let x = *x as f64;
+            let y = (b0 * (x - x2) - a1 * y1 - a2 * y2) / a0;
+            (x2, x1, y2, y1) = (x1, x, y1, y);
+            y
+        })
+        .collect();
+    let rises: Vec<f64> = band
+        .windows(2)
+        .enumerate()
+        .filter(|(_, pair)| pair[0] < 0.0 && pair[1] >= 0.0)
+        .map(|(i, pair)| i as f64 + -pair[0] / (pair[1] - pair[0]))
+        .collect();
+    rises
+        .windows(2)
+        .map(|w| 12.0 * (RATE / (w[1] - w[0]) / pitch).log2())
+        .collect()
+}
+
+/// How far a held note's pitch swings either way from 2 seconds in, in semitones: the swing of a sine with the pitch track's power between 4 and 7 Hz.
+fn vibrato_depth(samples: &[f32], pitch: f64) -> f64 {
+    let track = pitch_track(&samples[(2.0 * RATE) as usize..], pitch);
+    let n = track.len() as f64;
+    let mean = track.iter().sum::<f64>() / n;
+    let step = pitch / n;
+    let mut power = 0.0;
+    let mut freq = (4.0 / step).ceil() * step;
+    while freq <= 7.0 {
+        let (re, im) = track
+            .iter()
+            .enumerate()
+            .fold((0.0, 0.0), |(re, im), (i, x)| {
+                let phase = 2.0 * PI * freq * i as f64 / pitch;
+                (re + (x - mean) * phase.cos(), im - (x - mean) * phase.sin())
+            });
+        power += 2.0 * (re * re + im * im) / (n * n);
+        freq += step;
+    }
+    (2.0 * power).sqrt()
+}
+
+fn held_for(
+    seconds: f64,
+    synth: &str,
+    options: &[(&str, f64)],
+    change: Option<(&str, f64)>,
+) -> Vec<f32> {
+    let mut engine = engine();
+    engine
+        .play(&[(0.0, Event::held(1, synth, options))])
+        .unwrap();
+    if let Some((name, value)) = change {
+        let set = Event::Set {
+            target: Target::Sounds(vec![1]),
+            options: vec![(name.into(), value)],
+        };
+        engine.play(&[(1.0, set)]).unwrap();
+    }
+    engine.render(seconds).unwrap().0
+}
+
+#[test]
+fn a_held_flute_and_tenor_sax_note_given_vibrato_0_25_swings_a_quarter_semitone_either_way() {
+    for (synth, note) in [("flute", 72.0), ("flute", 79.0), ("tenor_sax", 55.0)] {
+        let sound = held_for(8.0, synth, &[("note", note), ("vibrato", 0.25)], None);
+        let depth = vibrato_depth(&sound, 440.0 * 2f64.powf((note - 69.0) / 12.0));
+        println!("{synth} {note}: {depth:.4} semitones");
+        assert!((depth - 0.25).abs() < 0.05, "{synth} {note}: {depth}");
+    }
+}
+
+#[test]
+fn vibrato_given_to_a_held_clarinet_note_while_it_sounds_swings_it() {
+    let options = [("note", 60.0), ("vibrato", 0.0)];
+    let sound = held_for(8.0, "clarinet", &options, Some(("vibrato", 0.25)));
+    let depth = vibrato_depth(&sound, 440.0 * 2f64.powf(-9.0 / 12.0));
+    let still = vibrato_depth(
+        &held_for(8.0, "clarinet", &options, None),
+        440.0 * 2f64.powf(-9.0 / 12.0),
+    );
+    println!("{depth:.4} semitones, {still:.4} left alone");
+    assert!((depth - 0.25).abs() < 0.05, "{depth}");
+    assert!(still < 0.05, "{still}");
 }
