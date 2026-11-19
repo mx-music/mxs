@@ -58,6 +58,8 @@ pub enum Event {
         options: Vec<(String, Value)>,
         /// The effect chain the note plays into, if any.
         chain: Option<u64>,
+        /// Whether the note sounds until it is let go, with its sustain left unread.
+        held: bool,
     },
     /// A sample [`Engine::load_sample`] returned, with the sample player's options.
     Sample {
@@ -147,6 +149,34 @@ impl Event {
             synth: synth.to_string(),
             options,
             chain: None,
+            held: false,
+        }
+    }
+
+    /// A note of `synth` that sounds until an [`Event::Release`] with its `id` lets it go, or until it fades by itself.
+    ///
+    /// ```
+    /// use mxs::Event;
+    ///
+    /// let held = Event::held(1, "violin", &[("note", 67.0), ("vel", 0.5)]);
+    /// let let_go = Event::Release { ids: vec![1] };
+    /// ```
+    pub fn held(id: u64, synth: &str, options: &[(&str, f64)]) -> Event {
+        match Event::note(Some(id), synth, options) {
+            Event::Note {
+                id,
+                synth,
+                options,
+                chain,
+                ..
+            } => Event::Note {
+                id,
+                synth,
+                options,
+                chain,
+                held: true,
+            },
+            _ => unreachable!("a note is a note"),
         }
     }
 }
@@ -632,7 +662,7 @@ impl Engine {
     /// Adds a synth, replacing one of the same name.
     pub fn register(&mut self, synth: Synth) {
         let owner: Arc<str> = Arc::from(synth.name.as_str());
-        let specs: Vec<Spec> = synth.specs.iter().cloned().chain(placing_specs()).collect();
+        let specs: Vec<Spec> = synth.specs.iter().cloned().chain(note_specs()).collect();
         self.synths.insert(
             synth.name.clone(),
             Registered {
@@ -672,9 +702,9 @@ impl Engine {
         self.effects.values().map(|r| &r.item)
     }
 
-    /// The options every note takes besides its synth's: amp and pan.
+    /// The options every note takes besides its synth's: amp and pan, and the expressions bend, brightness and pressure.
     pub fn note_specs(&self) -> Vec<Spec> {
-        placing_specs()
+        note_specs()
     }
 
     /// The options every sample takes.
@@ -1152,7 +1182,7 @@ impl Engine {
     fn replace_ready(&mut self, synths: &[Arc<str>]) {
         let mut drafts = Vec::with_capacity(synths.len());
         for synth in synths {
-            if let Ok(mut draft) = self.note_draft(None, synth, &[], 0.0, Out::Main) {
+            if let Ok(mut draft) = self.note_draft(None, synth, &[], false, 0.0, Out::Main) {
                 draft.ready = true;
                 drafts.push(Draft::Sound(Box::new(draft)));
             }
@@ -1184,7 +1214,7 @@ impl Engine {
         self.check_running()?;
         let mut kept = Vec::with_capacity(count);
         for _ in 0..Ord::max(count, 1) {
-            let mut draft = self.note_draft(None, synth, &[], 0.0, Out::Main)?;
+            let mut draft = self.note_draft(None, synth, &[], false, 0.0, Out::Main)?;
             draft.ready = true;
             let built = build(draft, self.rate)?;
             if built.ready.is_none() {
@@ -1211,10 +1241,12 @@ impl Engine {
                 synth,
                 options,
                 chain,
+                held,
             } => Draft::Sound(Box::new(self.note_draft(
                 *id,
                 synth,
                 options,
+                *held,
                 at,
                 out(chain),
             )?)),
@@ -1488,6 +1520,7 @@ impl Engine {
         id: Option<u64>,
         synth: &str,
         given: &[(String, Value)],
+        held: bool,
         at: f64,
         out: Out,
     ) -> Result<SoundDraft, Error> {
@@ -1501,6 +1534,8 @@ impl Engine {
             registered.item.build.clone(),
         );
         let values = self.check(&owner, &specs, given)?;
+        let mut options = Options::new(owner, specs, values);
+        options.held = held;
         Ok(SoundDraft {
             id,
             at,
@@ -1508,7 +1543,7 @@ impl Engine {
             stamp: 0,
             out,
             input: None,
-            options: Options::new(owner, specs, values),
+            options,
             make: Make::Note(build),
             ready: false,
         })
@@ -2725,6 +2760,12 @@ fn placing_specs() -> Vec<Spec> {
             .range(-1.0, 1.0)
             .doc("Where the sound sits, from -1, left, to 1, right."),
     ]
+}
+
+fn note_specs() -> Vec<Spec> {
+    let mut specs = placing_specs();
+    specs.extend(Spec::expressions(&["bend", "brightness", "pressure"]));
+    specs
 }
 
 fn blending_specs() -> Vec<Spec> {

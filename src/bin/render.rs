@@ -31,6 +31,7 @@ fn main() {
         synth: synth.clone(),
         options,
         chain: None,
+        held: false,
     };
     engine
         .play(&[(0.0, note)])

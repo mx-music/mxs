@@ -107,6 +107,7 @@ fn main() {
                     synth: synth_name.clone(),
                     options,
                     chain: None,
+                    held: false,
                 },
             )
         })

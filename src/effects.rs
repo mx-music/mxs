@@ -19,6 +19,7 @@
 //!         synth: "piano".to_string(),
 //!         options: vec![("note".to_string(), Value::Number(60.0))],
 //!         chain: Some(chain),
+//!         held: false,
 //!     };
 //!     engine.play(&[(0.0, note)])?;
 //!     engine.render(3.0)?;

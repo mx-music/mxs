@@ -174,6 +174,7 @@ fn main() -> Result<(), mxs::Error> {
         synth: "saw".to_string(),
         options: vec![("note".to_string(), Value::Number(45.0))],
         chain: Some(chain),
+        held: false,
     };
     engine.play(&[(0.0, note)])?;
     engine.render(1.0)?;

@@ -383,6 +383,7 @@ fn blocks_filled_from_events_at_frames_hold_the_samples_of_the_same_events_in_be
             synth,
             options,
             chain,
+            held: false,
         };
         ((beat * per_beat * RATE).round() as u64, event)
     };

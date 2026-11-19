@@ -46,6 +46,7 @@ fn through(effect: &str, given: &[(&str, f64)], synth: &str, seconds: f64) -> Ve
         synth: synth.to_string(),
         options: vec![],
         chain: Some(chain),
+        held: false,
     };
     engine.play(&[(0.0, note)]).unwrap();
     engine.render(seconds).unwrap().0
@@ -150,6 +151,7 @@ fn an_effects_tail_comes_from_its_options() {
         synth: "click".to_string(),
         options: vec![],
         chain: Some(chain),
+        held: false,
     };
     engine.play(&[(0.0, note)]).unwrap();
     engine.stop_effects(chain, 0.0).unwrap();

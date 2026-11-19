@@ -146,6 +146,28 @@ impl Spec {
         self
     }
 
+    /// The expressions every note takes, which can change while it sounds: bend, brightness and pressure.
+    /// A synth declares those of `names` it follows, so that it can be built apart from an engine, which gives every note all three.
+    pub fn expressions(names: &[&str]) -> Vec<Spec> {
+        [
+            Spec::float("bend")
+                .default(0.0)
+                .range(-120.0, 120.0)
+                .doc("Semitones the pitch is moved by, without starting the note again."),
+            Spec::float("brightness")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller."),
+            Spec::float("pressure")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("How hard a held note is pressed once it has started."),
+        ]
+        .into_iter()
+        .filter(|spec| names.contains(&spec.name.as_str()))
+        .collect()
+    }
+
     /// The options of the note's envelope, all in beats: attack, decay to decay_level, hold at sustain_level for sustain, then release, with this synth's own sustain and release.
     pub fn envelope(sustain: f64, release: f64) -> Vec<Spec> {
         vec![

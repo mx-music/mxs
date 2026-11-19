@@ -24,6 +24,7 @@ fn note(hz: f64, part: u64) -> Event {
         synth: "tone".to_string(),
         options: vec![("hz".to_string(), Value::Number(hz))],
         chain: Some(part),
+        held: false,
     }
 }
 
@@ -138,6 +139,7 @@ fn muting_a_part_with_a_reverb_silences_the_tail_too() {
                     synth: "piano".to_string(),
                     options: vec![("sustain".to_string(), Value::Number(0.3))],
                     chain: Some(part),
+                    held: false,
                 },
             )])
             .unwrap();
@@ -267,6 +269,7 @@ fn piano_notes_in_a_part_at_gain_1_render_the_same_samples_as_without_parts() {
                         synth,
                         options,
                         chain,
+                        held: false,
                     },
                 )
             })

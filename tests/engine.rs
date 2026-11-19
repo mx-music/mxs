@@ -138,6 +138,7 @@ fn a_named_option_takes_only_its_names() {
         synth: "bol".into(),
         options: vec![("bol".into(), Value::from("tun"))],
         chain: None,
+        held: false,
     };
     engine.play(&[(0.0, tun)]).unwrap();
     let dha = Event::Note {
@@ -145,6 +146,7 @@ fn a_named_option_takes_only_its_names() {
         synth: "bol".into(),
         options: vec![("bol".into(), Value::from("dha"))],
         chain: None,
+        held: false,
     };
     assert_eq!(
         engine.play(&[(0.0, dha)]).unwrap_err().to_string(),
@@ -312,6 +314,7 @@ fn notes_play_through_their_effect_chain_until_it_stops() {
         synth: "level".into(),
         options: vec![],
         chain: Some(chain),
+        held: false,
     };
     engine.play(&[(0.0, note)]).unwrap();
     engine.stop_effects(chain, 0.2).unwrap();
@@ -329,6 +332,7 @@ fn notes_play_through_their_effect_chain_until_it_stops() {
         synth: "level".into(),
         options: vec![],
         chain: Some(chain),
+        held: false,
     };
     engine.play(&[(2.0, late)]).unwrap();
     let (left, _) = engine.render(0.5).unwrap();

@@ -51,6 +51,7 @@ fn main() -> Result<(), mxs::Error> {
         synth: "vibraphone".to_string(),
         options: vec![("note".to_string(), Value::Number(67.0))],
         chain: Some(chain),
+        held: false,
     };
     engine.play(&[(0.0, note)])?;
     engine.render(3.0)?;
@@ -102,6 +103,7 @@ fn main() -> Result<(), mxs::Error> {
                 ("sustain".to_string(), Value::Number(3.0)),
             ],
             chain: Some(chain),
+            held: false,
         };
         (0.0, note)
     });
@@ -144,6 +146,7 @@ fn main() -> Result<(), mxs::Error> {
             ("sustain".to_string(), Value::Number(3.0)),
         ],
         chain: Some(bass),
+        held: false,
     };
     engine.play(&[(0.0, note)])?;
     engine.mute("bass", true, 1.0)?;

@@ -81,6 +81,7 @@ fn note_into(part: u64, synth: &str, options: &[(&str, f64)]) -> Event {
         synth: synth.to_string(),
         options: options.collect(),
         chain: Some(part),
+        held: false,
     }
 }
 

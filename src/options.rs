@@ -11,6 +11,7 @@ pub struct Options {
     pub(crate) specs: Arc<[Spec]>,
     pub(crate) values: HashMap<String, Value>,
     pub(crate) controls: Mutex<HashMap<String, Control>>,
+    pub(crate) held: bool,
 }
 
 /// The value an option glides to and the seconds it takes, which the engine sets while the note sounds.
@@ -27,7 +28,13 @@ impl Options {
             specs,
             values,
             controls: Mutex::new(HashMap::new()),
+            held: false,
         }
+    }
+
+    /// Whether the note sounds until it is let go, its sustain left unread, as [`Event::held`](crate::Event::held) starts it.
+    pub fn held(&self) -> bool {
+        self.held
     }
 
     /// Turns the options given in beats into seconds, each beat lasting `per_beat` seconds: those declared in beats, their defaults too, and every `_slide`.

@@ -18,6 +18,9 @@ Besides its synth's own options, every note takes these.
 |---|---|---|---|
 | `amp` | a number, 0 to 16 | 1 | The level the sound is scaled by. |
 | `pan` | a number, -1 to 1 | 0 | Where the sound sits, from -1, left, to 1, right. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+| `pressure` | a number, 0 to 1 | 0 | How hard a held note is pressed once it has started. |
 
 ## The envelope
 

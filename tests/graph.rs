@@ -31,6 +31,7 @@ fn render(synth: Synth, options: &[(&str, Value)]) -> Vec<f32> {
                 synth: name,
                 options,
                 chain: None,
+                held: false,
             },
         )])
         .unwrap();
@@ -261,6 +262,7 @@ fn through(effect: Option<Effect>) -> Vec<f32> {
                 synth: "traced".to_string(),
                 options: vec![],
                 chain,
+                held: false,
             },
         )])
         .unwrap();
