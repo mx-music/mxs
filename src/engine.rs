@@ -1794,6 +1794,7 @@ impl Book {
             } else {
                 0.0
             },
+            pressure: sound.options.number("pressure"),
         };
         let (lasts, release) = hold.give(given);
         built.lasts = lasts;
@@ -3045,6 +3046,7 @@ mod tests {
             vel: 0.6,
             held: true,
             pedal: 1.0,
+            pressure: 0.0,
         };
         assert!(ready.iter().any(|hold| hold.given() == Some(given)));
     }

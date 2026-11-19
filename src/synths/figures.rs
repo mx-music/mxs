@@ -3,6 +3,7 @@
 //! The strike's noise is white noise through each band's filter, its power in straight lines between the same times.
 //! Figures of held notes, bowed, blown or played on an organ, hold each level after the last time until the note is let go, then fall at its slope, with the recordings' vibrato.
 
+use super::common::{effort, followed_effort, pressed};
 use crate::nodes::hz;
 use crate::synth::{Given, Ready};
 use crate::{Context, Note, Options};
@@ -1162,7 +1163,7 @@ pub(super) fn held_note(
     ctx: &mut Context,
 ) -> Note {
     let note = o.number("note");
-    let vel = o.number("vel").clamp(0.0, 1.0);
+    let vel = effort(o).clamp(0.0, 1.0);
     let ready = ctx.asks_ready();
     let mut voice = if ready {
         figures.room()
@@ -1236,7 +1237,7 @@ pub(super) fn held_note(
     } else {
         Net::wrap(Box::new(dc((0.0, 0.5))))
     };
-    let notes = o.follow("note") | o.follow("vel") | expressions;
+    let notes = o.follow("note") | followed_effort(o) | expressions;
     if !ready {
         node.set_sample_rate(DEFAULT_SR);
         return Note {
@@ -1249,7 +1250,8 @@ pub(super) fn held_note(
     let room = Mutex::new(figures.room());
     let hold_for = Ready::new(move |given: Given| {
         let mut voice = room.lock().unwrap_or_else(|e| e.into_inner());
-        figures.fill(&mut voice, given.note, given.vel.clamp(0.0, 1.0));
+        let vel = pressed(given.vel, given.pressure).clamp(0.0, 1.0);
+        figures.fill(&mut voice, given.note, vel);
         let falls = if breath.is_some() { 5.0 } else { voice.falls() };
         let hold = if given.held { f64::INFINITY } else { hold };
         (hold + falls, falls)
@@ -1463,7 +1465,10 @@ impl Sustained {
         let Some(given) = refill.hold.given() else {
             return;
         };
-        let (note, vel) = (given.note, given.vel.clamp(0.0, 1.0));
+        let (note, vel) = (
+            given.note,
+            pressed(given.vel, given.pressure).clamp(0.0, 1.0),
+        );
         self.hold = if given.held {
             f64::INFINITY
         } else {
@@ -2242,6 +2247,7 @@ mod ready {
                     vel,
                     held: false,
                     pedal: 0.0,
+                    pressure: 0.0,
                 };
                 assert_eq!(
                     hold.give(given),

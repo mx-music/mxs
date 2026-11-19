@@ -3,7 +3,7 @@
 //! The bore is a delay line as long as the note's period, so a change of note carries the same column of air to the new pitch, and the breath's pressure follows vel while the note holds.
 //! After the model come a peak at each band mx measures, its gain fitted to each instrument's recordings at pp, mf and ff and following vel between them.
 
-use super::common::{moved_by, tilted};
+use super::common::{effort, followed_effort, moved_by, tilted};
 use crate::nodes::{db, hz, shape, white_noise};
 use crate::synth::SynthDecl;
 use crate::{Context, Note, Options, Spec, Synth};
@@ -877,7 +877,7 @@ fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
         .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard it is blown; a change while the note holds swells or fades it."))
         .option(Spec::float("vibrato").default(vibrato).range(0.0, 2.0).doc(vibrato_doc))
         .options(Spec::envelope(0.5, 0.2))
-        .options(Spec::expressions(&["bend", "brightness"]))
+        .options(Spec::expressions(&["bend", "brightness", "pressure"]))
         .option(Spec::float("breath").range(0.0, 3.0).doc("The breath's pressure, in place of the one fitted for the note's vel; for fitting."))
         .option(Spec::seconds("rise").range(0.001, 2.0).doc("The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting."))
         .option(Spec::db("air").range(-90.0, 0.0).doc("The breath's noise in dB, in place of the one fitted for the note's vel; for fitting."))
@@ -906,7 +906,7 @@ fn pitch(o: &Options, depth: f64, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, 
         rate: DEFAULT_SR as f32,
     };
     let note = o.follow("note") >> Net::wrap(Box::new(An(fingers))) >> moved_by(o, "bend", |x| x);
-    (note | swing | sway(seed) | o.follow("vel"))
+    (note | swing | sway(seed) | followed_effort(o))
         >> Net::wrap(Box::new(map(move |x: &Frame<f32, U4>| {
             let from = x[0] - 60.0;
             let sharp = by_vel(
@@ -951,7 +951,7 @@ const WANDER: f32 = 12.0;
 
 /// The seconds the breath takes to reach its pressure, fitted for the vel the note starts at.
 fn rise(o: &Options, fit: &Fit) -> f64 {
-    let vel = o.number("vel").clamp(0.0, 1.0) as f32;
+    let vel = effort(o).clamp(0.0, 1.0) as f32;
     o.given("rise")
         .unwrap_or_else(|| by_vel(vel, fit.rise) as f64)
         .max(1e-3)
@@ -966,7 +966,7 @@ fn risen(t: f64, rise: f64) -> f64 {
 fn breath(o: &Options, fit: &Fit, rise: f64) -> Net {
     let at = fit.breath;
     let given = o.given("breath").map(|b| b as f32);
-    let pressure = o.follow("vel")
+    let pressure = followed_effort(o)
         >> Net::wrap(Box::new(map(move |v: &Frame<f32, U1>| {
             given.unwrap_or_else(|| by_vel(v[0].clamp(0.0, 1.0), at))
         })));
@@ -978,12 +978,12 @@ fn voiced(o: &Options, ctx: &mut Context, model: Net, fit: &Fit, centre: f32) ->
     let given = EQ.map(|name| o.given(name).map(|g| g as f32));
     let levels = o.given("level").map_or(fit.levels, |l| [l as f32; 3]);
     let airs = o.given("air").map_or(fit.air, |a| [a as f32; 3]);
-    let air = o.follow("vel")
+    let air = followed_effort(o)
         >> Net::wrap(Box::new(map(move |v: &Frame<f32, U1>| {
             db(by_vel(v[0].clamp(0.0, 1.0), airs) as f64) as f32
         })));
     let noise = (white_noise(ctx.seed()) >> Net::wrap(Box::new(bandpass_hz(centre, 1.0)))) * air;
-    ((model + noise) | o.follow("vel"))
+    ((model + noise) | followed_effort(o))
         >> Net::wrap(Box::new(An(Bands::new(fit.gains, given, levels))))
 }
 
@@ -1056,7 +1056,7 @@ fn flute() -> Synth {
         .option(Spec::float("pulse").range(0.0, 1.0).doc("How much the hiss follows the jet across the edge, from 0 steady to 1 only on one side, in place of the one fitted; for fitting."))
         .option(Spec::float("even").range(0.0, 4.0).doc("The part of the square of the jet's sound in the output, in place of the one fitted; for fitting."))
         .build(|o, ctx| {
-            let vel = o.number("vel").clamp(0.0, 1.0);
+            let vel = effort(o).clamp(0.0, 1.0);
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
             let pitch = o.follow("note") >> moved_by(o, "bend", |x| x) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
             let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed()) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
@@ -1070,7 +1070,7 @@ fn flute() -> Synth {
             let bright = Net::wrap(Box::new(highshelf_hz(4000.0, 0.707, db(o.given("shelf").unwrap_or(-8.0)) as f32)));
             let tone = voiced(o, ctx, Net::wrap(Box::new(pass())), &FLUTE, 2000.0) >> bright;
             // Under pp the breath would stop the note, so a player fading in from nothing, as the Philharmonia's flute swells from 27 dB under its peak, only plays it quieter.
-            let quiet = o.follow("vel") >> Net::wrap(Box::new(map(|v: &Frame<f32, U1>| (v[0] / 0.3).clamp(0.0, 1.0).powf(1.5))));
+            let quiet = followed_effort(o) >> Net::wrap(Box::new(map(|v: &Frame<f32, U1>| (v[0] / 0.3).clamp(0.0, 1.0).powf(1.5))));
             Note::envelope(tilted(o, (jet >> (tone | hiss) >> Net::wrap(Box::new(join::<U2>()))) * quiet), o)
         })
 }
@@ -1103,7 +1103,7 @@ fn flute_figured() -> Synth {
             "1 takes a breath once the note is let go, as a player does at the end of a phrase.",
         ))
         .options(Spec::envelope(0.5, 0.2))
-        .options(Spec::expressions(&["bend", "brightness"]))
+        .options(Spec::expressions(&["bend", "brightness", "pressure"]))
         .build(|o, ctx| {
             let figures = flute_figures();
             // A slur dips the partials 1 dB, and the vibrato's depth spreads from note to note as a played Syrinx's does, 4 to 13 cents between its quartiles.
@@ -1405,7 +1405,7 @@ fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static
                 .given("steep")
                 .map_or(fit.steep, |steep| [steep as f32; 3]);
             let wander = or("wander", bore.wander);
-            let steep = o.follow("vel")
+            let steep = followed_effort(o)
                 >> Net::wrap(Box::new(map(move |x: &Frame<f32, U1>| {
                     by_vel(x[0].clamp(0.0, 1.0), steeps)
                 })));
@@ -1417,7 +1417,7 @@ fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static
             // A reed near the least breath that sounds it takes a third of a second to speak, where a player's tongue starts a soft note in under a tenth: the breath comes at once, with a kick that dies away, and the bell lets the wave through as the player's breath rises.
             let rise = rise(o, fit);
             let let_through = shape(move |t| risen(t, rise));
-            let start = by_vel(o.number("vel").clamp(0.0, 1.0) as f32, fit.breath);
+            let start = by_vel(effort(o).clamp(0.0, 1.0) as f32, fit.breath);
             let kick = (or("kick", bore.kick) - start).max(0.0) as f64;
             let kicked = shape(move |t| kick * (-t / KICK).exp() * risen(t, SPEAKS));
             let breath = breath(o, fit, rise.min(SPEAKS)) + kicked;

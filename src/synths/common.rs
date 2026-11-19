@@ -149,9 +149,36 @@ pub(super) fn along(centres: &[f64], values: &[f64], f: f64) -> f64 {
 
 /// A unit that adds `by` of the option `name`, as it glides, to its input.
 pub(crate) fn moved_by(options: &Options, name: &str, by: fn(f32) -> f32) -> Net {
-    let moved =
-        (net(pass()) | options.follow(name)) >> net(map(move |x: &Frame<f32, U2>| x[0] + by(x[1])));
-    net(Unhashed(moved))
+    combined(options, name, move |x, option| x + by(option))
+}
+
+/// A unit that gives `with` of its input and the option `name`, as it glides.
+pub(crate) fn combined(
+    options: &Options,
+    name: &str,
+    with: impl Fn(f32, f32) -> f32 + Clone + Send + Sync + 'static,
+) -> Net {
+    let combined = (net(pass()) | options.follow(name))
+        >> net(map(move |x: &Frame<f32, U2>| with(x[0], x[1])));
+    net(Unhashed(combined))
+}
+
+/// How hard a held wind or bowed string is played: vel raised towards 1 by pressure, as vel + (1 - vel) x pressure.
+pub(crate) fn effort(options: &Options) -> f64 {
+    pressed(options.number("vel"), options.number("pressure"))
+}
+
+/// The effort of [`effort`] as vel and pressure glide.
+pub(crate) fn followed_effort(options: &Options) -> Net {
+    options.follow("vel")
+        >> combined(options, "pressure", |vel, pressure| {
+            vel + (1.0 - vel) * pressure
+        })
+}
+
+/// vel raised towards 1 by pressure.
+pub(crate) fn pressed(vel: f64, pressure: f64) -> f64 {
+    vel + (1.0 - vel) * pressure
 }
 
 /// A unit that hands the hash it is pinged with on untouched, so the oscillators after it take the phase they took before it was there.

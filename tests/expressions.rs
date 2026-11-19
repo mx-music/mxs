@@ -494,3 +494,80 @@ fn a_bend_and_brightness_reach_a_held_note_of_the_brass_sitar_organs_and_the_tab
         }
     }
 }
+
+/// The left channel of a held note of `synth` given `options`, with `change` handed over at 1 second when given, over 1.5 seconds.
+fn held_render(synth: &str, options: &[(&str, f64)], change: Option<(&str, f64)>) -> Vec<f32> {
+    let mut engine = engine();
+    engine
+        .play(&[(0.0, Event::held(1, synth, options))])
+        .unwrap();
+    if let Some((name, value)) = change {
+        let set = Event::Set {
+            target: Target::Sounds(vec![1]),
+            options: vec![(name.into(), value)],
+        };
+        engine.play(&[(1.0, set)]).unwrap();
+    }
+    engine.render(1.5).unwrap().0
+}
+
+#[test]
+fn a_held_violin_note_at_vel_0_4_given_pressure_1_plays_as_one_at_vel_1() {
+    let options = |vel: f64, pressure: f64| {
+        [
+            ("note", 60.0),
+            ("vel", vel),
+            ("vibrato", 0.0),
+            ("pressure", pressure),
+        ]
+    };
+    let pressed = held_render("violin", &options(0.4, 1.0), None);
+    let loud = held_render("violin", &options(1.0, 0.0), None);
+    let soft = held_render("violin", &options(0.4, 0.0), None);
+    assert!(pressed == loud);
+    assert!(pressed != soft);
+}
+
+#[test]
+fn a_held_clarinet_note_given_pressure_1_after_a_second_plays_as_one_given_vel_1_then() {
+    let options = [("note", 60.0), ("vel", 0.4)];
+    let pressed = held_render("clarinet", &options, Some(("pressure", 1.0)));
+    let firmer = held_render("clarinet", &options, Some(("vel", 1.0)));
+    let soft = held_render("clarinet", &options, None);
+    let window = |s: &[f32]| s[(1.01 * RATE) as usize..(1.06 * RATE) as usize].to_vec();
+    let level = |s: &[f32]| 20.0 * rms(&window(s)).log10();
+    println!(
+        "pressed {:.3} dB, vel 1 {:.3} dB, vel 0.4 {:.3} dB",
+        level(&pressed),
+        level(&firmer),
+        level(&soft)
+    );
+    assert!((level(&pressed) - level(&firmer)).abs() < 0.1);
+    assert!(level(&firmer) - level(&soft) > 1.0);
+}
+
+#[test]
+fn a_held_clarinet_note_at_vel_0_4_given_pressure_0_5_plays_as_one_at_vel_0_7() {
+    let pressed = held_render(
+        "clarinet",
+        &[("note", 60.0), ("vel", 0.4), ("pressure", 0.5)],
+        None,
+    );
+    let firmer = held_render("clarinet", &[("note", 60.0), ("vel", 0.7)], None);
+    let soft = held_render("clarinet", &[("note", 60.0), ("vel", 0.4)], None);
+    let level = |s: &[f32]| 20.0 * rms(&s[(0.5 * RATE) as usize..]).log10();
+    println!(
+        "pressed {:.3} dB, vel 0.7 {:.3} dB, vel 0.4 {:.3} dB",
+        level(&pressed),
+        level(&firmer),
+        level(&soft)
+    );
+    assert!((level(&pressed) - level(&firmer)).abs() < 0.1);
+    assert!(level(&firmer) - level(&soft) > 1.0);
+}
+
+#[test]
+fn a_piano_note_given_pressure_1_plays_as_one_given_none() {
+    let pressed = held_render("piano", &[("note", 60.0), ("pressure", 1.0)], None);
+    assert!(pressed == held_render("piano", &[("note", 60.0)], None));
+}

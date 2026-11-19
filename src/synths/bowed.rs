@@ -419,7 +419,7 @@ fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, leve
                 .doc("1 changes bow from a note still sounding: the string speaks at once, from where the recordings settle, instead of from silence."),
         )
         .options(Spec::envelope(1.0, 0.3))
-        .options(Spec::expressions(&["bend", "brightness"]))
+        .options(Spec::expressions(&["bend", "brightness", "pressure"]))
         .build(move |o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let pizz = o.number("pizz").clamp(0.0, 1.0);

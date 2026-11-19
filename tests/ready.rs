@@ -205,3 +205,31 @@ fn held_notes_of_the_piano_with_the_pedal_up_or_down_and_of_the_violin_play_from
         "the ready held notes play otherwise than built ones"
     );
 }
+
+#[test]
+fn a_held_violin_note_given_pressure_plays_from_a_ready_voice_as_a_built_one_does() {
+    let note = || {
+        Event::held(
+            1,
+            "violin",
+            &[("note", 67.0), ("vel", 0.4), ("pressure", 0.5)],
+        )
+    };
+    let mut engine = engine();
+    engine.keep_ready("violin", 1).unwrap();
+    engine.render(0.1).unwrap();
+    let mut built = engine_at_the_same_frame();
+    for engine in [&mut engine, &mut built] {
+        let now = engine.now();
+        engine.play(&[(now, note())]).unwrap();
+        let let_go = Event::Release { ids: vec![1] };
+        engine.play(&[(now + 1.5, let_go)]).unwrap();
+    }
+    let (ready, _) = engine.render(7.0).unwrap();
+    let (expected, _) = built.render(7.0).unwrap();
+    assert!(ready.iter().any(|s| s.abs() > 0.01));
+    assert!(
+        ready == expected,
+        "the ready violin plays otherwise than a built one"
+    );
+}
