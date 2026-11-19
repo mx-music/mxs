@@ -47,6 +47,8 @@ A sawtooth wave under a resonant low-pass filter.
 | `note` | a MIDI note | 52 | The pitch. |
 | `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
 | `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
 
@@ -174,6 +176,8 @@ A grand piano fitted partial by partial to the Steinway B of the Versilian Commu
 | `uneven` | a number, 0 to 1 | 1 | How far each key that was not recorded differs from the recorded keys either side in its partials' levels. |
 | `instrument` | a whole number | 0 | Which piano's keys `uneven` draws, each number another instrument. |
 | `knock` | a number, 0 to 1 | 1 | How loud the hammer's knock under 600 Hz is: 1 as recorded, 0 left out. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 1 unless given.
 
@@ -304,6 +308,8 @@ A violin, bowed or plucked, its bowed notes fitted partial by partial to the Uni
 | `pizz` | a number, 0 to 1 | 0 | 1 plucks the string instead of bowing it. |
 | `vibrato` | a number, 0 to 2 | 0.25 | The vibrato's depth in semitones, reached as the note holds; the recordings are played without one. |
 | `legato` | a number, 0 to 1 | 0 | 1 changes bow from a note still sounding: the string speaks at once, from where the recordings settle, instead of from silence. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given.
 
@@ -346,6 +352,8 @@ A cello, bowed or plucked, its bowed notes fitted partial by partial to the Univ
 | `pizz` | a number, 0 to 1 | 0 | 1 plucks the string instead of bowing it. |
 | `vibrato` | a number, 0 to 2 | 0.25 | The vibrato's depth in semitones, reached as the note holds; the recordings are played without one. |
 | `legato` | a number, 0 to 1 | 0 | 1 changes bow from a note still sounding: the string speaks at once, from where the recordings settle, instead of from silence. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given.
 

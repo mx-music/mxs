@@ -440,15 +440,15 @@ fn a_value_out_of_range_is_held_with_a_warning() {
 
 #[test]
 fn an_option_the_piano_does_not_have_is_refused() {
-    let refused = piano_parts(&[("brightness", 1.0)]).unwrap_err();
+    let refused = piano_parts(&[("cutoff", 100.0)]).unwrap_err();
     assert_eq!(
         refused,
         Error::UnknownOption {
             owner: "piano".to_string(),
-            option: "brightness".to_string()
+            option: "cutoff".to_string()
         }
     );
-    assert_eq!(refused.to_string(), "piano has no option brightness");
+    assert_eq!(refused.to_string(), "piano has no option cutoff");
 }
 
 /// The amplitude of `sound` at `hz` over a window of samples, as a complex number.

@@ -1119,6 +1119,7 @@ fn flute_figured() -> Synth {
                 o.given("vibrato"),
                 0.0,
                 Some(breath),
+                false,
                 o,
                 ctx,
             )

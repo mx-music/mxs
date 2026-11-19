@@ -41,12 +41,21 @@ fn from_zero(mut wave: impl AudioUnit + 'static) -> Net {
 
 /// The note's frequency, gliding with its note option.
 fn pitch(options: &Options) -> Net {
-    options.follow("note") >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32))
+    to_hz(options.follow("note"))
+}
+
+fn to_hz(note: Net) -> Net {
+    note >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32))
 }
 
 /// A resonant low-pass whose cutoff is a MIDI note, with res from 0 to 1.
 fn filtered(options: &Options, sound: Net) -> Net {
-    let cutoff = options.follow("cutoff")
+    filtered_at(options, options.follow("cutoff"), sound)
+}
+
+/// A resonant low-pass whose cutoff is the MIDI note `cutoff` gives, with res from 0 to 1.
+fn filtered_at(options: &Options, cutoff: Net, sound: Net) -> Net {
+    let cutoff = cutoff
         >> net(map(|x: &Frame<f32, U1>| {
             hz(x[0] as f64).clamp(20.0, 18_000.0) as f32
         }));
@@ -78,7 +87,24 @@ fn wave(name: &str, cutoff: f64, release: f64) -> crate::SynthDecl {
 
 fn saw() -> Synth {
     wave("saw", 100.0, 1.0)
-        .build(|o, _| Note::envelope(filtered(o, pitch(o) >> saw_wave()) * 0.5, o))
+        .options(Spec::expressions(&["bend", "brightness"]))
+        .build(|o, _| {
+            let sound = to_hz(summed(o.follow("note"), o.follow("bend"))) >> saw_wave();
+            let cutoff = summed(
+                o.follow("cutoff"),
+                o.follow("brightness") >> net(map(brighter)),
+            );
+            Note::envelope(filtered_at(o, cutoff, sound) * 0.5, o)
+        })
+}
+
+/// The semitones a brightness moves a low-pass's cutoff by: two octaves either way of 0.5.
+fn brighter(x: &Frame<f32, U1>) -> f32 {
+    (x[0] - 0.5) * 48.0
+}
+
+fn summed(a: Net, b: Net) -> Net {
+    (a | b) >> net(map(|x: &Frame<f32, U2>| x[0] + x[1]))
 }
 
 fn square() -> Synth {

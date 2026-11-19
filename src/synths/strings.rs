@@ -417,12 +417,13 @@ pub fn piano() -> Synth {
                 .doc("How loud the hammer's knock under 600 Hz is: 1 as recorded, 0 left out."),
         )
         .options(Spec::envelope(1.0, 1.0))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|options, ctx| {
             let pedal = options.number("pedal");
             // A note with the pedal all the way up or down plays one voice, which can be kept ready for either.
             if pedal == 0.0 || pedal == 1.0 {
                 let choices = [0.0, 1.0].map(|down| (piano_at(down), piano_recipe(options, down)));
-                return strike_among(choices.into(), pedal as usize, options, ctx);
+                return strike_among(choices.into(), pedal as usize, true, options, ctx);
             }
             let sound = [(0.0, 1.0 - pedal), (1.0, pedal)]
                 .into_iter()

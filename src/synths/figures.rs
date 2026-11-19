@@ -488,24 +488,27 @@ pub(super) fn strike(
     o: &Options,
     ctx: &mut Context,
 ) -> Note {
-    strike_among(vec![(figures, recipe)], 0, o, ctx)
+    strike_among(vec![(figures, recipe)], 0, false, o, ctx)
 }
 
-/// A struck note played by the `chosen` of `choices`, each figures with their recipe.
+/// A struck note played by the `chosen` of `choices`, each figures with their recipe, following bend and brightness while it sounds when `expressed`.
 /// Built ready, it keeps room for any note of any of them, and fills itself again from the one the pedal it is given picks, the first at 0 and the last at 1.
 pub(super) fn strike_among(
     choices: Vec<(&'static Figures, Recipe)>,
     chosen: usize,
+    expressed: bool,
     o: &Options,
     ctx: &mut Context,
 ) -> Note {
     let (note, vel) = (o.number("note"), o.number("vel"));
     let recipe = &choices[chosen].1;
+    let expressions = expressed.then(|| o.follow("bend") | o.follow("brightness"));
     if !ctx.asks_ready() {
         let (mut voice, mut working) = (Voice::empty(), Voice::empty());
         let gain = recipe.play(note, vel, &mut voice, &mut working);
         let end = voice.silent_after();
-        return Note::envelope(voice.sound() * gain as f32, o).within(end);
+        let sound = voice.struck(1.0, None, expressions) * gain as f32;
+        return Note::envelope(sound, o).within(end);
     }
     let all: Vec<&Figures> = choices.iter().map(|(figures, _)| *figures).collect();
     let (mut voice, mut working) = (Figures::room_among(&all), Figures::room_among(&all));
@@ -531,7 +534,7 @@ pub(super) fn strike_among(
         recipes: choices.into_iter().map(|(_, recipe)| recipe).collect(),
         working,
     };
-    Note::envelope(voice.ready_sound(gain, refill), o).within(end)
+    Note::envelope(voice.struck(gain, Some(refill), expressions), o).within(end)
 }
 
 /// Which of `count` choices a pedal of 0 or 1 picks.
@@ -796,15 +799,11 @@ impl Voice {
 
     /// The voice as a sound, each partial a sine and each band of noise its filters' output.
     pub fn sound(self) -> Net {
-        self.struck(1.0, None)
+        self.struck(1.0, None, None)
     }
 
-    // The voice as a sound at `gain` that fills itself again as it starts, once the engine gives it a note and vel.
-    fn ready_sound(self, gain: f64, refill: Refill) -> Net {
-        self.struck(gain, Some(refill))
-    }
-
-    fn struck(self, gain: f64, refill: Option<Refill>) -> Net {
+    // The voice as a sound at `gain`, which fills itself again as it starts when given a refill, and follows the bend and brightness of `expressions` when given them.
+    fn struck(self, gain: f64, refill: Option<Refill>, expressions: Option<Net>) -> Net {
         let mut node = Struck {
             voice: self,
             rate: DEFAULT_SR,
@@ -814,9 +813,13 @@ impl Voice {
             sample: 0,
             gain: gain as f32,
             refill,
+            wanted: (0.0, 0.5),
+            applied: (0.0, 0.5),
+            lowest: 0.0,
         };
         node.set_sample_rate(DEFAULT_SR);
-        Net::wrap(Box::new(An(node)))
+        let plain = || Net::wrap(Box::new(dc((0.0, 0.5))));
+        expressions.unwrap_or_else(plain) >> Net::wrap(Box::new(An(node)))
     }
 }
 
@@ -1004,6 +1007,11 @@ struct Struck {
     sample: usize,
     gain: f32,
     refill: Option<Refill>,
+    /// The bend and brightness at its input, and those its sines play at.
+    wanted: (f64, f64),
+    applied: (f64, f64),
+    /// The lowest partial's frequency, which a brightness tilts the others' levels from.
+    lowest: f64,
 }
 
 impl Struck {
@@ -1012,7 +1020,25 @@ impl Struck {
         self.sample = 0;
         fill_sines(&self.voice, self.rate, &mut self.sines);
         fill_bands(&self.voice, &self.warm, &mut self.bands);
+        self.applied.0 = 0.0;
+        self.lowest = self.sines.iter().fold(f64::INFINITY, |low, sine| {
+            low.min(self.voice.partials[sine.shape].0)
+        });
         self.read();
+    }
+
+    // Turns each sine at its partial's frequency moved by the bend wanted, when it moved.
+    fn bend(&mut self) {
+        if self.wanted.0 != self.applied.0 {
+            let ratio = 2f64.powf(self.wanted.0 / 12.0);
+            for sine in &mut self.sines {
+                let freq = self.voice.partials[sine.shape].0 * ratio;
+                let omega = 2.0 * std::f64::consts::PI * freq / self.rate;
+                sine.turn = (omega.cos(), omega.sin());
+            }
+            self.applied.0 = self.wanted.0;
+        }
+        self.applied.1 = self.wanted.1;
     }
 
     // Fills the voice with the note and vel the engine gave it, when it gave one.
@@ -1030,10 +1056,17 @@ impl Struck {
 
     // The levels at the next reading, BLOCK samples on, for each sine and band to glide to.
     fn read(&mut self) {
+        self.bend();
         let t = (self.sample + BLOCK) as f64 / self.rate;
         let last = *self.voice.times.last().unwrap();
+        // A brightness away from 0.5 tilts the levels by up to 3 dB an octave either way.
+        let tilt = (self.applied.1 != 0.5).then_some((self.applied.1 - 0.5) * 6.0);
         for sine in self.sines.iter_mut().filter(|s| !s.done) {
-            let level = self.voice.partials[sine.shape].1.at(&self.voice.times, t);
+            let (freq, shape) = &self.voice.partials[sine.shape];
+            let mut level = shape.at(&self.voice.times, t);
+            if let Some(tilt) = tilt {
+                level += tilt * (freq / self.lowest).log2();
+            }
             let target = (t / RISE).min(1.0) * 10f64.powf(level / 20.0);
             sine.step = (target - sine.amplitude) / BLOCK as f64;
             if level < -140.0 && t > last {
@@ -1063,7 +1096,7 @@ impl Struck {
 
 impl AudioNode for Struck {
     const ID: u64 = 0x6d78_0070;
-    type Inputs = U0;
+    type Inputs = U2;
     type Outputs = U1;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -1078,9 +1111,13 @@ impl AudioNode for Struck {
         self.set_sample_rate(self.rate);
     }
 
-    fn tick(&mut self, _input: &Frame<f32, U0>) -> Frame<f32, U1> {
+    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+        self.wanted = (input[0] as f64, input[1] as f64);
         if self.sample == 0 && self.refill.is_some() {
             self.refill();
+        }
+        if self.sample == 0 && self.wanted != self.applied {
+            self.read();
         }
         if self.sample > 0 && self.sample.is_multiple_of(BLOCK) {
             self.read();
@@ -1116,6 +1153,7 @@ pub(super) fn held_note(
     vibrato: Option<f64>,
     legato: f64,
     breath: Option<Breath>,
+    expressed: bool,
     o: &Options,
     ctx: &mut Context,
 ) -> Note {
@@ -1165,9 +1203,14 @@ pub(super) fn held_note(
         dipped: false,
         last_vel: vel,
         deepen: 1.0,
-        bend: 0.0,
-        bent: f64::NEG_INFINITY,
-        bending: BEND,
+        slur: 0.0,
+        slurred: f64::NEG_INFINITY,
+        slurring: BEND,
+        expressed: if expressed {
+            (o.number("bend"), o.number("brightness"))
+        } else {
+            (0.0, 0.5)
+        },
         loud: 1.0,
         sounding: 1.0,
         register: breath.map_or(1.0, |b| {
@@ -1184,7 +1227,12 @@ pub(super) fn held_note(
     };
     let mut node = node;
     node.deepen = node.vary();
-    let notes = o.follow("note") | o.follow("vel");
+    let expressions = if expressed {
+        o.follow("bend") | o.follow("brightness")
+    } else {
+        Net::wrap(Box::new(dc((0.0, 0.5))))
+    };
+    let notes = o.follow("note") | o.follow("vel") | expressions;
     if !ready {
         node.set_sample_rate(DEFAULT_SR);
         return Note {
@@ -1369,9 +1417,11 @@ struct Sustained {
     dipped: bool,
     last_vel: f64,
     deepen: f64,
-    bend: f64,
-    bent: f64,
-    bending: f64,
+    slur: f64,
+    slurred: f64,
+    slurring: f64,
+    /// The bend and brightness at its input.
+    expressed: (f64, f64),
     loud: f64,
     sounding: f64,
     register: f64,
@@ -1497,6 +1547,9 @@ impl Sustained {
             sample: 0,
             gain: 1.0,
             refill: None,
+            wanted: (0.0, 0.5),
+            applied: (0.0, 0.5),
+            lowest: 0.0,
         };
         struck.set_sample_rate(self.rate);
         for mut sine in struck.sines {
@@ -1539,12 +1592,12 @@ impl Sustained {
         // A slurred step of a semitone or two glides, as a played Syrinx's do, while a leap moves within 8 ms, as its leaps take 0 to 7 between the quartiles, since a jump at once clicks; a tongue stops the air between the two.
         if from != From::Same {
             let step = (self.base - note).abs() <= 2.5;
-            self.bend = if from == From::Settled || !step {
+            self.slur = if from == From::Settled || !step {
                 self.base - note
             } else {
                 0.0
             };
-            self.bent = t;
+            self.slurred = t;
             let (u, v) = (self.uniform(), self.uniform());
             let drawn = (BEND
                 * (0.5
@@ -1552,7 +1605,7 @@ impl Sustained {
                     * (2.0 * std::f64::consts::PI * v).cos())
                 .exp())
             .clamp(0.015, 0.04);
-            self.bending = if from == From::Settled && step {
+            self.slurring = if from == From::Settled && step {
                 drawn
             } else {
                 LEAP
@@ -1724,10 +1777,14 @@ impl Sustained {
         } else {
             0.0
         };
-        let x = ((t - self.bent) / self.bending).clamp(0.0, 1.0);
-        let bend = self.bend * (0.5 + 0.5 * (std::f64::consts::PI * x).cos());
-        let ratio = 2f64
-            .powf((note - self.base + bend) / 12.0 + self.deepen * vibrato.depth * swing / 1200.0);
+        let x = ((t - self.slurred) / self.slurring).clamp(0.0, 1.0);
+        let slur = self.slur * (0.5 + 0.5 * (std::f64::consts::PI * x).cos());
+        let (bend, brightness) = self.expressed;
+        let ratio = 2f64.powf(
+            (note - self.base + slur + bend) / 12.0 + self.deepen * vibrato.depth * swing / 1200.0,
+        );
+        // A brightness away from 0.5 tilts the levels by up to 3 dB an octave either way.
+        let tilt = (brightness != 0.5).then_some((brightness - 0.5) * 6.0);
         let gone = self.let_go.is_some_and(|go| t > go);
         let gliding = ((self.gliding - t) * self.rate).max(BLOCK as f64);
         self.fading.retain(|s| s.amplitude > 0.0);
@@ -1757,10 +1814,13 @@ impl Sustained {
                     b.wander_above
                 }
             });
-            let level = self.level(shape, t, false)
+            let mut level = self.level(shape, t, false)
                 + self.voice.swings[self.sines[k].shape] * swing
                 + wandering * depth * drift
                 - catch;
+            if let Some(tilt) = tilt {
+                level += tilt * (freq / hz(self.base)).log2();
+            }
             let omega =
                 2.0 * std::f64::consts::PI * (freq * ratio).min(0.49 * self.rate) / self.rate;
             let sine = &mut self.sines[k];
@@ -1796,7 +1856,7 @@ impl Sustained {
 
 impl AudioNode for Sustained {
     const ID: u64 = 0x6d78_0071;
-    type Inputs = U2;
+    type Inputs = U4;
     type Outputs = U1;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -1816,7 +1876,8 @@ impl AudioNode for Sustained {
         self.set_sample_rate(self.rate);
     }
 
-    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+    fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U1> {
+        self.expressed = (input[2] as f64, input[3] as f64);
         if self.sample == 0 && self.refill.is_some() {
             self.refill();
         }
