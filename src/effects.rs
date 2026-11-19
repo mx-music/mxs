@@ -56,6 +56,7 @@ pub fn all() -> Vec<Effect> {
         flanger(),
         wobble(),
         ping_pong(),
+        pitch_shift(),
     ]
 }
 
@@ -642,6 +643,163 @@ fn ping_pong() -> Effect {
             (net(multipass::<U2>()) | o.follow("phase") | o.follow("feedback"))
                 >> net(An(PingPong::new(o.number("max_phase"), side)))
         })
+}
+
+fn pitch_shift() -> Effect {
+    Effect::new("pitch_shift")
+        .option(
+            Spec::float("pitch")
+                .default(0.0)
+                .range(-24.0, 24.0)
+                .doc("How many semitones the sound is shifted by; the effect delays the sound by up to 40 ms."),
+        )
+        .tail(0.04)
+        .build(|o, _| {
+            per_channel(|| (net(pass()) | o.follow("pitch")) >> net(An(PitchShift::new())))
+        })
+}
+
+/// The longest the pitch shift delays its sound, in seconds.
+const SHIFT_DELAY: f64 = 0.04;
+/// How far later than its nominal delay, in seconds, a grain of the pitch shift may start to continue the grain before.
+const SHIFT_REACH: f64 = 0.005;
+/// The frames before a read point the pitch shift compares, every other one, to match a grain to the one before.
+const SHIFT_MATCH: usize = 256;
+
+#[derive(Clone, Copy, Default)]
+struct ShiftGrain {
+    delay: f32,
+    age: usize,
+    length: usize,
+}
+
+/// Shifts the pitch of its input by reading a delay line at another speed in Hann-windowed grains, half overlapping, each started at the delay where what it has just read best matches the grain before, so the waveform runs on unbroken; the sound is delayed by at most `SHIFT_DELAY`.
+/// Inputs: sound, pitch in semitones.
+#[derive(Clone)]
+struct PitchShift {
+    buffer: Vec<f32>,
+    at: usize,
+    grains: [ShiftGrain; 3],
+    until: usize,
+    rate: f32,
+}
+
+impl PitchShift {
+    fn new() -> Self {
+        let mut shift = PitchShift {
+            buffer: Vec::new(),
+            at: 0,
+            grains: [ShiftGrain::default(); 3],
+            until: 0,
+            rate: 0.0,
+        };
+        shift.set_sample_rate(DEFAULT_SR);
+        shift
+    }
+
+    fn read(&self, frames: f32) -> f32 {
+        let n = self.buffer.len() as isize;
+        let whole = frames.floor();
+        let fraction = frames - whole;
+        let back =
+            |k: isize| self.buffer[(self.at as isize - whole as isize - k).rem_euclid(n) as usize];
+        back(0) + (back(1) - back(0)) * fraction
+    }
+
+    /// The delay from `nominal` to `SHIFT_REACH` later whose last frames best match those before `from`, the delay of the grain to continue; the earliest of equal matches.
+    fn matched(&self, from: f32, nominal: f32) -> f32 {
+        let reach = (SHIFT_REACH as f32 * self.rate) as usize;
+        let score = |delay: f32| {
+            let (mut both, mut energy) = (0.0f32, 1e-9f32);
+            for i in (0..SHIFT_MATCH).step_by(2) {
+                let b = self.read(delay + i as f32);
+                both += self.read(from + i as f32) * b;
+                energy += b * b;
+            }
+            both / energy.sqrt()
+        };
+        let start = nominal.floor() + from.fract();
+        let mut best = (start, score(start));
+        for k in 1..=reach {
+            let delay = start + k as f32;
+            let found = score(delay);
+            if found > best.1 + 1e-6 {
+                best = (delay, found);
+            }
+        }
+        best.0
+    }
+}
+
+impl AudioNode for PitchShift {
+    const ID: u64 = 0x6d78_0075;
+    type Inputs = U2;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+        self.buffer = vec![0.0; (SHIFT_DELAY * sample_rate) as usize + SHIFT_MATCH + 16];
+        self.at = 0;
+        self.grains = [ShiftGrain::default(); 3];
+        self.until = 0;
+    }
+
+    fn reset(&mut self) {
+        self.buffer.fill(0.0);
+        self.grains = [ShiftGrain::default(); 3];
+        self.until = 0;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+        self.at = (self.at + 1) % self.buffer.len();
+        self.buffer[self.at] = input[0];
+        let speed = 2f32.powf(input[1] / 12.0);
+        if self.until == 0 {
+            let most = SHIFT_DELAY as f32 * self.rate;
+            let reach = SHIFT_REACH as f32 * self.rate;
+            // A grain read faster than the sound arrives starts its delay high enough to end it at the shortest.
+            let length = if speed > 1.0 {
+                (most * 0.95).min((most - reach - 4.0) / (speed - 1.0))
+            } else {
+                most * 0.95
+            }
+            .max(32.0) as usize;
+            let nominal = 2.0 + (speed - 1.0).max(0.0) * length as f32;
+            let youngest = self
+                .grains
+                .iter()
+                .filter(|g| g.age < g.length)
+                .min_by_key(|g| g.age)
+                .map(|g| g.delay);
+            let delay = match youngest {
+                Some(from) => self.matched(from, nominal),
+                None => nominal,
+            };
+            if let Some(free) = self.grains.iter_mut().find(|g| g.age >= g.length) {
+                *free = ShiftGrain {
+                    delay,
+                    age: 0,
+                    length,
+                };
+            }
+            self.until = length / 2;
+        }
+        self.until -= 1;
+        let mut out = 0.0;
+        for k in 0..self.grains.len() {
+            let grain = self.grains[k];
+            if grain.age >= grain.length {
+                continue;
+            }
+            let phase = grain.age as f32 / grain.length as f32;
+            let window = 0.5 - 0.5 * (TAU * phase).cos();
+            out += window * self.read(grain.delay);
+            let grain = &mut self.grains[k];
+            grain.delay += 1.0 - speed;
+            grain.age += 1;
+        }
+        [out].into()
+    }
 }
 
 /// A delay of the input that feeds back on itself, by as much as dies away 60 dB over its decay; a negative decay feeds it back inverted.

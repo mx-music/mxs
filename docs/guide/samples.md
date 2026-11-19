@@ -50,6 +50,8 @@ The sample player takes these options, besides `amp` and `pan`.
 | Option | What it does |
 | --- | --- |
 | `rate` | How fast the sample plays, where 1 is its own speed and pitch; backwards when below 0. It can be changed while the sample plays. |
+| `stretch` | What its length is multiplied by, its pitch kept. It can be changed while the sample plays. |
+| `pitch` | How many semitones it is shifted by, its length kept. It can be changed while the sample plays. |
 | `start`, `finish` | Where it starts and finishes, as fractions of its length. |
 | `attack`, `decay`, `sustain`, `release` and their levels | An envelope, as a note's. `sustain` is the rest of the sample unless given. |
 | `normalize` | 1 scales the sample so that its file's loudest moment reaches full scale. |

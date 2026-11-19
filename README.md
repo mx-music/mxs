@@ -181,6 +181,8 @@ MXS_CATALOG=write cargo test --release --test catalog
 
 mxs is under the [MIT license](https://github.com/mx-music/mxs/blob/main/LICENSE).
 
+A sample's stretch and pitch and the `pitch_shift` effect are written for mxs from published methods, WSOLA (Verhelst and Roelands, 1993) and overlapping grains of a delay line, and take no code from any library under the GPL or LGPL, such as Rubber Band or SoundTouch.
+
 [architecture]: docs/guide/architecture.md
 [events]: docs/guide/events.md
 [signal_path]: docs/guide/signal_path.md

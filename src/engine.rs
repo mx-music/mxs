@@ -10,7 +10,7 @@ use crate::mixer::{
 };
 use crate::options::{Context, Control, Options};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
-use crate::sample::{Grains, Player, SampleData, Samples};
+use crate::sample::{Grains, Player, SampleData, Samples, Stretcher};
 use crate::spec::{Kind, Spec, Value};
 use crate::synth::{BuildNote, Effect, Given, Note, Ready, Synth};
 use crate::time::{Tempo, TempoMap};
@@ -1851,6 +1851,9 @@ impl Engine {
             .clone();
         let (owner, specs) = self.sampler.clone();
         let values = self.check(&owner, &specs, given)?;
+        let stretched = given.iter().any(|(name, _)| {
+            ["stretch", "pitch", "stretch_slide", "pitch_slide"].contains(&name.as_str())
+        });
         Ok(SoundDraft {
             id,
             at,
@@ -1859,7 +1862,7 @@ impl Engine {
             out,
             input: None,
             options: Options::new(owner, specs, values),
-            make: Make::Sample(data),
+            make: Make::Sample(data, stretched),
             ready: false,
         })
     }
@@ -1955,7 +1958,8 @@ struct SoundDraft {
 
 enum Make {
     Note(Arc<BuildNote>),
-    Sample(Arc<SampleData>),
+    /// A sample, and whether its event named a stretch or a pitch.
+    Sample(Arc<SampleData>, bool),
     Grains(Arc<SampleData>),
     /// Live input of this many channels.
     Input(usize),
@@ -1996,7 +2000,7 @@ fn build(draft: SoundDraft, rate: f64) -> Result<Built, Error> {
     };
     let note = match draft.make {
         Make::Note(build) => build(options, &mut ctx),
-        Make::Sample(data) => sample_note(data, options),
+        Make::Sample(data, stretched) => sample_note(data, stretched, options),
         Make::Grains(data) => grains_note(data, options),
         Make::Input(1) => Note::rings(Net::wrap(Box::new(pass())), f64::INFINITY),
         Make::Input(_) => Note::rings(Net::wrap(Box::new(multipass::<U2>())), f64::INFINITY),
@@ -3176,6 +3180,8 @@ fn blending_specs() -> Vec<Spec> {
 fn sample_specs() -> Vec<Spec> {
     vec![
         Spec::float("rate").default(1.0).doc("How fast the sample plays, backwards when below 0."),
+        Spec::float("stretch").default(1.0).range(0.01, 100.0).doc("What its length is multiplied by, its pitch kept."),
+        Spec::float("pitch").default(0.0).range(-48.0, 48.0).doc("How many semitones it is shifted by, its length kept."),
         Spec::float("start").default(0.0).range(0.0, 1.0).doc("Where it starts, as a fraction of its length."),
         Spec::float("finish").default(1.0).range(0.0, 1.0).doc("Where it finishes, as a fraction of its length."),
         Spec::beats("attack").default(0.0).range(0.0, f64::INFINITY).doc("How long it takes to rise to attack_level."),
@@ -3233,11 +3239,17 @@ fn grains_note(data: Arc<SampleData>, options: &Options) -> Note {
     Note::rings(grains * level, attack + sustain + release)
 }
 
-fn sample_note(data: Arc<SampleData>, options: &Options) -> Note {
+/// A sample's note; one whose event named a stretch or a pitch reads through a [`Stretcher`], and one that named neither through a [`Player`].
+fn sample_note(data: Arc<SampleData>, stretched: bool, options: &Options) -> Note {
     let rate = options.number("rate");
     let (from, to) = (options.number("start"), options.number("finish"));
     let span = (to - from).abs() * data.frames() as f64 / data.rate;
-    let length = span / rate.abs().max(0.001);
+    let stretch = if stretched {
+        options.number("stretch")
+    } else {
+        1.0
+    };
+    let length = span / rate.abs().max(0.001) * stretch;
     let mono = data.channels.len() == 1;
     // A mono sample is placed at equal power, so it is raised by as much again as its pan lowers it at the centre.
     let centre = if mono { std::f32::consts::SQRT_2 } else { 1.0 };
@@ -3246,9 +3258,12 @@ fn sample_note(data: Arc<SampleData>, options: &Options) -> Note {
     } else {
         1.0
     };
-    let player = (options.follow("rate")
-        >> Net::wrap(Box::new(An(Player::new(data, from, to, rate)))))
-        * gain;
+    let player = if stretched {
+        (options.follow("rate") | options.follow("stretch") | options.follow("pitch"))
+            >> Net::wrap(Box::new(An(Stretcher::new(data, from, to, rate))))
+    } else {
+        options.follow("rate") >> Net::wrap(Box::new(An(Player::new(data, from, to, rate))))
+    } * gain;
     let player = if mono {
         player >> Net::wrap(Box::new(pass() | sink()))
     } else {
@@ -3695,5 +3710,58 @@ mod tests {
         let played = 144_000..240_000 - 480;
         assert_eq!(left[played.clone()], expected[48_000..144_000 - 480]);
         assert_eq!(left[played.clone()], right[played]);
+    }
+
+    #[test]
+    fn a_live_input_through_the_pitch_shift_at_5_semitones_rises_to_587_hz_within_50_ms() {
+        let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 1);
+        crate::effects::all()
+            .into_iter()
+            .for_each(|e| engine.register_effect(e));
+        let shift = (
+            "pitch_shift".to_string(),
+            vec![("pitch".to_string(), Value::Number(5.0))],
+        );
+        let chain = engine.start_effects(&[shift]).unwrap();
+        let input = Event::Input {
+            id: None,
+            input: 0,
+            channels: 1,
+            options: vec![],
+            chain: Some(chain),
+        };
+        engine.play(&[(0.0, input)]).unwrap();
+        let tone = |i: usize| {
+            let t = i as f64 / 48_000.0;
+            if t < 0.5 {
+                0.0
+            } else {
+                0.5 * (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32
+            }
+        };
+        let (left, _) = render_signal(&mut engine, &mut feed, 2.5, tone);
+        let heard = left.iter().position(|x| x.abs() > 0.01).unwrap();
+        let delay = heard as f64 / 48_000.0 - 0.5;
+        assert!(delay <= 0.05, "delayed {delay} seconds");
+        let steady = &left[72_000..120_000];
+        let level = |hz: f64| {
+            let w = 2.0 * std::f64::consts::PI * hz / 48_000.0;
+            let n = steady.len() as f64;
+            let (mut s1, mut s2) = (0.0, 0.0);
+            for (i, &x) in steady.iter().enumerate() {
+                let window = 0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / n).cos();
+                let s = x as f64 * window + 2.0 * w.cos() * s1 - s2;
+                s2 = s1;
+                s1 = s;
+            }
+            s1 * s1 + s2 * s2 - 2.0 * w.cos() * s1 * s2
+        };
+        let found = (0..2000)
+            .map(|k| 577.0 + k as f64 * 0.01)
+            .max_by(|a, b| level(*a).total_cmp(&level(*b)))
+            .unwrap();
+        let expected = 440.0 * 2f64.powf(5.0 / 12.0);
+        let cents = 1200.0 * (found / expected).log2();
+        assert!(cents.abs() < 2.0, "{found} Hz");
     }
 }

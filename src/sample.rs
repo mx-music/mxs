@@ -573,3 +573,289 @@ impl AudioNode for Grains {
         [left, right].into()
     }
 }
+
+/// The frames a stretched sample's grains are compared over, and how far either way a grain may move to match the one before.
+const MATCH: usize = 512;
+/// The frames of a sample before an onset that the slice starting at the onset reads first.
+const PREROLL: f64 = 32.0;
+/// The frames over which a slice fades out when an onset cuts it off.
+const CUT: f32 = 96.0;
+
+#[derive(Clone, Copy)]
+struct Slice {
+    position: f64,
+    age: usize,
+    alive: bool,
+    /// The position it fades out before, so it never reads an onset that a slice of its own starts at.
+    limit: f64,
+    /// Its level, lowered over `CUT` frames once an onset cuts it off.
+    level: f32,
+    cut: bool,
+}
+
+impl Default for Slice {
+    fn default() -> Slice {
+        Slice {
+            position: 0.0,
+            age: 0,
+            alive: false,
+            limit: f64::INFINITY,
+            level: 1.0,
+            cut: false,
+        }
+    }
+}
+
+/// The frames from `low` to `high` at which the sample's channels, summed, rise by 10 dB over the 512 frames before in a step of 64, at least 50 ms apart.
+fn onsets(data: &SampleData, low: f64, high: f64) -> Vec<f64> {
+    const STEP: usize = 64;
+    let (low, high) = (low as usize, Ord::min(high as usize, data.frames()));
+    let summed = |frame: usize| {
+        data.channels
+            .iter()
+            .map(|c| c.get(frame).unwrap_or(0.0))
+            .sum::<f32>()
+    };
+    let gap = 0.05 * data.rate;
+    let mut found: Vec<f64> = Vec::new();
+    let mut before: std::collections::VecDeque<f32> = std::collections::VecDeque::new();
+    let mut start = low;
+    while start + STEP <= high {
+        let step: Vec<f32> = (start..start + STEP).map(summed).collect();
+        let energy = step.iter().map(|x| x * x).sum::<f32>() / STEP as f32;
+        let mean = if before.is_empty() {
+            0.0
+        } else {
+            before.iter().sum::<f32>() / before.len() as f32
+        };
+        if before.len() == 8 {
+            before.pop_front();
+        }
+        before.push_back(energy);
+        let apart = found.last().is_none_or(|&last| start as f64 - last >= gap);
+        if energy > 1e-5 && energy > 10.0 * mean && apart {
+            let peak = step.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+            let within = step.iter().position(|x| x.abs() >= peak / 2.0).unwrap_or(0);
+            found.push((start + within) as f64);
+        }
+        start += STEP;
+    }
+    found
+}
+
+/// Reads a sample as [`Player`] does, its length multiplied by a stretch and its pitch shifted by semitones, each with the rate.
+/// Until the stretch leaves 1 or the pitch leaves 0 it reads as the player does, sample for sample; from then on it overlaps Hann-windowed slices every 21 ms, each moved by up to `MATCH` frames to where it best continues the slice before, by WSOLA, the method of Verhelst and Roelands (1993).
+/// Its inputs are the rate, the stretch and the pitch.
+#[derive(Clone)]
+pub(crate) struct Stretcher {
+    data: Arc<SampleData>,
+    position: f64,
+    low: f64,
+    high: f64,
+    direction: f64,
+    step: f64,
+    plain: bool,
+    slices: [Slice; 6],
+    hop: usize,
+    until: usize,
+    onsets: Vec<f64>,
+    /// The first onset not yet reached.
+    next: usize,
+}
+
+impl Stretcher {
+    pub fn new(data: Arc<SampleData>, from: f64, to: f64, rate: f64) -> Self {
+        let frames = data.frames() as f64;
+        let (from, to) = (from.clamp(0.0, 1.0) * frames, to.clamp(0.0, 1.0) * frames);
+        let (low, high) = (from.min(to), from.max(to));
+        let direction = if to >= from { 1.0 } else { -1.0 };
+        let position = if (to - from) * rate >= 0.0 { low } else { high };
+        let onsets = onsets(&data, low, high);
+        let next = onsets
+            .iter()
+            .position(|&o| o - PREROLL > position)
+            .unwrap_or(onsets.len());
+        Stretcher {
+            step: data.rate / DEFAULT_SR,
+            data,
+            position,
+            low,
+            high,
+            direction,
+            plain: true,
+            slices: [Slice::default(); 6],
+            hop: 1024,
+            until: 0,
+            onsets,
+            next,
+        }
+    }
+
+    fn at(&self, channel: usize, position: f64) -> f32 {
+        if position < self.low || position >= self.high {
+            return 0.0;
+        }
+        let samples = &self.data.channels[Ord::min(channel, self.data.channels.len() - 1)];
+        let i = position.floor();
+        let fraction = (position - i) as f32;
+        let i = i as usize;
+        let a = samples.get(i).unwrap_or(0.0);
+        let b = samples.get(i + 1).unwrap_or(0.0);
+        a + (b - a) * fraction
+    }
+
+    /// The sample's channels summed at a whole frame, or silence outside it.
+    fn summed(&self, frame: i64) -> f32 {
+        if frame < 0 {
+            return 0.0;
+        }
+        let frame = frame as usize;
+        self.data
+            .channels
+            .iter()
+            .map(|c| c.get(frame).unwrap_or(0.0))
+            .sum()
+    }
+
+    /// Where near `target` a slice best continues the slice whose reading has reached `from`; the nearest of equal matches, so silence moves nothing.
+    fn aligned(&self, from: f64, target: f64) -> f64 {
+        let (from_frame, target_frame) = (from.floor() as i64, target.floor() as i64);
+        let reach = MATCH as i64;
+        let score = |shift: i64| {
+            let (mut both, mut energy) = (0.0f32, 1e-9f32);
+            for i in (0..reach).step_by(2) {
+                let b = self.summed(target_frame + shift + i);
+                both += self.summed(from_frame + i) * b;
+                energy += b * b;
+            }
+            both / energy.sqrt()
+        };
+        let mut best = (0, score(0));
+        for distance in 1..=reach {
+            for shift in [distance, -distance] {
+                let found = score(shift);
+                if found > best.1 + 1e-6 {
+                    best = (shift, found);
+                }
+            }
+        }
+        (target_frame + best.0) as f64 + from.fract()
+    }
+
+    /// The position a slice fades out before when the onset numbered `next` is the first it has not reached.
+    fn limit(&self, next: usize) -> f64 {
+        self.onsets.get(next).map_or(f64::INFINITY, |o| o - PREROLL)
+    }
+
+    fn window(&self, age: usize) -> f32 {
+        let phase = age as f32 / (2 * self.hop) as f32;
+        0.5 - 0.5 * (std::f32::consts::TAU * phase).cos()
+    }
+}
+
+impl AudioNode for Stretcher {
+    const ID: u64 = 0x6d78_0074;
+    type Inputs = U3;
+    type Outputs = U2;
+
+    fn set_sample_rate(&mut self, rate: f64) {
+        self.step = self.data.rate / rate;
+        self.hop = Ord::max((rate * 1024.0 / 48_000.0).round() as usize, 16);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U2> {
+        if self.plain && (input[1] != 1.0 || input[2] != 0.0) {
+            self.plain = false;
+            // The slice the plain reading becomes is at the top of its window, so the next slice rises as it falls.
+            self.slices[0] = Slice {
+                position: self.position,
+                age: self.hop,
+                alive: true,
+                limit: self.limit(self.next),
+                ..Slice::default()
+            };
+            self.until = 0;
+        }
+        if self.plain {
+            let inside = self.position >= self.low && self.position < self.high;
+            let frame = if inside {
+                [self.at(0, self.position), self.at(1, self.position)]
+            } else {
+                [0.0, 0.0]
+            };
+            self.position += input[0] as f64 * self.step * self.direction;
+            return frame.into();
+        }
+        let speed = input[0] as f64 * self.step * self.direction;
+        let stretch = f64::from(input[1]).max(0.01);
+        let shift = 2f64.powf(f64::from(input[2]) / 12.0);
+        // At an onset the slices playing fade out and one starts at the top of its window just before it, so the hit starts at its stretched time at its full level.
+        if let Some(&onset) = self.onsets.get(self.next)
+            && speed > 0.0
+            && self.position >= onset - PREROLL
+        {
+            self.slices
+                .iter_mut()
+                .filter(|s| s.alive)
+                .for_each(|s| s.cut = true);
+            self.next += 1;
+            let limit = self.limit(self.next);
+            if let Some(free) = self.slices.iter_mut().find(|s| !s.alive) {
+                *free = Slice {
+                    position: onset - PREROLL,
+                    age: self.hop,
+                    alive: true,
+                    limit,
+                    ..Slice::default()
+                };
+            }
+            self.until = 0;
+        }
+        if self.until == 0 {
+            let youngest = self
+                .slices
+                .iter()
+                .filter(|s| s.alive && !s.cut)
+                .min_by_key(|s| s.age)
+                .map(|s| s.position);
+            let start = match youngest {
+                Some(from) => self.aligned(from, self.position),
+                None => self.position,
+            };
+            let limit = self.limit(self.next);
+            if let Some(free) = self.slices.iter_mut().find(|s| !s.alive) {
+                *free = Slice {
+                    position: start,
+                    age: 0,
+                    alive: true,
+                    limit,
+                    ..Slice::default()
+                };
+            }
+            self.until = self.hop;
+        }
+        self.until -= 1;
+        let reading = (speed * shift).abs().max(1e-6);
+        let (mut left, mut right) = (0.0, 0.0);
+        for k in 0..self.slices.len() {
+            let slice = self.slices[k];
+            if !slice.alive {
+                continue;
+            }
+            let before =
+                ((slice.limit - slice.position) / (f64::from(CUT) * reading)).clamp(0.0, 1.0);
+            let level = self.window(slice.age) * slice.level * before as f32;
+            left += self.at(0, slice.position) * level;
+            right += self.at(1, slice.position) * level;
+            let slice = &mut self.slices[k];
+            slice.position += speed * shift;
+            slice.age += 1;
+            if slice.cut {
+                slice.level = (slice.level - 1.0 / CUT).max(0.0);
+            }
+            slice.alive = slice.age < 2 * self.hop && slice.level > 0.0;
+        }
+        self.position += speed / stretch;
+        [left, right].into()
+    }
+}

@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong).
+[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift).
 
 ## What every effect takes
 
@@ -152,4 +152,10 @@ Besides its own options, every effect takes these.
 | `feedback` | a number, 0 to 0.999 | 0.5 | How much of each echo the next keeps. |
 | `max_phase` | seconds, 0.01 to 60 | 1 | The longest phase it can change to. |
 | `pan_start` | a number, -1 to 1 | 1 | The side of the first echo, from -1, left, to 1, right. |
+
+### `pitch_shift`
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `pitch` | a number, -24 to 24 | 0 | How many semitones the sound is shifted by; the effect delays the sound by up to 40 ms. |
 
