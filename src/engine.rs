@@ -14,6 +14,7 @@ use crate::sample::{Grains, Player, SampleData, Samples, Stretcher};
 use crate::spec::{Kind, Spec, Value};
 use crate::synth::{BuildNote, Effect, Given, Note, Ready, Synth};
 use crate::time::{Tempo, TempoMap};
+use crate::workers::{Pool, performance_cores};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use fundsp::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -36,6 +37,11 @@ const TICK: Duration = Duration::from_millis(2);
 const END_FADE: f64 = 0.01;
 /// How many notes sound at once unless the caller sets another limit: what one core fills in time with the berimbau, the costliest of the crate's struck instruments.
 pub const VOICES: usize = 48;
+
+/// The default limit on notes at once for an engine filling voices on `workers` threads: [`VOICES`] on one, rising by three fifths of it for each more, so 192 on six.
+pub fn voice_limit_for(workers: usize) -> usize {
+    VOICES * (5 + 3 * workers.saturating_sub(1)) / 5
+}
 
 /// What a change applies to.
 #[derive(Clone, Debug)]
@@ -432,6 +438,8 @@ pub struct Engine {
     /// The MIDI inputs played on parts, by the input's name, or none for every input.
     #[cfg(feature = "keys")]
     players: HashMap<Option<String>, midi::Player>,
+    /// How many threads fill voices, counting the one that renders.
+    workers: usize,
 }
 
 impl Engine {
@@ -594,7 +602,7 @@ impl Engine {
             rate,
             delay_ms: None,
         });
-        Engine {
+        let mut engine = Engine {
             rate,
             synths: HashMap::new(),
             effects: HashMap::new(),
@@ -653,7 +661,10 @@ impl Engine {
             output,
             #[cfg(feature = "keys")]
             players: HashMap::new(),
-        }
+            workers: 1,
+        };
+        engine.set_workers(performance_cores());
+        engine
     }
 
     /// The rate the engine plays and renders at, in Hz.
@@ -848,6 +859,28 @@ impl Engine {
     /// Subscribing changes no sample of the output, and a kind nobody subscribes to is not worked out.
     pub fn subscribe(&self, topics: &[Topic]) -> Reports {
         self.hub.subscribe(topics)
+    }
+
+    /// Sets how many threads fill the voices of a block, counting the one that renders: one fills them all there, as an engine of one thread does.
+    /// An engine starts with as many as the machine has performance cores; workers take over once eight voices or more sound at once, the output is the same sample for sample whatever their number, and a limit on voices left at its default follows [`voice_limit_for`].
+    pub fn set_workers(&mut self, workers: usize) {
+        let workers = workers.clamp(1, 64);
+        let limit = &self.voices.limit;
+        let _ = limit.compare_exchange(
+            voice_limit_for(self.workers),
+            voice_limit_for(workers),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        );
+        self.workers = workers;
+        let _ = self
+            .book()
+            .send(Command::Workers(Box::new(Pool::new(workers))));
+    }
+
+    /// How many threads fill voices, counting the one that renders.
+    pub fn workers(&self) -> usize {
+        self.workers
     }
 
     /// Sets how many notes sound at once; a note past it takes the place of the quietest, which fades out over 10 ms.
@@ -2195,6 +2228,7 @@ impl Book {
             fade,
             level: 0.0,
             stolen: false,
+            slot: None,
         };
         let chain = match built.out {
             Out::Chain(key) => Some(key),

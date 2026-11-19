@@ -662,12 +662,12 @@ fn two_hundred_berimbau_strokes_at_once_are_cut_to_the_default_limit() {
         .collect();
     engine.play(&strokes).unwrap();
     engine.render(0.1).unwrap();
-    let stolen = 200 - mxs::VOICES;
+    let limit = mxs::voice_limit_for(engine.workers());
+    let stolen = 200 - limit;
     assert_eq!(
         engine.warnings(),
         [format!(
-            "{stolen} notes were stolen to keep to {} at once",
-            mxs::VOICES
+            "{stolen} notes were stolen to keep to {limit} at once"
         )]
     );
 }

@@ -738,3 +738,40 @@ fn creating_a_60_second_stereo_buffer_while_piano_plays_makes_no_event_late() {
         "{warnings:?}"
     );
 }
+
+#[test]
+#[ignore]
+fn a_texture_of_440_held_piano_notes_plays_for_10_minutes_with_no_buffer_late() {
+    let mut engine = live(512);
+    engine.set_voice_limit(500);
+    std::thread::sleep(Duration::from_millis(500));
+    let start = engine.now() + 0.2;
+    let notes: Vec<(f64, Event)> = (0..440)
+        .map(|i| {
+            let note = 36.0 + (i % 48) as f64;
+            (
+                start,
+                Event::note(None, "piano", &[("note", note), ("sustain", 620.0)]),
+            )
+        })
+        .collect();
+    for batch in notes.chunks(200) {
+        engine.play(batch).unwrap();
+    }
+    std::thread::sleep(Duration::from_secs(5));
+    engine.load();
+    engine.warnings();
+    let mut late = 0;
+    let mut worst: f64 = 0.0;
+    for _ in 0..60 {
+        std::thread::sleep(Duration::from_secs(10));
+        let load = engine.load();
+        late += load.late;
+        worst = worst.max(load.worst);
+    }
+    println!(
+        "{late} buffers late in 10 minutes, the worst {worst:.2} of a buffer's time on {} workers",
+        engine.workers()
+    );
+    assert_eq!(late, 0);
+}

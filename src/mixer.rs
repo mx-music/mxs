@@ -4,6 +4,7 @@
 use crate::options::Control;
 use crate::report::{PartSpan, Tap};
 use crate::sample::SampleData;
+use crate::workers::{FEWEST, Pool};
 use fundsp::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -151,6 +152,20 @@ pub(crate) struct Voice {
     /// The loudest sample of its last block, which picks the quietest note to steal.
     pub level: f32,
     pub stolen: bool,
+    /// Where the workers filled its sound in the block being filled, if they did.
+    pub slot: Option<usize>,
+}
+
+/// The frames of the block from `now` to `end` that `voice` fills, from and to.
+fn span(voice: &Voice, now: u64, end: u64) -> (usize, usize) {
+    // Live input starts at the block it falls in, so it reads the input from the block's first frame.
+    let from = if voice.input.is_some() {
+        0
+    } else {
+        voice.start.saturating_sub(now) as usize
+    };
+    let to = (Ord::min(voice.end, end) - Ord::min(now, voice.end)) as usize;
+    (from, Ord::max(to, from))
 }
 
 /// A part: the sounds that play into it, its effects, and after them its gain, mute and solo.
@@ -280,6 +295,7 @@ pub(crate) enum Command {
         id: u64,
         at: u64,
     },
+    Workers(Box<Pool>),
 }
 
 // Held only so the engine drops them, off the audio thread.
@@ -290,6 +306,7 @@ pub(crate) enum Garbage {
     Chain(Box<Chain>),
     Recorder(Box<Recorder>),
     Listener(Box<Listener>),
+    Pool(Box<Pool>),
 }
 
 pub(crate) struct Mixer {
@@ -311,6 +328,7 @@ pub(crate) struct Mixer {
     output_recorder: Option<Box<Recorder>>,
     #[allow(clippy::vec_box)]
     listeners: Vec<Box<Listener>>,
+    pool: Option<Box<Pool>>,
     now: u64,
     clock: Arc<AtomicU64>,
     limit: Arc<Voices>,
@@ -339,10 +357,18 @@ impl Mixer {
             recorder: None,
             output_recorder: None,
             listeners: Vec::with_capacity(64),
+            pool: None,
             now: clock.load(Ordering::Acquire),
             clock,
             limit,
             reports: None,
+        }
+    }
+
+    /// Fills voices on `pool`'s workers beside the thread that renders.
+    pub fn work_on(&mut self, pool: Box<Pool>) {
+        if let Some(old) = self.pool.replace(pool) {
+            let _ = self.garbage.push(Garbage::Pool(old));
         }
     }
 
@@ -448,6 +474,7 @@ impl Mixer {
                         let _ = self.garbage.push(Garbage::Listener(listener));
                     }
                 }
+                Command::Workers(pool) => self.work_on(pool),
                 Command::StopListening { id, at } => {
                     if let Some(listener) = self.listeners.iter_mut().find(|l| l.id == id) {
                         listener.stop = Some(Ord::max(at, self.now));
@@ -518,6 +545,31 @@ impl Mixer {
         self.tap.clear();
         self.read_input(n);
 
+        // Workers fill the voices that play no live input, each into a slot of its own; they are added below in the order of the voices, as on one thread.
+        let parallel = match &mut self.pool {
+            Some(pool) if pool.workers() > 1 => {
+                let now = self.now;
+                let filled = self
+                    .voices
+                    .iter()
+                    .filter(|v| v.input.is_none() && v.start < end)
+                    .count();
+                if filled >= FEWEST {
+                    pool.begin();
+                    for voice in self.voices.iter_mut() {
+                        let (from, to) = span(voice, now, end);
+                        voice.slot = None;
+                        if to > from && voice.input.is_none() {
+                            voice.slot = pool.add(voice, to - from);
+                        }
+                    }
+                    pool.fill();
+                }
+                filled >= FEWEST
+            }
+            _ => false,
+        };
+
         let mut i = 0;
         while i < self.voices.len() {
             let voice = &mut self.voices[i];
@@ -525,24 +577,24 @@ impl Mixer {
                 i += 1;
                 continue;
             }
-            // Live input starts at the block it falls in, so it reads the input from the block's first frame.
-            let from = if voice.input.is_some() {
-                0
-            } else {
-                voice.start.saturating_sub(self.now) as usize
-            };
-            let to = (Ord::min(voice.end, end) - Ord::min(self.now, voice.end)) as usize;
-            let to = Ord::max(to, from);
+            let (from, to) = span(voice, self.now, end);
             if to > from {
                 let length = to - from;
-                let inputs = self.inputs.buffer_ref();
-                let input = match voice.input {
-                    Some((first, count)) => inputs.subset(first, count),
-                    None => BufferRef::empty(),
+                let slot = voice.slot.filter(|_| parallel);
+                if slot.is_none() {
+                    let inputs = self.inputs.buffer_ref();
+                    let input = match voice.input {
+                        Some((first, count)) => inputs.subset(first, count),
+                        None => BufferRef::empty(),
+                    };
+                    voice
+                        .unit
+                        .process(length, &input, &mut self.buffer.buffer_mut());
+                }
+                let buffer = match (slot, &self.pool) {
+                    (Some(slot), Some(pool)) => pool.output(slot),
+                    _ => &self.buffer,
                 };
-                voice
-                    .unit
-                    .process(length, &input, &mut self.buffer.buffer_mut());
                 let target = match voice.out {
                     Out::Chain(key) => self
                         .chains
@@ -567,8 +619,8 @@ impl Mixer {
                     } else {
                         1.0
                     };
-                    let l = self.buffer.at_f32(0, k) * gain;
-                    let r = self.buffer.at_f32(1, k) * gain;
+                    let l = buffer.at_f32(0, k) * gain;
+                    let r = buffer.at_f32(1, k) * gain;
                     loudest = loudest.max(l.abs()).max(r.abs());
                     match target {
                         Some(Target::Nowhere) => {}

@@ -33,9 +33,10 @@ mod spec;
 mod synth;
 pub mod synths;
 mod time;
+mod workers;
 
 pub use device::{Device, Settings, devices};
-pub use engine::{Engine, Error, Event, Origin, Pass, Source, Target, VOICES};
+pub use engine::{Engine, Error, Event, Origin, Pass, Source, Target, VOICES, voice_limit_for};
 pub use load::Load;
 pub use options::{Context, Options};
 pub use report::{BANDS, FLOOR, Levels, PartLevels, Report, Reports, Topic, WAVE};
