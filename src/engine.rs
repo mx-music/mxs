@@ -1783,9 +1783,11 @@ impl Engine {
                 std::thread::sleep(Duration::from_millis(1));
             }
             let first = clock.load(Ordering::Acquire);
-            let began = Instant::now();
+            // WebAssembly without a host has no clock, so an offline render there records no load.
+            let began = (!cfg!(target_family = "wasm")).then(Instant::now);
             mixer.render(left, right);
-            meter.record(began.elapsed(), left.len(), rate, false);
+            let took = began.map_or(Duration::ZERO, |began| began.elapsed());
+            meter.record(took, left.len(), rate, false);
             if let Some(tapped) = tapped {
                 tapped.report(analyser, &hub);
             }
