@@ -1,4 +1,4 @@
-//! Playing one instrument from MIDI messages: a key starts a note at its pitch and loudness, letting it up lets the note go, the sustain pedal holds what is sounding, and the pitch bend wheel bends it.
+//! Playing one instrument from MIDI messages: a key starts a note at its pitch and loudness, held until the key comes up, which lets the note go, the sustain pedal holds what is sounding, and the pitch bend wheel bends it.
 //!
 //! A [`Keyboard`] takes the bytes of each message and returns the events to hand to [`Engine::play`](crate::Engine::play), so it works with whatever reads the MIDI port.
 //! [The guide to playing live](crate::guide::live) has a program, and the `keys` program of the repository reads a port with the `midir` crate.
@@ -10,8 +10,6 @@ use std::collections::HashMap;
 pub const BEND: f64 = 2.0;
 /// How long a note glides to each new position of the wheel, smoothing the steps between its messages.
 const BEND_GLIDE: f64 = 0.01;
-/// How long a note holds while its key is down, longer than anyone holds one.
-const HELD: f64 = 3600.0;
 
 /// One instrument played from MIDI, turning each message into the engine's events.
 pub struct Keyboard {
@@ -59,6 +57,34 @@ impl Keyboard {
         }
     }
 
+    /// Numbers the notes from `first` on.
+    #[cfg(feature = "keys")]
+    pub(crate) fn numbered_from(&mut self, first: u64) {
+        self.next = first;
+    }
+
+    /// Plays `synth` from the next key on, leaving the notes that sound to their keys and the pedal.
+    #[cfg(feature = "keys")]
+    pub(crate) fn play_as(&mut self, synth: &Synth) {
+        self.synth = synth.name().to_string();
+        self.options = synth.specs().iter().map(|s| s.name.clone()).collect();
+    }
+
+    /// Lets go every note that sounds, held by its key or by the pedal.
+    #[cfg(feature = "keys")]
+    pub(crate) fn let_go_all(&mut self, at: f64) -> Vec<(f64, Event)> {
+        let ids: Vec<u64> = self
+            .down
+            .drain()
+            .map(|(_, id)| id)
+            .chain(self.held.drain(..).map(|(_, id)| id))
+            .collect();
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        vec![(at, Event::Release { ids })]
+    }
+
     fn has(&self, option: &str) -> bool {
         self.options.iter().any(|o| o == option)
     }
@@ -73,13 +99,10 @@ impl Keyboard {
         if self.has("note") {
             options.push(("note", key as f64 + self.bend));
         }
-        if self.has("sustain") {
-            options.push(("sustain", HELD));
-        }
         if self.has("pedal") {
             options.push(("pedal", if self.pedal { 1.0 } else { 0.0 }));
         }
-        events.push((at, Event::note(Some(id), &self.synth, &options)));
+        events.push((at, Event::held(id, &self.synth, &options)));
         self.down.insert(key, id);
         events
     }

@@ -22,6 +22,9 @@ use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
+#[cfg(feature = "keys")]
+mod midi;
+
 /// How long before its time an event in beats is built and placed at its frame; a tempo change moves every event further off than this.
 const LEAD: f64 = 0.15;
 /// How many beats after its beat an event in beats still plays, at once.
@@ -246,6 +249,8 @@ pub enum Error {
     DeviceLost(String),
     /// The synth of this name builds each note for its note and vel alone, so no voice of it can be kept ready.
     CannotKeepReady(String),
+    /// A MIDI input could not be played; the reason.
+    Midi(String),
 }
 
 impl std::fmt::Display for Error {
@@ -291,6 +296,7 @@ impl std::fmt::Display for Error {
                 f,
                 "{name} builds each note for its note and vel alone, so no voice of it can be kept ready"
             ),
+            Error::Midi(reason) => write!(f, "{reason}"),
         }
     }
 }
@@ -359,6 +365,7 @@ type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
 /// | Play in beats | [`place_beats`](Engine::place_beats), [`set_tempo`](Engine::set_tempo), [`pass`](Engine::pass), [`cut`](Engine::cut), [`beat`](Engine::beat), [`beat_at`](Engine::beat_at), [`beat_seconds`](Engine::beat_seconds) | [Frames, seconds and beats](crate::guide::time) |
 /// | Render offline | [`render`](Engine::render), [`fill`](Engine::fill) | [How the engine is built](crate::guide::architecture) |
 /// | Hear how it is doing | [`subscribe`](Engine::subscribe), [`warnings`](Engine::warnings), [`load`](Engine::load), [`behind`](Engine::behind) | [What the engine reports](crate::guide::reports), [Playing live](crate::guide::live) |
+/// | Play a MIDI input on a part, with the `keys` feature | [`midi_inputs`](Engine::midi_inputs), [`play_midi`](Engine::play_midi), [`change_midi`](Engine::change_midi), [`stop_midi`](Engine::stop_midi) | [Playing live](crate::guide::live) |
 /// | Play files and the input, and record | [`load_sample`](Engine::load_sample), [`load_sample_bytes`](Engine::load_sample_bytes), [`sample_channels`](Engine::sample_channels), [`inputs`](Engine::inputs), [`record_output`](Engine::record_output), [`stop_recording_output`](Engine::stop_recording_output), [`record`](Engine::record), [`stop_recording`](Engine::stop_recording) | [Samples, live input and recording](crate::guide::samples) |
 pub struct Engine {
     rate: f64,
@@ -389,6 +396,9 @@ pub struct Engine {
     device: String,
     timing: Option<Arc<Mutex<Timing>>>,
     output: Output,
+    /// The MIDI inputs played on parts, by the input's name, or none for every input.
+    #[cfg(feature = "keys")]
+    players: HashMap<Option<String>, midi::Player>,
 }
 
 impl Engine {
@@ -602,6 +612,8 @@ impl Engine {
             device: String::new(),
             timing: None,
             output,
+            #[cfg(feature = "keys")]
+            players: HashMap::new(),
         }
     }
 
@@ -2433,11 +2445,17 @@ impl Builder {
     }
 
     fn hand(&self, batch: Vec<Draft>) {
-        let (count, _) = &*self.waiting;
-        *count.lock().unwrap_or_else(|e| e.into_inner()) += 1;
-        if let Some(drafts) = &self.drafts {
-            let _ = drafts.send(batch);
+        if let Some(hand) = self.handle() {
+            hand.hand(batch);
         }
+    }
+
+    /// A way to hand the builder drafts from another thread.
+    #[cfg_attr(not(feature = "keys"), allow(dead_code))]
+    fn handle(&self) -> Option<Hand> {
+        let drafts = self.drafts.clone()?;
+        let waiting = self.waiting.clone();
+        Some(Hand { drafts, waiting })
     }
 
     fn settle(&self) {
@@ -2446,6 +2464,20 @@ impl Builder {
         while *count > 0 {
             count = settled.wait(count).unwrap_or_else(|e| e.into_inner());
         }
+    }
+}
+
+/// Hands drafts to the builder thread, which builds and plays them in the order they were handed over.
+struct Hand {
+    drafts: mpsc::Sender<Vec<Draft>>,
+    waiting: Arc<(Mutex<usize>, Condvar)>,
+}
+
+impl Hand {
+    fn hand(&self, batch: Vec<Draft>) {
+        let (count, _) = &*self.waiting;
+        *count.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        let _ = self.drafts.send(batch);
     }
 }
 
@@ -2460,6 +2492,9 @@ impl Drop for Builder {
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        // The players hand drafts to the builder, which stops only once nothing can.
+        #[cfg(feature = "keys")]
+        self.players.clear();
         let _ = self.stop_recording();
         let _ = self.stop_recording_output();
         if let Output::Live { stop, .. } = &self.output {

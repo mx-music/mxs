@@ -39,6 +39,8 @@ pub enum Topic {
     Beats,
     /// What becomes of the passes handed to the parts: that a part's last pass is about to end, and that a pass with a new label has started.
     Passes,
+    /// Each key that goes down or comes up on a MIDI input the engine plays, and an input that goes away.
+    Keys,
 }
 
 impl Topic {
@@ -156,6 +158,26 @@ pub enum Report {
         /// The beat of the event.
         beat: f64,
     },
+    /// A key went down or came up on a MIDI input the engine plays.
+    Key {
+        /// The engine's seconds at which the message arrived.
+        seconds: f64,
+        /// The input's name.
+        input: String,
+        /// The key, as MIDI numbers it, 60 for middle C.
+        key: u8,
+        /// How hard it was struck or let up, from 0 to 127.
+        velocity: u8,
+        /// Whether it went down.
+        down: bool,
+    },
+    /// A MIDI input the engine played went away, and the notes it held were let go.
+    InputGone {
+        /// The engine's seconds at which it was missed.
+        seconds: f64,
+        /// The input's name.
+        input: String,
+    },
     /// Reports were dropped, the oldest first, as the subscriber did not take them in time; this stands where they were.
     Dropped {
         /// The engine's seconds of the report that follows.
@@ -177,6 +199,8 @@ impl Report {
             | Report::Beat { seconds, .. }
             | Report::PassEnding { seconds, .. }
             | Report::PassStarted { seconds, .. }
+            | Report::Key { seconds, .. }
+            | Report::InputGone { seconds, .. }
             | Report::Dropped { seconds, .. } => *seconds,
         }
     }
@@ -191,6 +215,7 @@ impl Report {
             Report::Warning { .. } => Some(Topic::Warnings),
             Report::Beat { .. } => Some(Topic::Beats),
             Report::PassEnding { .. } | Report::PassStarted { .. } => Some(Topic::Passes),
+            Report::Key { .. } | Report::InputGone { .. } => Some(Topic::Keys),
             Report::Dropped { .. } => None,
         }
     }

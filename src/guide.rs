@@ -8,7 +8,7 @@
 //! | [`signal_path`] | The way from a note to the output: effect chains, and parts with their gain, mute and solo. |
 //! | [`time`] | Frames, seconds, system time and beats; the tempo map, passes and cuts. |
 //! | [`reports`] | What the engine says of itself to a subscriber, and when. |
-//! | [`live`] | Devices, latency, how far ahead to hand a note over, whether the engine keeps up, and a MIDI keyboard. |
+//! | [`live`] | Devices, latency, how far ahead to hand a note over, whether the engine keeps up, a MIDI keyboard, and a MIDI input played on a part. |
 //! | [`building`] | A synth or an effect of your own, in Rust or as data. |
 //! | [`samples`] | Sound files, the sound card's input, and recording to a file. |
 //!

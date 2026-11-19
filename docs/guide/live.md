@@ -158,7 +158,7 @@ In both cases the program makes a new engine and registers its synths again.
 ## A MIDI keyboard
 
 [`keys::Keyboard`] turns MIDI messages into events for one synth.
-A key starts a note at its pitch and loudness, letting it up lets the note go, the sustain pedal holds what is sounding, and the pitch bend wheel bends it.
+A key starts a note at its pitch and loudness, held until the key comes up, which lets the note go; the sustain pedal holds what is sounding, and the pitch bend wheel bends it.
 
 It takes the bytes of each message and the time to play at, and returns the events, so it works with whatever reads the MIDI port.
 
@@ -189,5 +189,41 @@ The `keys` program in the repository reads a MIDI input with the `midir` crate a
 cargo run --release --features keys --bin keys -- --list
 cargo run --release --features keys --bin keys -- --synth piano --buffer 128
 ```
+
+## A MIDI input on a part
+
+With the `keys` feature, a live engine plays a MIDI input itself, so a key reaches its sound with no program in between.
+[`Engine::play_midi`] plays an input, named as [`Engine::midi_inputs`] names it, or every input connected, on a part started by name, with a synth and options of its own besides those each key gives.
+A key starts its note in the block being filled when the message arrives, from one of ten voices of the synth kept ready, and the note plays through the part's effects, gain, mute and solo.
+On a live engine with buffers of 128 frames at 48 kHz, a key from a virtual MIDI source starts its note 1.8 to 4 ms after it is sent, of which CoreMIDI takes 1.5 to 2.
+
+```rust,no_run
+use mxs::{Engine, Report, Topic, synths};
+
+# #[cfg(not(feature = "keys"))]
+# fn main() {}
+# #[cfg(feature = "keys")]
+fn main() -> Result<(), mxs::Error> {
+    let mut engine = Engine::live()?;
+    synths::all().into_iter().for_each(|s| engine.register(s));
+    engine.start_part("keys", &[])?;
+    engine.play_midi(None, "keys", "piano", &[("amp", 0.8)])?;
+
+    let reports = engine.subscribe(&[Topic::Keys]);
+    while let Some(report) = reports.wait(std::time::Duration::from_secs(60)) {
+        if let Report::Key { key, down: true, .. } = report {
+            println!("key {key}");
+        }
+    }
+    Ok(())
+}
+```
+
+- Each key that goes down or comes up is reported under [`Topic::Keys`], with its velocity and the engine's seconds at which it arrived, so the program can still act on it.
+- [`Engine::change_midi`] changes the synth or its options from the next key on; the notes that sound ring on until their keys and the pedal let them go.
+- [`Engine::stop_midi`] stops playing the input and lets go of its notes.
+- An input that goes away is reported as [`Report::InputGone`] within a tenth of a second, and its notes are let go; the engine plays on.
+- Two inputs can play two parts at once, each with its synth.
+- A note a key starts is held, with an id from 2^62 up, which a program's own ids stay under.
 
 [events]: events.md
