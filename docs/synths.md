@@ -511,7 +511,7 @@ A Bb clarinet at the pitch it sounds, a model of a reed on a bore, fitted to the
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |
@@ -557,7 +557,7 @@ An oboe, a model of a reed on a bore, fitted to the University of Iowa's oboe fr
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |
@@ -603,7 +603,7 @@ A bassoon, a model of a reed on a bore, fitted to the University of Iowa's basso
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |
@@ -649,7 +649,7 @@ A tenor saxophone at the pitch it sounds, a model of a reed on a bore, fitted to
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |
@@ -695,7 +695,7 @@ A Bb trumpet at the pitch it sounds, a model of lips on a bore, fitted to the Un
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |
@@ -741,7 +741,7 @@ A tenor trombone, a model of lips on a bore, fitted to the University of Iowa's 
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |
@@ -787,7 +787,7 @@ A French horn, a model of lips on a bore, fitted to VSCO 2's F horn from C2 to F
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |
@@ -833,7 +833,7 @@ A tuba, a model of lips on a bore, fitted to VSCO 2's tuba from Bb1 to Bb3.
 | `mend` | a number, 0 to 1 |  | The seconds a slur's dip takes to come back to a third, in place of the fitted one; for fitting. |
 | `gasp` | a number, 0 to 1 |  | How far the breath falls at a slur, in place of the fitted one; for fitting. |
 | `corner` | a number, 0 to 100 |  | The bore's corner as a multiple of the pitch, in place of the fitted one; for fitting. |
-| `cutoff` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
+| `least_corner` | a number, 0 to 20000 |  | The least the bore's corner is, in Hz, in place of the fitted one; for fitting. |
 | `keep` | a number, 0 to 1 |  | What the bore keeps at each round trip, in place of the fitted one; for fitting. |
 | `zeta` | a number, 0 to 1 |  | How freely the reed lets the air through, in place of the fitted one; for fitting. |
 | `apex` | a number, 0 to 0.5 |  | A cone's missing apex, as part of its whole length, in place of the fitted one; for fitting. |

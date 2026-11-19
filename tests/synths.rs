@@ -644,3 +644,29 @@ fn a_held_violin_or_cello_note_fades_out_rather_than_being_cut_when_it_ends() {
         }
     }
 }
+
+#[test]
+fn the_reed_and_brass_winds_take_their_bores_least_corner_by_name_and_refuse_cutoff() {
+    for synth in [
+        "clarinet",
+        "oboe",
+        "bassoon",
+        "tenor_sax",
+        "trumpet",
+        "trombone",
+        "horn",
+        "tuba",
+    ] {
+        let render = |options: &[(&str, f64)]| {
+            let mut engine = Engine::offline(RATE);
+            synths::all().into_iter().for_each(|s| engine.register(s));
+            engine.play(&[(0.0, Event::note(None, synth, options))])?;
+            Ok::<_, mxs::Error>(engine.render(1.0).unwrap().0)
+        };
+        let fitted = render(&[]).unwrap();
+        let given = render(&[("least_corner", 5000.0)]).unwrap();
+        assert!(fitted != given, "{synth} ignores least_corner");
+        let refused = render(&[("cutoff", 5000.0)]).unwrap_err();
+        assert_eq!(refused.to_string(), format!("{synth} has no option cutoff"));
+    }
+}

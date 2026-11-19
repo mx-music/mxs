@@ -1320,7 +1320,7 @@ fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static
             "The bore's corner as a multiple of the pitch",
         ))
         .option(fitting(
-            "cutoff",
+            "least_corner",
             20_000.0,
             "The least the bore's corner is, in Hz",
         ))
@@ -1381,7 +1381,7 @@ fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static
             let or = |name: &str, fitted: f32| o.given(name).map_or(fitted, |given| given as f32);
             let mut reed = Reed::new(
                 bore.conical,
-                or("cutoff", bore.cutoff),
+                or("least_corner", bore.cutoff),
                 or("corner", bore.corner),
                 or("keep", bore.keep),
             );
