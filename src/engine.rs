@@ -97,7 +97,7 @@ pub enum Event {
         /// The ids the sounds were started with.
         ids: Vec<u64>,
     },
-    /// Lets the sounds started with these ids go, as keys let up: a note shaped by its envelope falls silent over its release, and any other sound fades over 10 ms.
+    /// Lets the sounds started with these ids go, as keys let up: a note shaped by its envelope falls silent over its release, a sound that fades by itself rings on, and one that never ends fades over 10 ms.
     Release {
         /// The ids the sounds were started with.
         ids: Vec<u64>,
@@ -2146,6 +2146,8 @@ impl Book {
                         let at = at.max(sound.start);
                         let (stop, gate) = match &sound.release {
                             Some((gate, seconds)) => (at + seconds, Some(gate.clone())),
+                            // A sound with no release of its own rings until it fades, as a drum does once the hand leaves it.
+                            None if sound.end.is_finite() => continue,
                             None => (at, None),
                         };
                         sound.end = sound.end.min(stop + END_FADE);
@@ -3172,6 +3174,25 @@ mod tests {
             chain: None,
         };
         assert_eq!(engine.play(&[(0.3, beyond)]), Err(Error::UnknownInput(2)));
+    }
+
+    #[test]
+    fn live_input_let_go_ends_in_10_ms_since_it_never_ends_by_itself() {
+        let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 1);
+        let input = Event::Input {
+            id: Some(1),
+            input: 0,
+            channels: 1,
+            options: vec![],
+            chain: None,
+        };
+        engine.play(&[(0.0, input)]).unwrap();
+        engine
+            .play(&[(0.1, Event::Release { ids: vec![1] })])
+            .unwrap();
+        let (left, _) = render_fed(&mut engine, &mut feed, 0.2, &[0.5]);
+        assert!(left[4000] > 0.0);
+        assert!(left[4800 + 480..].iter().all(|s| *s == 0.0));
     }
 
     #[test]

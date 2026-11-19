@@ -149,3 +149,54 @@ fn samples_and_the_sound_cards_input_take_none_of_the_expressions_notes_take() {
     assert!(sample.contains(&"amp".to_string()));
     assert!(!sample.contains(&"bend".to_string()), "{sample:?}");
 }
+
+#[test]
+fn letting_go_of_a_kick_berimbau_or_crash_leaves_it_ringing_while_stopping_one_cuts_it() {
+    for synth in ["kick", "berimbau", "crash"] {
+        let render = |end: Option<Event>| {
+            let mut engine = engine();
+            let note = Event::note(Some(1), synth, &[("note", 60.0)]);
+            engine.play(&[(0.0, note)]).unwrap();
+            if let Some(end) = end {
+                engine.play(&[(0.2, end)]).unwrap();
+            }
+            engine.render(2.0).unwrap().0
+        };
+        let left_alone = render(None);
+        assert!(
+            render(Some(Event::Release { ids: vec![1] })) == left_alone,
+            "{synth} let go plays otherwise than left alone"
+        );
+        let stopped = render(Some(Event::Stop { ids: vec![1] }));
+        let after = (0.21 * RATE) as usize;
+        assert!(
+            stopped[after..].iter().all(|s| *s == 0.0),
+            "{synth} stopped"
+        );
+    }
+}
+
+#[test]
+fn letting_go_of_a_marimba_guitar_or_piano_fades_it_over_its_release() {
+    for synth in ["marimba", "guitar", "piano"] {
+        let render = |let_go: bool| {
+            let mut engine = engine();
+            let note = Event::note(Some(1), synth, &[("note", 60.0)]);
+            engine.play(&[(0.0, note)]).unwrap();
+            if let_go {
+                engine
+                    .play(&[(0.2, Event::Release { ids: vec![1] })])
+                    .unwrap();
+            }
+            engine.render(0.35).unwrap().0
+        };
+        let (left_alone, let_go) = (render(false), render(true));
+        let window = |s: &[f32]| rms(&s[(0.25 * RATE) as usize..]);
+        let fading = window(&let_go);
+        assert!(
+            fading > 0.0 && fading < 0.9 * window(&left_alone),
+            "{synth}: {fading} against {}",
+            window(&left_alone)
+        );
+    }
+}

@@ -80,10 +80,10 @@ A synth says how its notes end when it builds one.
 - A note with an **envelope** is shaped by the options `attack`, `decay`, `sustain` and `release`, and ends when they have run.
 
 `Release` lets a note go before that.
-A note with an envelope then falls silent over its `release`; any other sound fades over 10 ms.
+A note with an envelope then falls silent over its `release`, a note that rings goes on until it fades, as a drum does once the hand leaves it, and a sound that never ends, such as live input, fades over 10 ms.
 `Stop` ends a sound in 10 ms whatever it is.
 
-A key held for an unknown time is therefore a note with a long `sustain` and an id, and a `Release` when the key comes up:
+A key held for an unknown time is therefore a held note, which sounds until it is let go, with an id, and a `Release` when the key comes up:
 
 ```rust
 use mxs::{Engine, Event, RATE, synths};
@@ -92,7 +92,7 @@ fn main() -> Result<(), mxs::Error> {
     let mut engine = Engine::offline(RATE);
     synths::all().into_iter().for_each(|s| engine.register(s));
 
-    let key_down = Event::note(Some(7), "organ", &[("note", 60.0), ("sustain", 600.0)]);
+    let key_down = Event::held(7, "organ", &[("note", 60.0)]);
     let key_up = Event::Release { ids: vec![7] };
     engine.play(&[(0.0, key_down), (1.5, key_up)])?;
 
