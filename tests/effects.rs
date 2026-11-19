@@ -159,3 +159,32 @@ fn an_effects_tail_comes_from_its_options() {
     assert!(left[frame(0.1)].abs() > 0.0);
     assert!(left[frame(0.5)..].iter().all(|&x| x == 0.0));
 }
+
+#[test]
+fn each_effect_says_how_long_it_rings_after_its_input_stops_from_its_options_and_the_tempo() {
+    let mut engine = engine();
+    let room = |room: f64| {
+        (
+            "reverb".to_string(),
+            vec![("room".to_string(), Value::Number(room))],
+        )
+    };
+    let echo = (
+        "echo".to_string(),
+        vec![("decay".to_string(), Value::Number(2.0))],
+    );
+    let effects = [room(0.45), echo.clone(), ("lpf".to_string(), vec![])];
+    assert_eq!(
+        engine.effect_tails(&effects, None).unwrap(),
+        vec![5.5, 2.0, 0.1]
+    );
+    assert_eq!(
+        engine.effect_tails(&effects, Some(120.0)).unwrap(),
+        vec![5.5, 1.0, 0.1]
+    );
+    assert_eq!(engine.effect_tails(&[room(1.0)], None).unwrap(), vec![11.0]);
+    let unknown = engine
+        .effect_tails(&[("hall".to_string(), vec![])], None)
+        .unwrap_err();
+    assert_eq!(unknown.to_string(), "no effect named hall");
+}

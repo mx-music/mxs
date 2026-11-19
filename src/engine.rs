@@ -714,6 +714,32 @@ impl Engine {
         self.effects.values().map(|r| &r.item)
     }
 
+    /// How many seconds each of `effects`, given as [`Engine::start_effects`] takes them, sounds on after its input stops, such as a reverb's tail.
+    /// With `bpm`, the options an effect declares in beats are in beats at that tempo, as [`Engine::start_part_in_beats`] takes them.
+    pub fn effect_tails(
+        &mut self,
+        effects: &[(String, Vec<(String, Value)>)],
+        bpm: Option<f64>,
+    ) -> Result<Vec<f64>, Error> {
+        effects
+            .iter()
+            .map(|(name, given)| {
+                let registered = self
+                    .effects
+                    .get(name)
+                    .ok_or_else(|| Error::UnknownEffect(name.clone()))?;
+                let (owner, specs) = (registered.owner.clone(), registered.specs.clone());
+                let tail = registered.item.tail.clone();
+                let values = self.check(&owner, &specs, given)?;
+                let mut options = Options::new(owner, specs, values);
+                if let Some(bpm) = bpm {
+                    options.in_beats(60.0 / bpm);
+                }
+                Ok(tail(&options))
+            })
+            .collect()
+    }
+
     /// The options every note takes besides its synth's: amp and pan, the expressions bend, brightness and pressure, and vibrato and pedal.
     pub fn note_specs(&self) -> Vec<Spec> {
         note_specs()
