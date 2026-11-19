@@ -1,0 +1,17 @@
+[package]
+name = "mxs_webassembly_check"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+mxs = { path = "../.." }
+hound = "3.5.1"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

@@ -68,6 +68,9 @@ fn main() -> Result<(), mxs::Error> {
 
 `render` returns the left and the right channel as samples at 48 kHz, and `record_output` writes them to a WAV file.
 
+An offline engine also runs in WebAssembly, as `wasm32-unknown-unknown`, with no imports, so a web page or Node can render with it; [the notes on playing in the browser](notes/playing-in-the-browser.md) have a page that plays the piano in an audio worklet.
+There, a sample is loaded from its bytes with `load_sample_bytes`, and a live engine, worker threads, files read by path, MIDI and audio input do not work.
+
 ## What it does
 
 Each of these has a guide, with diagrams and programs that run as the crate's tests.
@@ -173,6 +176,12 @@ After a synth or an effect changes, write them again:
 
 ```sh
 MXS_CATALOG=write cargo test --release --test catalog
+```
+
+The check that an offline engine renders in WebAssembly as it does natively needs the `wasm32-unknown-unknown` target and Node, and runs only when asked for:
+
+```sh
+cargo test --release --test webassembly -- --ignored
 ```
 
 `cargo doc --open` builds the documentation with its diagrams, which need a connection to load the script that draws them.
