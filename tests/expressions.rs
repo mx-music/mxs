@@ -377,3 +377,28 @@ fn brightness_1_raises_the_overtones_of_a_held_note_of_each_fitted_struck_or_plu
         );
     }
 }
+
+#[test]
+fn a_bend_and_brightness_reach_a_held_viola_and_double_bass_note_within_10_ms() {
+    for (synth, note) in [("viola", 60.0), ("double_bass", 40.0)] {
+        let options = [("note", note), ("vel", 0.6), ("vibrato", 0.0)];
+        let ((was, is), _) = changed(synth, &options, ("bend", 2.0), 1.0, above_the_fourth);
+        let moved = 12.0 * (is / was).log2();
+        let after = |brightness: f64| {
+            let change = ("brightness", brightness);
+            changed(synth, &options, change, 1.0, above_the_fourth).1.1
+        };
+        let (dull, bright) = (after(0.5), after(1.0));
+        println!(
+            "{synth}: {was:.1} to {is:.1} Hz, {moved:.3} semitones; share above the fourth harmonic {dull:.4} at 0.5, {bright:.4} at 1"
+        );
+        assert!(
+            (moved - 2.0).abs() < 0.1,
+            "{synth} moved {moved} semitones, {was} to {is} Hz"
+        );
+        assert!(
+            bright > 1.2 * dull,
+            "{synth}'s share above its fourth harmonic went from {dull} to {bright}"
+        );
+    }
+}

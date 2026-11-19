@@ -1,7 +1,7 @@
 //! The bowed string of mx's violin, viola, cello and double bass: a waveguide after the bowed-string model of McIntyre, Schumacher and Woodhouse, "On the oscillations of musical instruments", JASA 74, 1983, and Julius O. Smith III's digital waveguides, <https://ccrma.stanford.edu/~jos/pasp/Bowed_Strings.html>.
 //! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, and the swell in.
 
-use super::common::{harmonics, net, silent_after};
+use super::common::{harmonics, moved_by, net, silent_after, tilted};
 use super::figures::{Figures, held_note};
 use crate::nodes::modes;
 use crate::nodes::{db, hz, pink_noise, shape, shape_node};
@@ -79,9 +79,9 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
         seed: ctx.seed(),
     };
     let body = options.given("body_hz").unwrap_or(fit.body);
-    let mut sound = string(options.follow("note"), bow)
-        >> highpass_hz(body as f32, 0.541)
-        >> highpass_hz(body as f32, 1.307);
+    let note = options.follow("note") >> moved_by(options, "bend", |x| x);
+    let mut sound =
+        string(note, bow) >> highpass_hz(body as f32, 0.541) >> highpass_hz(body as f32, 1.307);
     for (i, hz) in BANDS.into_iter().enumerate() {
         let gain = options
             .given(EQ[i])
@@ -111,7 +111,7 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let swell = (from_silence + (0.06f64.min(from_silence) - from_silence) * legato).max(1e-3);
     let rising = shape(move |t| 1.0 - (1.0 - (t / swell).min(1.0)).powi(2));
     let level = (vel.powf(0.6) * db(by_vel(fit.levels[0], fit.levels[1], fit.levels[2]))) as f32;
-    sound * rising * level
+    tilted(options, sound) * rising * level
 }
 
 /// The seconds each half of the string delays its wave, at a pitch: its share of the period, less the feedback's sample and its loss filter's delay.
@@ -345,7 +345,8 @@ fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
                 .range(0.0, 2.0)
                 .doc("The vibrato's depth in semitones, reached as the note holds."),
         )
-        .options(Spec::envelope(1.0, 0.3));
+        .options(Spec::envelope(1.0, 0.3))
+        .options(Spec::expressions(&["bend", "brightness"]));
     bow_options(synth).build(move |o, ctx| {
         let vel = o.number("vel").clamp(0.0, 1.0);
         let pizz = o.number("pizz").clamp(0.0, 1.0);

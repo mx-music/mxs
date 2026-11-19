@@ -355,6 +355,8 @@ A viola, bowed or plucked as the violin is, fitted to the University of Iowa's v
 | `vel` | a number, 0 to 1 | 0.6 | How hard the string is bowed or plucked. |
 | `pizz` | a number, 0 to 1 | 0 | 1 plucks the string instead of bowing it. |
 | `vibrato` | a number, 0 to 2 | 0.25 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `bow_speed` | a number, 0.1 to 4 | 1 | How fast the bow moves, against its speed at the note's vel. |
 | `bow_force` | a number, 0.1 to 4 | 1 | How hard the bow presses, against its force at the note's vel: the harder, the wider the speeds at which it holds the string. |
 | `legato` | a number, 0 to 1 | 0 | 1 changes bow from a note still sounding: the string speaks at once instead of swelling in from silence. |
@@ -399,6 +401,8 @@ A double bass at the pitch it sounds, bowed or plucked as the violin is, fitted 
 | `vel` | a number, 0 to 1 | 0.6 | How hard the string is bowed or plucked. |
 | `pizz` | a number, 0 to 1 | 0 | 1 plucks the string instead of bowing it. |
 | `vibrato` | a number, 0 to 2 | 0.25 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `bow_speed` | a number, 0.1 to 4 | 1 | How fast the bow moves, against its speed at the note's vel. |
 | `bow_force` | a number, 0.1 to 4 | 1 | How hard the bow presses, against its force at the note's vel: the harder, the wider the speeds at which it holds the string. |
 | `legato` | a number, 0 to 1 | 0 | 1 changes bow from a note still sounding: the string speaks at once instead of swelling in from silence. |

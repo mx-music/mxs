@@ -1,5 +1,6 @@
 //! mx's plain synths: waves under a resonant low-pass, FM, a plucked string, a supersaw, an acid bass and a brass.
 
+use super::common::moved_by;
 use crate::nodes::{db, hz, segments, white_noise};
 use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
@@ -89,64 +90,6 @@ fn saw() -> Synth {
 /// The note's frequency, gliding with its note and bend options.
 fn bent(options: &Options) -> Net {
     to_hz(options.follow("note") >> moved_by(options, "bend", |x| x))
-}
-
-/// A unit that adds `by` of the option `name`, as it glides, to its input.
-fn moved_by(options: &Options, name: &str, by: fn(f32) -> f32) -> Net {
-    let moved =
-        (net(pass()) | options.follow(name)) >> net(map(move |x: &Frame<f32, U2>| x[0] + by(x[1])));
-    net(Unhashed(moved))
-}
-
-/// A unit that hands the hash it is pinged with on untouched, so the oscillators after it take the phase they took before it was there.
-#[derive(Clone)]
-struct Unhashed(Net);
-
-impl AudioUnit for Unhashed {
-    fn reset(&mut self) {
-        self.0.reset();
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.0.set_sample_rate(sample_rate);
-    }
-
-    fn tick(&mut self, input: &[f32], output: &mut [f32]) {
-        self.0.tick(input, output);
-    }
-
-    fn process(&mut self, size: usize, input: &BufferRef, output: &mut BufferMut) {
-        self.0.process(size, input, output);
-    }
-
-    fn inputs(&self) -> usize {
-        self.0.inputs()
-    }
-
-    fn outputs(&self) -> usize {
-        self.0.outputs()
-    }
-
-    fn route(&mut self, input: &SignalFrame, frequency: f64) -> SignalFrame {
-        self.0.route(input, frequency)
-    }
-
-    fn get_id(&self) -> u64 {
-        self.0.get_id()
-    }
-
-    fn ping(&mut self, probe: bool, hash: AttoHash) -> AttoHash {
-        self.0.ping(probe, hash.clone());
-        hash
-    }
-
-    fn footprint(&self) -> usize {
-        self.0.footprint()
-    }
-
-    fn allocate(&mut self) {
-        self.0.allocate();
-    }
 }
 
 /// The low-pass of [`filtered`], its cutoff moved by brightness.

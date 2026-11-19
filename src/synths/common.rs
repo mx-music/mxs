@@ -1,6 +1,6 @@
 //! What the synths share: sines, band-passes, additive partials and the swell of a held note.
 
-use crate::nodes::segments;
+use crate::nodes::{db, hz, segments};
 use crate::{Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -145,4 +145,86 @@ pub(super) fn along(centres: &[f64], values: &[f64], f: f64) -> f64 {
                     * ((x - low) / (high - low)).clamp(if i == 0 { -2.0 } else { 0.0 }, 1.0)
             })
             .sum::<f64>()
+}
+
+/// A unit that adds `by` of the option `name`, as it glides, to its input.
+pub(crate) fn moved_by(options: &Options, name: &str, by: fn(f32) -> f32) -> Net {
+    let moved =
+        (net(pass()) | options.follow(name)) >> net(map(move |x: &Frame<f32, U2>| x[0] + by(x[1])));
+    net(Unhashed(moved))
+}
+
+/// A unit that hands the hash it is pinged with on untouched, so the oscillators after it take the phase they took before it was there.
+#[derive(Clone)]
+struct Unhashed(Net);
+
+impl AudioUnit for Unhashed {
+    fn reset(&mut self) {
+        self.0.reset();
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.0.set_sample_rate(sample_rate);
+    }
+
+    fn tick(&mut self, input: &[f32], output: &mut [f32]) {
+        self.0.tick(input, output);
+    }
+
+    fn process(&mut self, size: usize, input: &BufferRef, output: &mut BufferMut) {
+        self.0.process(size, input, output);
+    }
+
+    fn inputs(&self) -> usize {
+        self.0.inputs()
+    }
+
+    fn outputs(&self) -> usize {
+        self.0.outputs()
+    }
+
+    fn route(&mut self, input: &SignalFrame, frequency: f64) -> SignalFrame {
+        self.0.route(input, frequency)
+    }
+
+    fn get_id(&self) -> u64 {
+        self.0.get_id()
+    }
+
+    fn ping(&mut self, probe: bool, hash: AttoHash) -> AttoHash {
+        self.0.ping(probe, hash.clone());
+        hash
+    }
+
+    fn footprint(&self) -> usize {
+        self.0.footprint()
+    }
+
+    fn allocate(&mut self) {
+        self.0.allocate();
+    }
+}
+
+/// `sound` tilted by brightness 3 dB an octave either way of 0.5, from the note's pitch up, as a brightness tilts a voice's partials; at 0.5 it is `sound` itself.
+/// Four high shelves two octaves apart, each 6 dB at brightness 0 or 1, make the slope.
+pub(crate) fn tilted(options: &Options, sound: Net) -> Net {
+    let pitch = || {
+        options.follow("note")
+            >> moved_by(options, "bend", |x| x)
+            >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32))
+    };
+    let gain = || {
+        options.follow("brightness")
+            >> net(map(|x: &Frame<f32, U1>| {
+                db((x[0] as f64 - 0.5) * 12.0) as f32
+            }))
+    };
+    let mut shelves = net(pass());
+    for k in 0..4 {
+        let above = 2.0 * 4f32.powi(k);
+        let corner = pitch() >> net(map(move |x: &Frame<f32, U1>| (x[0] * above).min(18_000.0)));
+        shelves = (shelves | corner | net(dc(0.707)) | gain()) >> net(highshelf::<f32>());
+    }
+    let chosen = map(|x: &Frame<f32, U3>| if x[2] == 0.5 { x[0] } else { x[1] });
+    ((sound >> (net(pass()) ^ shelves)) | options.follow("brightness")) >> net(chosen)
 }
