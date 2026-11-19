@@ -19,6 +19,7 @@ fn electric_piano() -> Synth {
                 .doc("How hard the key is struck."),
         )
         .options(Spec::envelope(1000.0, 0.15))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| fitted(epiano(), EPIANO_LEVEL, 0.4, o, ctx))
 }
 
@@ -41,6 +42,7 @@ fn electric_guitar() -> Synth {
                 .doc("How hard the string is picked."),
         )
         .options(Spec::envelope(1000.0, 0.08))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| fitted(eguitar(), EGUITAR_LEVEL, 0.4, o, ctx))
 }
 

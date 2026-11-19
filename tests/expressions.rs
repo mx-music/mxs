@@ -86,12 +86,33 @@ fn peak_between(samples: &[f32], low: f64, high: f64) -> f64 {
         .unwrap()
 }
 
-/// The share of the window's energy above `freq`, from its spectrum every 20 Hz.
+/// The share of the window's energy above `freq`, from its spectrum up to 20 kHz at each step the window resolves, every 20 Hz for 50 ms.
 fn share_above(samples: &[f32], freq: f64) -> f64 {
     let power = |f: f64| magnitude(samples, f).powi(2);
-    let bins: Vec<f64> = (1..1000).map(|k| k as f64 * 20.0).collect();
+    let step = RATE / samples.len() as f64;
+    let bins: Vec<f64> = (1..(20_000.0 / step) as usize)
+        .map(|k| k as f64 * step)
+        .collect();
     let above: f64 = bins.iter().filter(|f| **f > freq).map(|f| power(*f)).sum();
     above / bins.iter().map(|f| power(*f)).sum::<f64>()
+}
+
+/// The share above the fourth harmonic of a window whose pitch is `pitch`.
+fn above_the_fourth(samples: &[f32], pitch: f64) -> f64 {
+    share_above(samples, 4.5 * pitch)
+}
+
+/// The window's energy above 1.5 times `pitch` over its energy from half to 1.5 times it, at each step the window resolves.
+/// A bar's overtones stand near 3, 4 and 10 times its pitch and soon fade, and a bass's carry most of its energy, so they are weighed against the fundamental alone.
+fn overtones_over_fundamental(samples: &[f32], pitch: f64) -> f64 {
+    let step = RATE / samples.len() as f64;
+    let energy = |low: f64, high: f64| {
+        let first = (low / step).ceil() as usize;
+        (first..(high / step) as usize)
+            .map(|k| magnitude(samples, k as f64 * step).powi(2))
+            .sum::<f64>()
+    };
+    energy(1.5 * pitch, 20_000.0) / energy(0.5 * pitch, 1.5 * pitch)
 }
 
 #[test]
@@ -228,9 +249,17 @@ fn a_synth_that_had_no_vel_plays_at_half_its_level_at_vel_0_3_and_as_before_at_0
     }
 }
 
-/// The pitch a held middle C of `synth` measures before and 10 ms after `change` reaches it, and its share above the fourth harmonic then.
-fn changed(synth: &str, options: &[(&str, f64)], change: (&str, f64)) -> ((f64, f64), (f64, f64)) {
-    let middle = 261.63;
+/// The pitch a held note of `synth` measures before and 10 ms after `change` reaches it at `at` seconds, and how bright `measure` finds it then.
+/// Each window lasts 50 ms, or 12 periods of a low note, so that its pitch is resolved to a tenth of a semitone.
+fn changed(
+    synth: &str,
+    options: &[(&str, f64)],
+    change: (&str, f64),
+    at: f64,
+    measure: fn(&[f32], f64) -> f64,
+) -> ((f64, f64), (f64, f64)) {
+    let note = options.iter().find(|(name, _)| *name == "note").unwrap().1;
+    let middle = 440.0 * 2f64.powf((note - 69.0) / 12.0);
     let mut engine = engine();
     engine
         .play(&[(0.0, Event::held(1, synth, options))])
@@ -239,25 +268,32 @@ fn changed(synth: &str, options: &[(&str, f64)], change: (&str, f64)) -> ((f64, 
         target: Target::Sounds(vec![1]),
         options: vec![(change.0.into(), change.1)],
     };
-    engine.play(&[(1.0, set)]).unwrap();
-    let (sound, _) = engine.render(1.5).unwrap();
-    let window = |from: f64| &sound[(from * RATE) as usize..((from + 0.05) * RATE) as usize];
-    let (before, after) = (window(0.95), window(1.01));
+    engine.play(&[(at, set)]).unwrap();
+    let (sound, _) = engine.render(at + 0.5).unwrap();
+    let length = f64::max(0.05, 12.0 / middle);
+    let window = |from: f64| &sound[(from * RATE) as usize..((from + length) * RATE) as usize];
+    let (before, after) = (window(at - length), window(at + 0.01));
     let was = peak_between(before, 0.9 * middle, 1.05 * middle);
-    let high = if change.0 == "bend" { 1.2 } else { 1.05 };
-    let is = peak_between(
-        after,
-        if change.0 == "bend" { 1.05 } else { 0.9 } * middle,
-        high * middle,
-    );
-    let shares = (share_above(before, 4.5 * was), share_above(after, 4.5 * is));
+    let (low, high) = if change.0 == "bend" {
+        (1.05, 1.2)
+    } else {
+        (0.9, 1.05)
+    };
+    let is = peak_between(after, low * middle, high * middle);
+    let shares = (measure(before, was), measure(after, is));
     ((was, is), shares)
 }
 
 #[test]
 fn a_bend_of_two_semitones_reaches_a_held_note_of_each_basic_wave_within_10_ms() {
     for synth in ["square", "tri", "pulse", "supersaw", "acid", "fm"] {
-        let ((was, is), _) = changed(synth, &[("note", 60.0)], ("bend", 2.0));
+        let ((was, is), _) = changed(
+            synth,
+            &[("note", 60.0)],
+            ("bend", 2.0),
+            1.0,
+            above_the_fourth,
+        );
         let moved = 12.0 * (is / was).log2();
         assert!(
             (moved - 2.0).abs() < 0.1,
@@ -273,11 +309,71 @@ fn brightness_1_brightens_a_held_note_of_each_basic_wave_under_a_low_pass_within
             synth,
             &[("note", 60.0), ("cutoff", 70.0)],
             ("brightness", 1.0),
+            1.0,
+            above_the_fourth,
         );
         println!("{synth}: share above the fourth harmonic {dull:.4} to {bright:.4}");
         assert!(
             bright > 1.2 * dull,
             "{synth}'s share above its fourth harmonic went from {dull} to {bright}"
+        );
+    }
+}
+
+/// The struck and plucked synths fitted to recordings besides the piano, each with a note in its range.
+const FITTED: [(&str, f64); 11] = [
+    ("guitar", 52.0),
+    ("electric_bass", 33.0),
+    ("deep_bass", 33.0),
+    ("harp", 60.0),
+    ("electric_piano", 60.0),
+    ("electric_guitar", 52.0),
+    ("marimba", 60.0),
+    ("vibraphone", 60.0),
+    ("xylophone", 72.0),
+    ("glockenspiel", 84.0),
+    ("timpani", 48.0),
+];
+
+#[test]
+fn a_bend_of_two_semitones_reaches_a_held_note_of_each_fitted_struck_or_plucked_synth_within_10_ms()
+{
+    for (synth, note) in FITTED {
+        let options = [("note", note), ("vel", 0.6)];
+        let ((was, is), _) = changed(synth, &options, ("bend", 2.0), 0.3, above_the_fourth);
+        let moved = 12.0 * (is / was).log2();
+        println!("{synth}: {was:.1} to {is:.1} Hz, {moved:.3} semitones");
+        assert!(
+            (moved - 2.0).abs() < 0.1,
+            "{synth} moved {moved} semitones, {was} to {is} Hz"
+        );
+    }
+    let motor = [("note", 60.0), ("vel", 0.6), ("motor", 5.0)];
+    let ((was, is), _) = changed("vibraphone", &motor, ("bend", 2.0), 0.3, above_the_fourth);
+    let moved = 12.0 * (is / was).log2();
+    assert!(
+        (moved - 2.0).abs() < 0.1,
+        "the vibraphone with its motor on moved {moved} semitones"
+    );
+}
+
+#[test]
+fn brightness_1_raises_the_overtones_of_a_held_note_of_each_fitted_struck_or_plucked_synth_within_10_ms()
+ {
+    for (synth, note) in FITTED {
+        let options = [("note", note), ("vel", 0.6)];
+        // These notes fade, their overtones soonest, so the window after brightness 1 is weighed against the same window after brightness 0.5.
+        let after = |brightness: f64| {
+            let change = ("brightness", brightness);
+            changed(synth, &options, change, 0.3, overtones_over_fundamental)
+                .1
+                .1
+        };
+        let (dull, bright) = (after(0.5), after(1.0));
+        println!("{synth}: overtones over the fundamental {dull:.3e} at 0.5, {bright:.3e} at 1");
+        assert!(
+            bright > 1.2 * dull,
+            "{synth}'s overtones over its fundamental went from {dull} to {bright}"
         );
     }
 }

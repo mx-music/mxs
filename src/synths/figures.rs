@@ -488,21 +488,20 @@ pub(super) fn strike(
     o: &Options,
     ctx: &mut Context,
 ) -> Note {
-    strike_among(vec![(figures, recipe)], 0, false, o, ctx)
+    strike_among(vec![(figures, recipe)], 0, o, ctx)
 }
 
-/// A struck note played by the `chosen` of `choices`, each figures with their recipe, following bend and brightness while it sounds when `expressed`.
+/// A struck note played by the `chosen` of `choices`, each figures with their recipe, following bend and brightness while it sounds.
 /// Built ready, it keeps room for any note of any of them, and fills itself again from the one the pedal it is given picks, the first at 0 and the last at 1.
 pub(super) fn strike_among(
     choices: Vec<(&'static Figures, Recipe)>,
     chosen: usize,
-    expressed: bool,
     o: &Options,
     ctx: &mut Context,
 ) -> Note {
     let (note, vel) = (o.number("note"), o.number("vel"));
     let recipe = &choices[chosen].1;
-    let expressions = expressed.then(|| o.follow("bend") | o.follow("brightness"));
+    let expressions = Some(o.follow("bend") | o.follow("brightness"));
     if !ctx.asks_ready() {
         let (mut voice, mut working) = (Voice::empty(), Voice::empty());
         let gain = recipe.play(note, vel, &mut voice, &mut working);
@@ -800,6 +799,11 @@ impl Voice {
     /// The voice as a sound, each partial a sine and each band of noise its filters' output.
     pub fn sound(self) -> Net {
         self.struck(1.0, None, None)
+    }
+
+    /// The voice as a sound that follows the bend and brightness of the note's options while it sounds.
+    pub(super) fn following(self, o: &Options) -> Net {
+        self.struck(1.0, None, Some(o.follow("bend") | o.follow("brightness")))
     }
 
     // The voice as a sound at `gain`, which fills itself again as it starts when given a refill, and follows the bend and brightness of `expressions` when given them.

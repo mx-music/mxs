@@ -209,6 +209,8 @@ A nylon-string guitar fitted partial by partial to the University of Iowa's guit
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the string is plucked. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless given.
 
@@ -220,6 +222,8 @@ An electric bass played with the fingers, fitted partial by partial to the notes
 |---|---|---|---|
 | `note` | a MIDI note | 33 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the string is plucked. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.1 unless given.
 
@@ -231,6 +235,8 @@ A dark bass played with the fingers, fitted partial by partial to the notes of t
 |---|---|---|---|
 | `note` | a MIDI note | 33 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the string is plucked. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.1 unless given.
 
@@ -266,6 +272,8 @@ A folk harp, the kind the Paraguayan and llanera harps are, fitted partial by pa
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless given.
 
@@ -301,6 +309,8 @@ An electric piano whose hammers strike tines, fitted to the notes of the keyboar
 |---|---|---|---|
 | `note` | a MIDI note | 60 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the key is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.15 unless given.
 
@@ -312,6 +322,8 @@ A solid-body electric guitar picked clean, fitted to the notes of the guitar_ele
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the string is picked. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.08 unless given.
 
@@ -855,6 +867,8 @@ A marimba, fitted partial by partial to the University of Iowa's marimba struck 
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
 
@@ -866,6 +880,8 @@ A vibraphone with its motor, fitted partial by partial to the University of Iowa
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `motor` | a number, 0 or more | 0 | How many times a second the discs in the tubes pulse the note; 0 leaves the motor off. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
@@ -878,6 +894,8 @@ A xylophone, fitted partial by partial to the University of Iowa's xylophone str
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
 
@@ -889,6 +907,8 @@ A glockenspiel, fitted partial by partial to the University of Iowa's orchestral
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
 
@@ -900,6 +920,8 @@ A timpani, whose partials are not whole multiples of its note, fitted partial by
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
 

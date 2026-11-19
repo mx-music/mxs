@@ -32,6 +32,7 @@ fn guitar() -> Synth {
                 .doc("How hard the string is plucked."),
         )
         .options(Spec::envelope(1000.0, 2.0))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| kept(guitar_figures(), GUITAR_LEVEL, o, ctx))
 }
 
@@ -54,6 +55,7 @@ fn electric_bass() -> Synth {
                 .doc("How hard the string is plucked."),
         )
         .options(Spec::envelope(1000.0, 0.1))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| fitted(ebass(), EBASS_LEVEL, BASS_GROWTH, o, ctx))
 }
 
@@ -76,6 +78,7 @@ fn deep_bass() -> Synth {
                 .doc("How hard the string is plucked."),
         )
         .options(Spec::envelope(1000.0, 0.1))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| fitted(dbass(), DBASS_LEVEL, BASS_GROWTH, o, ctx))
 }
 
@@ -165,7 +168,9 @@ fn plucked(
 }
 
 fn harp() -> Synth {
-    struck("harp", 2.0).build(|o, ctx| evened(harp_figures(), HARP_LEVEL, o, ctx))
+    struck("harp", 2.0)
+        .options(Spec::expressions(&["bend", "brightness"]))
+        .build(|o, ctx| evened(harp_figures(), HARP_LEVEL, o, ctx))
 }
 
 /// The harp's figures, fitted partial by partial to the folk harp of the Versilian Community Sample Library.
@@ -423,7 +428,7 @@ pub fn piano() -> Synth {
             // A note with the pedal all the way up or down plays one voice, which can be kept ready for either.
             if pedal == 0.0 || pedal == 1.0 {
                 let choices = [0.0, 1.0].map(|down| (piano_at(down), piano_recipe(options, down)));
-                return strike_among(choices.into(), pedal as usize, true, options, ctx);
+                return strike_among(choices.into(), pedal as usize, options, ctx);
             }
             let sound = [(0.0, 1.0 - pedal), (1.0, pedal)]
                 .into_iter()

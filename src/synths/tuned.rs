@@ -19,7 +19,9 @@ pub fn all() -> Vec<Synth> {
 }
 
 fn marimba() -> Synth {
-    struck("marimba", 0.3).build(|o, ctx| kept(marimba_figures(), MARIMBA_LEVEL, o, ctx))
+    struck("marimba", 0.3)
+        .options(Spec::expressions(&["bend", "brightness"]))
+        .build(|o, ctx| kept(marimba_figures(), MARIMBA_LEVEL, o, ctx))
 }
 
 /// The marimba's figures, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets.
@@ -33,6 +35,7 @@ const MARIMBA_LEVEL: f64 = 1.53;
 
 fn vibraphone() -> Synth {
     struck("vibraphone", 0.3)
+        .options(Spec::expressions(&["bend", "brightness"]))
         .option(Spec::float("motor").default(0.0).range(0.0, f64::INFINITY).doc("How many times a second the discs in the tubes pulse the note; 0 leaves the motor off."))
         .build(|o, ctx| {
             let motor = o.number("motor");
@@ -46,7 +49,7 @@ fn vibraphone() -> Synth {
             let voice = vibraphone_figures().voice(note, vel);
             let gain = kept_gain(vibraphone_figures(), VIBRAPHONE_LEVEL, note, vel);
             let end = voice.silent_after();
-            Note::envelope(voice.sound() * pulse * gain as f32, o).within(end)
+            Note::envelope(voice.following(o) * pulse * gain as f32, o).within(end)
         })
 }
 
@@ -60,7 +63,9 @@ fn vibraphone_figures() -> &'static Figures {
 const VIBRAPHONE_LEVEL: f64 = 14.7;
 
 fn xylophone() -> Synth {
-    struck("xylophone", 0.3).build(|o, ctx| kept(xylophone_figures(), XYLOPHONE_LEVEL, o, ctx))
+    struck("xylophone", 0.3)
+        .options(Spec::expressions(&["bend", "brightness"]))
+        .build(|o, ctx| kept(xylophone_figures(), XYLOPHONE_LEVEL, o, ctx))
 }
 
 /// The xylophone's figures, fitted partial by partial to the University of Iowa's xylophone struck with rosewood mallets.
@@ -74,6 +79,7 @@ const XYLOPHONE_LEVEL: f64 = 2.38;
 
 fn glockenspiel() -> Synth {
     struck("glockenspiel", 0.3)
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| kept(glockenspiel_figures(), GLOCKENSPIEL_LEVEL, o, ctx))
 }
 
@@ -87,7 +93,9 @@ fn glockenspiel_figures() -> &'static Figures {
 const GLOCKENSPIEL_LEVEL: f64 = 6.95;
 
 fn timpani() -> Synth {
-    struck("timpani", 0.3).build(|o, ctx| kept(timpani_figures(), TIMPANI_LEVEL, o, ctx))
+    struck("timpani", 0.3)
+        .options(Spec::expressions(&["bend", "brightness"]))
+        .build(|o, ctx| kept(timpani_figures(), TIMPANI_LEVEL, o, ctx))
 }
 
 /// The timpani's figures, fitted partial by partial to the five timpani of VSCO 2.
