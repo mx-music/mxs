@@ -1,5 +1,13 @@
 # Changelog for mxs v0.1
 
+## v0.1.6 (2026-11-19)
+
+### 1. Enhancements
+
+  * [engine] `Engine::keep_ready` keeps voices of an instrument fitted to recordings built ahead, so a note that gives only `note` and `vel` starts in the next buffer, allocating nothing on the audio thread, with the same samples as a voice built for it; each voice taken is replaced on the builder thread, and `Engine::kept_ready` says how many are kept
+  * [engine] `Error::CannotKeepReady` refuses to keep voices of a synth that builds each note for its note and vel alone
+  * [engine] A live engine started on the default output follows the system's default when it changes: it sends a `Topic::Output` report naming the new device, lines its clock up with the system's again within half a second, and warns when the new device runs at another rate
+
 ## v0.1.5 (2026-11-18)
 
 ### 1. Enhancements
