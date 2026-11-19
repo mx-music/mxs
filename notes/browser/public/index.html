@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mxs in the browser</title>
+<style>
+  :root { --bg: #fafaf7; --fg: #1d1d1b; --muted: #6b6b66; --accent: #2f5d8a; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ecece6; --muted: #9a9a93; --accent: #8db8e0; } }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 16px; }
+  button { font: inherit; padding: 0.5rem 1rem; margin: 0 0.5rem 0.5rem 0; border: 1px solid var(--accent); background: none; color: var(--accent); border-radius: 6px; cursor: pointer; }
+  p, pre { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>mxs in the browser</h1>
+<p>mxs's piano, built as WebAssembly and played in an audio worklet. The solo is mx's examples/solo/piano.exs.</p>
+<button id="solo">Play the solo</button>
+<button id="note">Play one note</button>
+<button id="stop">Stop</button>
+<pre id="out"></pre>
+<script type="module">
+import { solo, SECONDS } from "./solo.js";
+
+const out = document.getElementById("out");
+const log = (line) => { out.textContent += line + "\n"; };
+const module = WebAssembly.compileStreaming
+  ? await WebAssembly.compileStreaming(fetch("mxs_web.wasm"))
+  : await WebAssembly.compile(await (await fetch("mxs_web.wasm")).arrayBuffer());
+window.stats = [];
+window.heard = [];
+let context, node;
+
+async function open() {
+  if (context) return;
+  context = new AudioContext({ latencyHint: "interactive" });
+  await context.audioWorklet.addModule("worklet.js");
+  node = new AudioWorkletNode(context, "mxs", { outputChannelCount: [2], processorOptions: { module, voices: 512 } });
+  node.port.onmessage = ({ data }) => {
+    if (data.heard !== undefined) { window.heard.push(data.heard); log(`a note's first sample left the worklet ${(data.heard * 1000).toFixed(1)} ms after the click, and the browser adds ${((context.baseLatency + (context.outputLatency || 0)) * 1000).toFixed(1)} ms`); }
+    else window.stats.push(data);
+  };
+  node.onprocessorerror = (e) => log(`the worklet failed: ${e.message || e}`);
+  node.connect(context.destination);
+  await context.resume();
+  log(`rate ${context.sampleRate}, base latency ${(context.baseLatency * 1000).toFixed(1)} ms, output latency ${((context.outputLatency || 0) * 1000).toFixed(1)} ms`);
+}
+
+window.playSolo = async () => { await open(); node.port.postMessage({ notes: solo() }); return SECONDS; };
+// The click is stamped with the audio clock, and the worklet answers with the audio clock's time of the note's first sample.
+window.playNote = async () => { await open(); node.port.postMessage({ notes: [[0, 60, 0.6, 1]], click: context.currentTime }); };
+window.stop = async () => { if (context) { await context.close(); context = undefined; } };
+document.getElementById("solo").onclick = window.playSolo;
+document.getElementById("note").onclick = window.playNote;
+document.getElementById("stop").onclick = window.stop;
+
+// The same engine on the page's thread, for measuring without the audio clock.
+async function engine(rate, voices) {
+  const x = (await WebAssembly.instantiate(module, {})).exports;
+  x.start(rate, voices);
+  const name = new TextEncoder().encode("piano");
+  new Uint8Array(x.memory.buffer, x.synth_name(name.length), name.length).set(name);
+  return x;
+}
+
+// The level of each second of the solo rendered at 48 kHz, in decibels, and the seconds it took.
+window.renderSolo = async () => {
+  const x = await engine(48000, 512);
+  for (const [at, note, vel, sustain] of solo()) x.note(at, note, vel, sustain);
+  const levels = [];
+  const began = performance.now();
+  for (let s = 0; s < Math.ceil(SECONDS); s++) {
+    let sum = 0;
+    for (let b = 0; b < 375; b++) {
+      const block = new Float32Array(x.memory.buffer, x.render(128), 256);
+      for (const v of block) sum += v * v;
+    }
+    levels.push(10 * Math.log10(sum / 96000 + 1e-20));
+  }
+  return { levels, ms: performance.now() - began };
+};
+
+// The share of a block's time that rendering takes with `count` held piano notes, over the second after they start.
+window.heldNotes = async (count) => {
+  const x = await engine(48000, count + 1);
+  for (let i = 0; i < count; i++) x.note(0, 36 + (i % 48), 0.6, 600);
+  for (let b = 0; b < 40; b++) x.render(128);
+  const began = performance.now();
+  for (let b = 0; b < 375; b++) x.render(128);
+  return (performance.now() - began) / 1000;
+};
+window.ready = true;
+</script>
+</body>
+</html>
