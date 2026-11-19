@@ -4,7 +4,7 @@
 //! Figures of held notes, bowed, blown or played on an organ, hold each level after the last time until the note is let go, then fall at its slope, with the recordings' vibrato.
 
 use crate::nodes::hz;
-use crate::synth::Ready;
+use crate::synth::{Given, Ready};
 use crate::{Context, Note, Options};
 use fundsp::prelude::*;
 use std::collections::HashMap;
@@ -313,23 +313,31 @@ impl Figures {
 
     /// A voice with room for any note of these figures, which `fill` then fills with no new room.
     pub fn room(&self) -> Voice {
-        let most = 4 * self
-            .recordings
-            .iter()
-            .map(|r| r.partials.len())
-            .max()
-            .unwrap_or(0);
+        Figures::room_among(&[self])
+    }
+
+    /// A voice with room for a note of any of `all`.
+    fn room_among(all: &[&Figures]) -> Voice {
+        let most = |of: fn(&Figures) -> usize| all.iter().map(|f| of(f)).max().unwrap_or(0);
+        let partials = 4 * most(|f| {
+            f.recordings
+                .iter()
+                .map(|r| r.partials.len())
+                .max()
+                .unwrap_or(0)
+        });
+        let (times, bands) = (most(|f| f.times.len()), most(|f| f.bands.len()));
         let shape = || Shape {
-            levels: Vec::with_capacity(self.times.len()),
+            levels: Vec::with_capacity(times),
             tail: 0.0,
         };
         Voice {
-            times: Vec::with_capacity(self.times.len()),
-            partials: Vec::with_capacity(most),
-            noise: Vec::with_capacity(self.bands.len()),
-            swings: Vec::with_capacity(most),
+            times: Vec::with_capacity(times),
+            partials: Vec::with_capacity(partials),
+            noise: Vec::with_capacity(bands),
+            swings: Vec::with_capacity(partials),
             vibrato: None,
-            spare: (0..most + self.bands.len()).map(|_| shape()).collect(),
+            spare: (0..partials + bands).map(|_| shape()).collect(),
         }
     }
 
@@ -480,31 +488,55 @@ pub(super) fn strike(
     o: &Options,
     ctx: &mut Context,
 ) -> Note {
+    strike_among(vec![(figures, recipe)], 0, o, ctx)
+}
+
+/// A struck note played by the `chosen` of `choices`, each figures with their recipe.
+/// Built ready, it keeps room for any note of any of them, and fills itself again from the one the pedal it is given picks, the first at 0 and the last at 1.
+pub(super) fn strike_among(
+    choices: Vec<(&'static Figures, Recipe)>,
+    chosen: usize,
+    o: &Options,
+    ctx: &mut Context,
+) -> Note {
     let (note, vel) = (o.number("note"), o.number("vel"));
+    let recipe = &choices[chosen].1;
     if !ctx.asks_ready() {
         let (mut voice, mut working) = (Voice::empty(), Voice::empty());
         let gain = recipe.play(note, vel, &mut voice, &mut working);
         let end = voice.silent_after();
         return Note::envelope(voice.sound() * gain as f32, o).within(end);
     }
-    let (mut voice, mut working) = (figures.room(), figures.room());
+    let all: Vec<&Figures> = choices.iter().map(|(figures, _)| *figures).collect();
+    let (mut voice, mut working) = (Figures::room_among(&all), Figures::room_among(&all));
     let gain = recipe.play(note, vel, &mut voice, &mut working);
     let end = voice.silent_after();
     let (envelope, release) = (Note::envelope_seconds(o), o.number("release"));
-    let fill = recipe.fill.clone();
-    let room = Mutex::new(figures.room());
-    let hold = Ready::new(move |note, vel| {
+    let fills: Vec<Arc<Fill>> = choices.iter().map(|(_, r)| r.fill.clone()).collect();
+    let room = Mutex::new(Figures::room_among(&all));
+    let hold = Ready::new(move |given: Given| {
         let mut voice = room.lock().unwrap_or_else(|e| e.into_inner());
-        fill(note, vel, &mut voice);
-        (envelope.min(voice.silent_after()), release)
+        fills[picked(given.pedal, fills.len())](given.note, given.vel, &mut voice);
+        let fades = voice.silent_after();
+        let lasts = if given.held {
+            fades
+        } else {
+            envelope.min(fades)
+        };
+        (lasts, release)
     });
     ctx.built_ready(hold.clone());
     let refill = Refill {
         hold,
-        recipe,
+        recipes: choices.into_iter().map(|(_, recipe)| recipe).collect(),
         working,
     };
     Note::envelope(voice.ready_sound(gain, refill), o).within(end)
+}
+
+/// Which of `count` choices a pedal of 0 or 1 picks.
+fn picked(pedal: f64, count: usize) -> usize {
+    Ord::min(pedal as usize, count - 1)
 }
 
 /// A note played from figures fitted to recordings.
@@ -788,11 +820,11 @@ impl Voice {
     }
 }
 
-/// What a voice built ready fills itself again with: the hold the engine gives its note and vel through, its instrument's recipe, and a voice for the recipe to work in.
+/// What a voice built ready fills itself again with: the hold the engine gives its note through, its instrument's recipes by pedal, and a voice for the recipe to work in.
 #[derive(Clone)]
 struct Refill {
     hold: Arc<Ready>,
-    recipe: Recipe,
+    recipes: Vec<Recipe>,
     working: Voice,
 }
 
@@ -988,12 +1020,11 @@ impl Struck {
         let Some(refill) = &mut self.refill else {
             return;
         };
-        let Some((note, vel)) = refill.hold.given() else {
+        let Some(given) = refill.hold.given() else {
             return;
         };
-        self.gain = refill
-            .recipe
-            .play(note, vel, &mut self.voice, &mut refill.working) as f32;
+        let recipe = &refill.recipes[picked(given.pedal, refill.recipes.len())];
+        self.gain = recipe.play(given.note, given.vel, &mut self.voice, &mut refill.working) as f32;
         self.start();
     }
 
@@ -1099,7 +1130,11 @@ pub(super) fn held_note(
     figures.fill(&mut voice, note, vel);
     vibrate(&mut voice, vibrato);
     let skip = legato.clamp(0.0, 1.0) * voice.vibrato.map_or(0.0, |v| v.settles);
-    let hold = o.number("attack") + o.number("decay") + o.number("sustain");
+    let hold = if o.held() {
+        f64::INFINITY
+    } else {
+        o.number("attack") + o.number("decay") + o.number("sustain")
+    };
     let falls = if breath.is_some() { 5.0 } else { voice.falls() };
     let under = voice.loudest() - 100.0;
     let gate = shared(1.0);
@@ -1156,19 +1191,22 @@ pub(super) fn held_note(
             sound: notes >> (Net::wrap(Box::new(An(node))) * level as f32),
             end: hold + falls,
             release: Some((gate, falls)),
+            held: None,
         };
     }
     let room = Mutex::new(figures.room());
-    let hold_for = Ready::new(move |note, vel| {
+    let hold_for = Ready::new(move |given: Given| {
         let mut voice = room.lock().unwrap_or_else(|e| e.into_inner());
-        figures.fill(&mut voice, note, vel.clamp(0.0, 1.0));
+        figures.fill(&mut voice, given.note, given.vel.clamp(0.0, 1.0));
         let falls = if breath.is_some() { 5.0 } else { voice.falls() };
+        let hold = if given.held { f64::INFINITY } else { hold };
         (hold + falls, falls)
     });
     ctx.built_ready(hold_for.clone());
     node.gain = level as f32;
     node.refill = Some(HeldRefill {
         hold: hold_for,
+        plain: hold,
         gain: Arc::new(gain),
         legato,
         breath,
@@ -1179,6 +1217,7 @@ pub(super) fn held_note(
         sound: notes >> Net::wrap(Box::new(An(node))),
         end: hold + falls,
         release: Some((gate, falls)),
+        held: None,
     }
 }
 
@@ -1186,6 +1225,8 @@ pub(super) fn held_note(
 #[derive(Clone)]
 struct HeldRefill {
     hold: Arc<Ready>,
+    /// The seconds a note not held is held for before it falls.
+    plain: f64,
     gain: Arc<dyn Fn(f64) -> f64 + Send + Sync>,
     legato: f64,
     breath: Option<Breath>,
@@ -1365,10 +1406,15 @@ impl Sustained {
         let Some(refill) = &mut self.refill else {
             return;
         };
-        let Some((note, vel)) = refill.hold.given() else {
+        let Some(given) = refill.hold.given() else {
             return;
         };
-        let vel = vel.clamp(0.0, 1.0);
+        let (note, vel) = (given.note, given.vel.clamp(0.0, 1.0));
+        self.hold = if given.held {
+            f64::INFINITY
+        } else {
+            refill.plain
+        };
         let breath = refill.breath;
         self.register = breath.map_or(1.0, |b| {
             register(self.figures, note, b.even, &mut refill.working)
@@ -2058,6 +2104,7 @@ mod build_time {
 mod ready {
     use crate::options::{Context, Options};
     use crate::spec::Value;
+    use crate::synth::Given;
     use fundsp::prelude::*;
 
     fn options(synth: &crate::Synth, note: f64, vel: f64) -> Options {
@@ -2125,8 +2172,14 @@ mod ready {
                 built.sound.set_sample_rate(48_000.0);
                 built.sound.allocate();
                 let release = built.release.as_ref().map(|(_, seconds)| *seconds);
+                let given = Given {
+                    note,
+                    vel,
+                    held: false,
+                    pedal: 0.0,
+                };
                 assert_eq!(
-                    hold.give(note, vel),
+                    hold.give(given),
                     (built.end, release.unwrap()),
                     "{name} lasts otherwise"
                 );

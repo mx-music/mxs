@@ -174,3 +174,34 @@ fn a_count_of_0_stops_keeping_voices_ready() {
     engine.keep_ready("marimba", 0).unwrap();
     assert_eq!(engine.kept_ready("marimba"), 0);
 }
+
+#[test]
+fn held_notes_of_the_piano_with_the_pedal_up_or_down_and_of_the_violin_play_from_ready_voices_as_built_ones_do()
+ {
+    let notes = || {
+        vec![
+            Event::held(1, "piano", &[("note", 55.0), ("vel", 0.5), ("pedal", 1.0)]),
+            Event::held(2, "piano", &[("note", 72.0), ("vel", 0.8), ("pedal", 0.0)]),
+            Event::held(3, "violin", &[("note", 67.0), ("vel", 0.4)]),
+        ]
+    };
+    let mut engine = engine();
+    engine.keep_ready("piano", 2).unwrap();
+    engine.keep_ready("violin", 1).unwrap();
+    engine.render(0.1).unwrap();
+    let mut built = engine_at_the_same_frame();
+    for engine in [&mut engine, &mut built] {
+        let now = engine.now();
+        let events: Vec<(f64, Event)> = notes().into_iter().map(|e| (now, e)).collect();
+        engine.play(&events).unwrap();
+        let let_go = Event::Release { ids: vec![1, 2, 3] };
+        engine.play(&[(now + 2.5, let_go)]).unwrap();
+    }
+    let (ready, _) = engine.render(9.0).unwrap();
+    let (expected, _) = built.render(9.0).unwrap();
+    assert!(ready.iter().any(|s| s.abs() > 0.01));
+    assert!(
+        ready == expected,
+        "the ready held notes play otherwise than built ones"
+    );
+}

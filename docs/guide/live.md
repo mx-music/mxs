@@ -109,9 +109,9 @@ fn main() -> Result<(), mxs::Error> {
 }
 ```
 
-- A note that gives no option but `note` and `vel` takes a ready voice of its synth, which the audio thread fills with that note and vel as the note starts, building and allocating nothing.
+- A note, held or not, that gives no options but `note`, `vel`, `bend`, `brightness`, `pressure` and a `pedal` of 0 or 1 takes a ready voice of its synth, which the audio thread fills with what it was given as the note starts, building and allocating nothing.
 - A note handed over at [`Engine::now`] then starts in the next buffer the sound card asks for: a chord of ten piano notes is handed over in under a millisecond, and late by at most one buffer.
-- A ready voice sounds as a voice built for the same note and vel, sample for sample.
+- A ready voice sounds as a voice built for the same note, sample for sample.
 - Each voice taken is replaced on the builder thread, so the number asked for is kept: ten piano voices are back within about 10 ms.
 - A note with any other option, of a synth with no voice ready, or in a pass is built as before.
 - The instruments fitted to recordings can be kept ready: the piano, guitar, electric bass, deep bass, harp, electric piano, electric guitar, marimba, vibraphone, xylophone, glockenspiel and timpani, and the violin, cello and `flute_figured`; a voice of any other synth is refused with [`Error::CannotKeepReady`].

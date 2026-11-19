@@ -107,12 +107,14 @@ pub fn segments(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
 }
 
 /// A level moving through `levels` over `times` as [`segments`] does, until its input falls to 0: from then it falls from where it is to silence over the last of `times`, along the last of `curves`.
-pub fn gated(levels: &[f64], times: &[f64], curves: &[f64]) -> Net {
+/// While `held` is above 0 it stays at the third of `levels` once the first two of `times` have passed, until its input falls.
+pub fn gated(levels: &[f64], times: &[f64], curves: &[f64], held: &Shared) -> Net {
     let (levels, times, curves) = (levels.to_vec(), times.to_vec(), curves.to_vec());
     Net::wrap(Box::new(An(Gated {
         levels,
         times,
         curves,
+        held: held.clone(),
         t: 0.0,
         dt: 1.0 / DEFAULT_SR,
         let_go: None,
@@ -466,10 +468,20 @@ struct Gated {
     levels: Vec<f64>,
     times: Vec<f64>,
     curves: Vec<f64>,
+    held: Shared,
     t: f64,
     dt: f64,
     /// The seconds at which the gate fell, and the level then.
     let_go: Option<(f64, f64)>,
+}
+
+impl Gated {
+    fn at(&self, t: f64) -> f64 {
+        if self.held.value() > 0.0 && t >= self.times[0] + self.times[1] {
+            return self.levels[2];
+        }
+        segment_at(&self.levels, &self.times, &self.curves, t)
+    }
 }
 
 impl AudioNode for Gated {
@@ -487,13 +499,10 @@ impl AudioNode for Gated {
 
     fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
         if self.let_go.is_none() && input[0] <= 0.0 {
-            self.let_go = Some((
-                self.t,
-                segment_at(&self.levels, &self.times, &self.curves, self.t),
-            ));
+            self.let_go = Some((self.t, self.at(self.t)));
         }
         let level = match self.let_go {
-            None => segment_at(&self.levels, &self.times, &self.curves, self.t),
+            None => self.at(self.t),
             Some((at, from)) => {
                 let release = self.times.last().copied().unwrap_or(0.0);
                 let curve = self.curves.last().copied().unwrap_or(0.0);

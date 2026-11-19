@@ -1,7 +1,7 @@
 //! mx's strings, plucked and struck: the guitar, the cavaquinho and bandolim, the harp, the sitar, the tanpura and the piano.
 
 use super::common::{along, bpf, hpf, lpf, net, partials, silent_after, sine_from, struck};
-use super::figures::{Figures, Recipe, Voice, evened, fitted, kept, strike};
+use super::figures::{Figures, Recipe, Voice, evened, fitted, kept, strike_among};
 use crate::nodes::{db, decay2, hit, hz, modes, segment_at, shape, struck_gliding, white_noise};
 use crate::{Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
@@ -419,9 +419,10 @@ pub fn piano() -> Synth {
         .options(Spec::envelope(1.0, 1.0))
         .build(|options, ctx| {
             let pedal = options.number("pedal");
-            // A note with the pedal all the way up or down plays one voice, which can be kept ready.
+            // A note with the pedal all the way up or down plays one voice, which can be kept ready for either.
             if pedal == 0.0 || pedal == 1.0 {
-                return strike(piano_at(pedal), piano_recipe(options, pedal), options, ctx);
+                let choices = [0.0, 1.0].map(|down| (piano_at(down), piano_recipe(options, down)));
+                return strike_among(choices.into(), pedal as usize, options, ctx);
             }
             let sound = [(0.0, 1.0 - pedal), (1.0, pedal)]
                 .into_iter()

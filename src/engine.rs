@@ -11,7 +11,7 @@ use crate::options::{Context, Control, Options};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
 use crate::sample::{Player, SampleData};
 use crate::spec::{Kind, Spec, Value};
-use crate::synth::{BuildNote, Effect, Note, Ready, Synth};
+use crate::synth::{BuildNote, Effect, Given, Note, Ready, Synth};
 use crate::time::{Tempo, TempoMap};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use fundsp::prelude::*;
@@ -1205,7 +1205,7 @@ impl Engine {
         self.book().keep(built);
     }
 
-    /// Keeps `count` voices of `synth` ready, built before any note asks for one, so a note of it handed over with no option but note and vel starts from one in the block being filled, with nothing built or allocated on the audio thread.
+    /// Keeps `count` voices of `synth` ready, built before any note asks for one, so a note of it, held or not, handed over with no options but note, vel, bend, brightness, pressure and a pedal of 0 or 1, starts from one in the block being filled, with nothing built or allocated on the audio thread.
     /// Each voice taken is replaced off the audio thread: on a live engine's builder thread, and on an offline one as the note is handed over.
     /// The voices are built here, so the call takes as long as building them; a count of 0 stops keeping voices of `synth` ready.
     /// Only notes handed over by seconds or frames take a ready voice; a note in a pass is built as before.
@@ -1664,6 +1664,8 @@ struct Built {
     lasts: f64,
     controls: HashMap<String, Control>,
     release: Option<(Shared, f64)>,
+    /// Above 0 while the note's envelope holds until it is let go.
+    held: Option<Shared>,
     /// The hold on a voice built to be kept ready.
     ready: Option<Arc<Ready>>,
 }
@@ -1706,6 +1708,7 @@ fn build(draft: SoundDraft, rate: f64) -> Result<Built, Error> {
         lasts: note.end,
         controls: options.take_controls(),
         release: note.release,
+        held: note.held,
         ready: ctx.take_ready(),
     })
 }
@@ -1759,27 +1762,46 @@ impl Book {
 
     /// A voice kept ready for the note `sound` drafts, given its note and vel and placed as the draft is, when `event` gives no other option and one is kept.
     fn take_ready(&mut self, event: &Event, sound: &SoundDraft) -> Option<Built> {
-        let Event::Note { synth, options, .. } = event else {
+        let Event::Note {
+            synth,
+            options,
+            held,
+            ..
+        } = event
+        else {
             return None;
         };
-        if !options
-            .iter()
-            .all(|(name, _)| name == "note" || name == "vel")
-        {
+        let takes = |(name, value): &(String, Value)| match name.as_str() {
+            "pedal" => matches!(value, Value::Number(x) if *x == 0.0 || *x == 1.0),
+            name => READY_OPTIONS.contains(&name),
+        };
+        if !options.iter().all(takes) {
             return None;
         }
         let mut built = self.ready.get_mut(synth)?.pop()?;
         let hold = built.ready.as_ref()?;
-        let (note, vel) = (sound.options.number("note"), sound.options.number("vel"));
-        let (lasts, release) = hold.give(note, vel);
+        let given = Given {
+            note: sound.options.number("note"),
+            vel: sound.options.number("vel"),
+            held: *held,
+            pedal: if options.iter().any(|(name, _)| name == "pedal") {
+                sound.options.number("pedal")
+            } else {
+                0.0
+            },
+        };
+        let (lasts, release) = hold.give(given);
         built.lasts = lasts;
         if let Some((_, seconds)) = &mut built.release {
             *seconds = release;
         }
-        // A note that follows its note or vel reads them from these from its first sample.
-        for (name, value) in [("note", note), ("vel", vel)] {
+        if let Some(flag) = &built.held {
+            flag.set(if *held { 1.0 } else { 0.0 });
+        }
+        // A note that follows these reads them from its first sample.
+        for name in READY_OPTIONS {
             if let Some(control) = built.controls.get(name) {
-                control.target.set(value as f32);
+                control.target.set(sound.options.number(name) as f32);
             }
         }
         built.id = sound.id;
@@ -2762,6 +2784,9 @@ fn placing_specs() -> Vec<Spec> {
     ]
 }
 
+/// The options a note may be given and still take a voice kept ready, besides a pedal of 0 or 1.
+const READY_OPTIONS: [&str; 5] = ["note", "vel", "bend", "brightness", "pressure"];
+
 fn note_specs() -> Vec<Spec> {
     let mut specs = placing_specs();
     specs.extend(Spec::expressions(&["bend", "brightness", "pressure"]));
@@ -2976,6 +3001,46 @@ pub(crate) fn held_warning(owner: &str, specs: &[Spec], name: &str) -> String {
 mod tests {
     use super::*;
     use crate::Synth;
+
+    /// What the voices of `synth` kept ready are given as they are taken.
+    fn kept(engine: &Engine, synth: &str) -> Vec<Arc<Ready>> {
+        engine.book().ready[synth]
+            .iter()
+            .filter_map(|built| built.ready.clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_held_piano_note_with_the_pedal_down_takes_a_voice_kept_ready_and_one_half_down_does_not() {
+        let mut engine = Engine::offline(48_000.0);
+        crate::synths::all()
+            .into_iter()
+            .for_each(|s| engine.register(s));
+        engine.keep_ready("piano", 2).unwrap();
+        let ready = kept(&engine, "piano");
+        let options = |pedal| {
+            [
+                ("note", 60.0),
+                ("vel", 0.6),
+                ("pedal", pedal),
+                ("bend", 0.0),
+            ]
+        };
+        engine
+            .play(&[(0.0, Event::held(1, "piano", &options(0.5)))])
+            .unwrap();
+        assert!(ready.iter().all(|hold| hold.given().is_none()));
+        engine
+            .play(&[(0.0, Event::held(2, "piano", &options(1.0)))])
+            .unwrap();
+        let given = Given {
+            note: 60.0,
+            vel: 0.6,
+            held: true,
+            pedal: 1.0,
+        };
+        assert!(ready.iter().any(|hold| hold.given() == Some(given)));
+    }
 
     #[test]
     fn a_panic_while_filling_audio_silences_the_engine_and_is_reported() {

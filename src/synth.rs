@@ -5,7 +5,7 @@ use crate::options::{Context, Options};
 use crate::spec::Spec;
 use fundsp::prelude::*;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub(crate) type BuildNote = dyn Fn(&Options, &mut Context) -> Note + Send + Sync;
 type BuildEffect = dyn Fn(&Options, &mut Context) -> Net + Send + Sync;
@@ -94,38 +94,57 @@ pub struct Note {
     pub(crate) end: f64,
     /// The gate that lets the note go before its envelope ends, and the seconds it then takes to fall silent.
     pub(crate) release: Option<(Shared, f64)>,
+    /// Above 0 while the envelope holds at the end of its decay until it is let go.
+    pub(crate) held: Option<Shared>,
 }
 
-/// The hold the engine keeps on a voice built ready: the note and vel it plays, written before it starts, and how many seconds a note at a note and vel lasts and takes to fall silent once let go.
+/// What the engine gives a voice built ready as its note starts: the note and vel it plays, whether it is held, and its pedal, 0 or 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Given {
+    pub note: f64,
+    pub vel: f64,
+    pub held: bool,
+    pub pedal: f64,
+}
+
+/// The hold the engine keeps on a voice built ready: what it is given, written before it starts, and how many seconds a note given that lasts and takes to fall silent once let go.
 pub(crate) struct Ready {
     note: AtomicU64,
     vel: AtomicU64,
-    lasts: Box<dyn Fn(f64, f64) -> (f64, f64) + Send + Sync>,
+    held: AtomicBool,
+    pedal: AtomicU64,
+    lasts: Box<dyn Fn(Given) -> (f64, f64) + Send + Sync>,
 }
 
 impl Ready {
-    pub(crate) fn new(
-        lasts: impl Fn(f64, f64) -> (f64, f64) + Send + Sync + 'static,
-    ) -> Arc<Ready> {
+    pub(crate) fn new(lasts: impl Fn(Given) -> (f64, f64) + Send + Sync + 'static) -> Arc<Ready> {
         Arc::new(Ready {
             note: AtomicU64::new(f64::NAN.to_bits()),
             vel: AtomicU64::new(0),
+            held: AtomicBool::new(false),
+            pedal: AtomicU64::new(0),
             lasts: Box::new(lasts),
         })
     }
 
-    /// Gives the voice the note and vel it plays, before the engine sends it on, and says how many seconds it lasts and takes to fall silent once let go.
-    pub(crate) fn give(&self, note: f64, vel: f64) -> (f64, f64) {
-        self.note.store(note.to_bits(), Ordering::Relaxed);
-        self.vel.store(vel.to_bits(), Ordering::Relaxed);
-        (self.lasts)(note, vel)
+    /// Gives the voice what it plays, before the engine sends it on, and says how many seconds it lasts and takes to fall silent once let go.
+    pub(crate) fn give(&self, given: Given) -> (f64, f64) {
+        self.note.store(given.note.to_bits(), Ordering::Relaxed);
+        self.vel.store(given.vel.to_bits(), Ordering::Relaxed);
+        self.held.store(given.held, Ordering::Relaxed);
+        self.pedal.store(given.pedal.to_bits(), Ordering::Relaxed);
+        (self.lasts)(given)
     }
 
-    /// The note and vel given, or `None` before any is.
-    pub(crate) fn given(&self) -> Option<(f64, f64)> {
+    /// What was given, or `None` before anything is.
+    pub(crate) fn given(&self) -> Option<Given> {
         let note = f64::from_bits(self.note.load(Ordering::Relaxed));
-        let vel = f64::from_bits(self.vel.load(Ordering::Relaxed));
-        (!note.is_nan()).then_some((note, vel))
+        (!note.is_nan()).then(|| Given {
+            note,
+            vel: f64::from_bits(self.vel.load(Ordering::Relaxed)),
+            held: self.held.load(Ordering::Relaxed),
+            pedal: f64::from_bits(self.pedal.load(Ordering::Relaxed)),
+        })
     }
 }
 
@@ -136,10 +155,12 @@ impl Note {
             sound: net(sound),
             end: seconds,
             release: None,
+            held: None,
         }
     }
 
     /// A sound shaped by the note's envelope, from its options attack, decay, sustain, release, attack_level, decay_level and sustain_level, which ends when the envelope does, or falls silent over its release once let go.
+    /// A held note stays at decay_level after its decay, leaving its sustain unread, until it is let go.
     pub fn envelope(sound: impl AudioUnit + 'static, options: &Options) -> Note {
         let attack = options.number("attack");
         let decay = options.number("decay");
@@ -154,17 +175,25 @@ impl Note {
         let levels = [0.0, peak, decayed, held, 0.0];
         let times = [attack, decay, sustain, release];
         let gate = shared(1.0);
-        let level = net(var(&gate)) >> gated(&levels, &times, &[1.0, -2.0, 0.0, -3.0]) >> onset();
+        let holding = shared(if options.held() { 1.0 } else { 0.0 });
+        let level =
+            net(var(&gate)) >> gated(&levels, &times, &[1.0, -2.0, 0.0, -3.0], &holding) >> onset();
         let sound = net(sound);
         let sound = if sound.outputs() == 2 {
             sound * (level >> split::<U2>())
         } else {
             sound * level
         };
+        let end = if options.held() {
+            f64::INFINITY
+        } else {
+            Note::envelope_seconds(options)
+        };
         Note {
             sound,
-            end: Note::envelope_seconds(options),
+            end,
             release: Some((gate, release)),
+            held: Some(holding),
         }
     }
 
