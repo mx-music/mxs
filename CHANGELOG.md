@@ -6,6 +6,7 @@
 
   * [engine] `Event::Note` has a `held` field; `Event::note` builds it as before, and code that writes the struct out gives `held: false`
   * [synths] The winds' bore option `cutoff` is now `least_corner`, so that `cutoff` always names a low-pass's corner
+  * [synths] The flute's and tenor sax's `vibrato` is in semitones: the tenor sax's old 1 is 0.145, and the flute's old depth is the new one times 3.78, so its old default of 0.17 is 0.045
 
 ### 2. Enhancements
 
