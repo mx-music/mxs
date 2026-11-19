@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 /// How far the pitch bend wheel bends a note at either end, in semitones.
 pub const BEND: f64 = 2.0;
-/// How long a note glides to each new position of the wheel, smoothing the steps between its messages.
+/// How long a note of a synth that does not follow bend glides to each new position of the wheel, smoothing the steps between its messages.
 const BEND_GLIDE: f64 = 0.01;
 
 /// One instrument played from MIDI, turning each message into the engine's events.
@@ -96,7 +96,12 @@ impl Keyboard {
         let vel = velocity as f64 / 127.0;
         let loudness = if self.has("vel") { "vel" } else { "amp" };
         let mut options = vec![(loudness, vel)];
-        if self.has("note") {
+        if self.has("bend") {
+            options.push(("note", key as f64));
+            if self.bend != 0.0 {
+                options.push(("bend", self.bend));
+            }
+        } else if self.has("note") {
             options.push(("note", key as f64 + self.bend));
         }
         if self.has("pedal") {
@@ -146,15 +151,26 @@ impl Keyboard {
 
     fn set_bend(&mut self, bend: f64, at: f64) -> Vec<(f64, Event)> {
         self.bend = bend;
-        if !self.has("note") {
-            return Vec::new();
-        }
         let sounding: Vec<(u8, u64)> = self
             .down
             .iter()
             .map(|(&k, &id)| (k, id))
             .chain(self.held.iter().copied())
             .collect();
+        if self.has("bend") {
+            let ids = sounding.into_iter().map(|(_, id)| id).collect();
+            let options = vec![("bend".into(), bend)];
+            return vec![(
+                at,
+                Event::Set {
+                    target: Target::Sounds(ids),
+                    options,
+                },
+            )];
+        }
+        if !self.has("note") {
+            return Vec::new();
+        }
         sounding
             .into_iter()
             .map(|(key, id)| {

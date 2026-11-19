@@ -451,3 +451,28 @@ fn every_input_connected_plays_when_none_is_named_and_stopping_lets_go_of_its_no
     );
     assert!(matches!(engine.stop_midi(None), Err(Error::Midi(_))));
 }
+
+#[test]
+#[ignore]
+fn a_piano_key_played_with_the_pedal_down_starts_from_a_ready_voice_while_the_builder_is_busy() {
+    let (name, mut keyboard) = source("pedal down");
+    let mut engine = live();
+    engine.start_part("keys", &[]).unwrap();
+    engine.play_midi(Some(&name), "keys", "piano", &[]).unwrap();
+    keyboard.send(&[0xb0, 64, 127]).unwrap();
+    settle(&mut engine);
+    let later = engine.now() + 5.0;
+    let busy: Vec<(f64, mxs::Event)> = (0..40)
+        .map(|i| {
+            let options = [("note", 30.0 + i as f64), ("amp", 0.0)];
+            (later, mxs::Event::note(None, "piano", &options))
+        })
+        .collect();
+    engine.play(&busy).unwrap();
+    keyboard.send(&[0x90, 55, 80]).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let late = most_late(&engine.warnings());
+    println!("the key's note was late by up to {late} ms");
+    assert_eq!(late, 0.0);
+    assert_eq!(engine.kept_ready("piano"), 10);
+}
