@@ -250,12 +250,24 @@ fn a_synth_that_had_no_vel_plays_at_half_its_level_at_vel_0_3_and_as_before_at_0
 }
 
 /// The pitch a held note of `synth` measures before and 10 ms after `change` reaches it at `at` seconds, and how bright `measure` finds it then.
-/// Each window lasts 50 ms, or 12 periods of a low note, so that its pitch is resolved to a tenth of a semitone.
 fn changed(
     synth: &str,
     options: &[(&str, f64)],
     change: (&str, f64),
     at: f64,
+    measure: fn(&[f32], f64) -> f64,
+) -> ((f64, f64), (f64, f64)) {
+    changed_after(synth, options, change, at, 0.01, measure)
+}
+
+/// What [`changed`] measures, `delay` seconds after the change rather than 10 ms.
+/// Each window lasts 50 ms, or 12 periods of a low note, so that its pitch is resolved to a tenth of a semitone.
+fn changed_after(
+    synth: &str,
+    options: &[(&str, f64)],
+    change: (&str, f64),
+    at: f64,
+    delay: f64,
     measure: fn(&[f32], f64) -> f64,
 ) -> ((f64, f64), (f64, f64)) {
     let note = options.iter().find(|(name, _)| *name == "note").unwrap().1;
@@ -272,7 +284,7 @@ fn changed(
     let (sound, _) = engine.render(at + 0.5).unwrap();
     let length = f64::max(0.05, 12.0 / middle);
     let window = |from: f64| &sound[(from * RATE) as usize..((from + length) * RATE) as usize];
-    let (before, after) = (window(at - length), window(at + 0.01));
+    let (before, after) = (window(at - length), window(at + delay));
     let was = peak_between(before, 0.9 * middle, 1.05 * middle);
     let (low, high) = if change.0 == "bend" {
         (1.05, 1.2)
@@ -400,5 +412,85 @@ fn a_bend_and_brightness_reach_a_held_viola_and_double_bass_note_within_10_ms() 
             bright > 1.2 * dull,
             "{synth}'s share above its fourth harmonic went from {dull} to {bright}"
         );
+    }
+}
+
+#[test]
+fn a_bend_reaches_a_held_note_of_each_wind_once_its_bore_settles_and_brightness_within_10_ms() {
+    let winds = [
+        ("flute", 72.0),
+        ("flute_figured", 72.0),
+        ("clarinet", 60.0),
+        ("oboe", 67.0),
+        ("bassoon", 48.0),
+        ("tenor_sax", 55.0),
+        ("trumpet", 64.0),
+        ("trombone", 50.0),
+        ("horn", 55.0),
+        ("tuba", 36.0),
+    ];
+    for (synth, note) in winds {
+        let options = [("note", note), ("vel", 0.6), ("vibrato", 0.0)];
+        // The wave already in a reed's or a brass's bore takes a few round trips to settle on a new pitch.
+        let delay = if synth.starts_with("flute") {
+            0.01
+        } else {
+            0.1
+        };
+        let bend = ("bend", 2.0);
+        let ((was, is), _) = changed_after(synth, &options, bend, 1.0, delay, above_the_fourth);
+        let moved = 12.0 * (is / was).log2();
+        let after = |brightness: f64| {
+            let change = ("brightness", brightness);
+            changed(synth, &options, change, 1.0, above_the_fourth).1.1
+        };
+        let (dull, bright) = (after(0.5), after(1.0));
+        println!(
+            "{synth}: {was:.1} to {is:.1} Hz, {moved:.3} semitones; share above the fourth harmonic {dull:.4} at 0.5, {bright:.4} at 1"
+        );
+        assert!(
+            (moved - 2.0).abs() < 0.1,
+            "{synth} moved {moved} semitones, {was} to {is} Hz"
+        );
+        assert!(
+            bright > 1.2 * dull,
+            "{synth}'s share above its fourth harmonic went from {dull} to {bright}"
+        );
+    }
+}
+
+#[test]
+fn a_bend_and_brightness_reach_a_held_note_of_the_brass_sitar_organs_and_the_tabla_ghe_within_10_ms()
+ {
+    // The struck ones fade, so they are changed sooner.
+    let synths = [
+        ("brass", 60.0, 1.0, true),
+        ("sitar", 60.0, 0.3, true),
+        ("organ", 60.0, 1.0, true),
+        ("harmonium", 60.0, 1.0, true),
+        ("accordion", 60.0, 1.0, true),
+        ("tabla_ghe", 45.0, 0.1, false),
+    ];
+    for (synth, note, at, brightens) in synths {
+        let options = [("note", note)];
+        let ((was, is), _) = changed(synth, &options, ("bend", 2.0), at, above_the_fourth);
+        let moved = 12.0 * (is / was).log2();
+        println!("{synth}: {was:.1} to {is:.1} Hz, {moved:.3} semitones");
+        assert!(
+            (moved - 2.0).abs() < 0.1,
+            "{synth} moved {moved} semitones, {was} to {is} Hz"
+        );
+        if brightens {
+            let after = |brightness: f64| {
+                let change = ("brightness", brightness);
+                changed(synth, &options, change, at, above_the_fourth).1.1
+            };
+            let (dull, bright) = (after(0.5), after(1.0));
+            println!("{synth}: share above the fourth harmonic {dull:.4} at 0.5, {bright:.4} at 1");
+            assert!(
+                bright > 1.2 * dull,
+                "{synth}'s share above its fourth harmonic went from {dull} to {bright}"
+            );
+        }
     }
 }

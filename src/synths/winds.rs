@@ -3,6 +3,7 @@
 //! The bore is a delay line as long as the note's period, so a change of note carries the same column of air to the new pitch, and the breath's pressure follows vel while the note holds.
 //! After the model come a peak at each band mx measures, its gain fitted to each instrument's recordings at pp, mf and ff and following vel between them.
 
+use super::common::{moved_by, tilted};
 use crate::nodes::{db, hz, shape, white_noise};
 use crate::synth::SynthDecl;
 use crate::{Context, Note, Options, Spec, Synth};
@@ -876,6 +877,7 @@ fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
         .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard it is blown; a change while the note holds swells or fades it."))
         .option(Spec::float("vibrato").default(vibrato).range(0.0, 2.0).doc(vibrato_doc))
         .options(Spec::envelope(0.5, 0.2))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .option(Spec::float("breath").range(0.0, 3.0).doc("The breath's pressure, in place of the one fitted for the note's vel; for fitting."))
         .option(Spec::seconds("rise").range(0.001, 2.0).doc("The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting."))
         .option(Spec::db("air").range(-90.0, 0.0).doc("The breath's noise in dB, in place of the one fitted for the note's vel; for fitting."))
@@ -903,7 +905,7 @@ fn pitch(o: &Options, depth: f64, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, 
         started: false,
         rate: DEFAULT_SR as f32,
     };
-    let note = o.follow("note") >> Net::wrap(Box::new(An(fingers)));
+    let note = o.follow("note") >> Net::wrap(Box::new(An(fingers))) >> moved_by(o, "bend", |x| x);
     (note | swing | sway(seed) | o.follow("vel"))
         >> Net::wrap(Box::new(map(move |x: &Frame<f32, U4>| {
             let from = x[0] - 60.0;
@@ -1056,7 +1058,7 @@ fn flute() -> Synth {
         .build(|o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let even = o.given("even").unwrap_or_else(|| by_vel(vel as f32, FLUTE_EVEN) as f64);
-            let pitch = o.follow("note") >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
+            let pitch = o.follow("note") >> moved_by(o, "bend", |x| x) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| hz(x[0] as f64 - flute_sharp(x[0] as f64) / 100.0) as f32)));
             let throb = drifting_swing(0.6 * o.number("vibrato") * vel.powf(0.65), 5.3, ctx.seed()) >> Net::wrap(Box::new(map(|x: &Frame<f32, U1>| 1.0 + x[0])));
             let rise = rise(o, &FLUTE);
             let jet = played_jet(pitch, breath(o, &FLUTE, rise) * throb, ctx.seed(), even, o.number("wander"), o.number("catch"), o.given("corner").unwrap_or(3000.0), o.given("tuned").unwrap_or(FLUTE.breath[1] as f64), o.number("lift"));
@@ -1069,7 +1071,7 @@ fn flute() -> Synth {
             let tone = voiced(o, ctx, Net::wrap(Box::new(pass())), &FLUTE, 2000.0) >> bright;
             // Under pp the breath would stop the note, so a player fading in from nothing, as the Philharmonia's flute swells from 27 dB under its peak, only plays it quieter.
             let quiet = o.follow("vel") >> Net::wrap(Box::new(map(|v: &Frame<f32, U1>| (v[0] / 0.3).clamp(0.0, 1.0).powf(1.5))));
-            Note::envelope((jet >> (tone | hiss) >> Net::wrap(Box::new(join::<U2>()))) * quiet, o)
+            Note::envelope(tilted(o, (jet >> (tone | hiss) >> Net::wrap(Box::new(join::<U2>()))) * quiet), o)
         })
 }
 
@@ -1101,6 +1103,7 @@ fn flute_figured() -> Synth {
             "1 takes a breath once the note is let go, as a player does at the end of a phrase.",
         ))
         .options(Spec::envelope(0.5, 0.2))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| {
             let figures = flute_figures();
             // A slur dips the partials 1 dB, and the vibrato's depth spreads from note to note as a played Syrinx's does, 4 to 13 cents between its quartiles.
@@ -1119,7 +1122,7 @@ fn flute_figured() -> Synth {
                 o.given("vibrato"),
                 0.0,
                 Some(breath),
-                false,
+                true,
                 o,
                 ctx,
             )
@@ -1428,6 +1431,6 @@ fn reed_wind(name: &'static str, rate: f64, unit: f64, bore: Bore, fit: &'static
                 >> Net::wrap(Box::new(map(move |x: &Frame<f32, U1>| {
                     db((depth * x[0]) as f64) as f32
                 })));
-            Note::envelope(voiced(o, ctx, sound, fit, bore.air) * shimmer, o)
+            Note::envelope(tilted(o, voiced(o, ctx, sound, fit, bore.air) * shimmer), o)
         })
 }

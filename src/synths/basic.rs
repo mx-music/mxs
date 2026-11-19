@@ -1,6 +1,6 @@
 //! mx's plain synths: waves under a resonant low-pass, FM, a plucked string, a supersaw, an acid bass and a brass.
 
-use super::common::moved_by;
+use super::common::{moved_by, tilted};
 use crate::nodes::{db, hz, segments, white_noise};
 use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
@@ -265,6 +265,7 @@ fn brass() -> Synth {
                 .doc("How hard it is blown."),
         )
         .options(Spec::envelope(0.0, 0.25))
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| {
             let vel = o.number("vel") as f32;
             let breath = || segments(&[0.0, 1.0, 0.8], &[0.05, 0.25], &[2.0, -2.0]);
@@ -272,7 +273,7 @@ fn brass() -> Synth {
             let vibrato = (net(sine_hz::<f32>(5.3)) * 0.12)
                 * segments(&[0.0, 0.0, 1.0], &[0.3, 0.5], &[0.0, 0.0]);
             let freq = || {
-                (o.follow("note") | scoop.clone() | vibrato.clone())
+                ((o.follow("note") >> moved_by(o, "bend", |x| x)) | scoop.clone() | vibrato.clone())
                     >> net(map(|x: &Frame<f32, U3>| {
                         hz((x[0] + x[1] + x[2]) as f64) as f32
                     }))
@@ -287,7 +288,7 @@ fn brass() -> Synth {
             // FunDSP's band-pass peaks at its Q of 2, so it is halved back to a peak of 1.
             let air = (white_noise(ctx.seed()) | centre | net(dc(2.0))) >> net(bandpass::<f32>());
             let air = air * 0.5 * 0.04 * breath();
-            Note::envelope((horn * 0.4 + air) * (0.4 + vel * 0.6), o)
+            Note::envelope(tilted(o, (horn * 0.4 + air) * (0.4 + vel * 0.6)), o)
         })
 }
 

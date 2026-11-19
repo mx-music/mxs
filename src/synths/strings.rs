@@ -1,6 +1,8 @@
 //! mx's strings, plucked and struck: the guitar, the cavaquinho and bandolim, the harp, the sitar, the tanpura and the piano.
 
-use super::common::{along, bpf, hpf, lpf, net, partials, silent_after, sine_from, struck};
+use super::common::{
+    along, bpf, hpf, lpf, moved_by, net, partials, silent_after, sine_from, struck, tilted,
+};
 use super::figures::{Figures, Recipe, Voice, evened, fitted, kept, strike_among};
 use crate::nodes::{db, decay2, hit, hz, modes, segment_at, shape, struck_gliding, white_noise};
 use crate::{Note, Options, Spec, Synth, Value};
@@ -189,6 +191,7 @@ fn sitar() -> Synth {
                 .default(49.0)
                 .doc("The note the sympathetic strings are tuned to, and an octave above it."),
         )
+        .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, ctx| {
             let vel = o.number("vel").clamp(0.0, 1.0);
             let freq = hz(o.number("note"));
@@ -215,7 +218,9 @@ fn sitar() -> Synth {
                 .map(|f| along(&centres, &fade_table, *f))
                 .collect();
             // The string glides with its note option, as meend bends it.
-            let pitch = o.follow("note") >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32));
+            let pitch = o.follow("note")
+                >> moved_by(o, "bend", |x| x)
+                >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32));
             let bank = (1..=90)
                 .zip(levels.iter().zip(&fades))
                 .filter(|(_, (level, _))| **level != 0.0)
@@ -238,7 +243,7 @@ fn sitar() -> Synth {
                 (white_noise(ctx.seed()) >> bpf(freq * 12.0, 1.2)) * hit(0.0005, 0.008, -4.0) * 0.3;
             let gain = 0.0007 * (vel / 0.6).powf(1.5);
             let sound = (string >> (net(pass()) & sympathetic)) * gain as f32 + pick * vel as f32;
-            Note::envelope(sound, o).within(silent_after(&levels, &fades, gain) + 6.0)
+            Note::envelope(tilted(o, sound), o).within(silent_after(&levels, &fades, gain) + 6.0)
         })
 }
 

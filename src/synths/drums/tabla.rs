@@ -1,5 +1,6 @@
 //! The tabla, and each of its bols played alone.
 
+use super::super::common::moved_by;
 use super::{amps, high_shelf, impulse_net, lpf, net, noise, scaled, vel};
 use crate::nodes::{db, exp_segments, hz, modes, segments, struck_gliding};
 use crate::{Note, Spec, Synth};
@@ -141,6 +142,9 @@ fn tabla(name: &str, fixed: Option<&'static str>) -> Synth {
                     .default(b.note)
                     .doc("The stroke's pitch."),
             );
+            if bol == "ghe" {
+                decl = decl.options(Spec::expressions(&["bend"]));
+            }
         }
         None => {
             let names: Vec<&str> = BOLS.iter().map(|b| b.name).collect();
@@ -173,7 +177,9 @@ fn tabla(name: &str, fixed: Option<&'static str>) -> Synth {
         // Ghe's pitch glides with its note option, as a palm pressing the bayan's head bends it.
         let gliding = b.name == "ghe" && (fixed.is_some() || o.given("note").is_some());
         let pitch = if gliding {
-            o.follow("note") >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32))
+            o.follow("note")
+                >> moved_by(o, "bend", |x| x)
+                >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32))
         } else {
             net(dc(freq as f32))
         };

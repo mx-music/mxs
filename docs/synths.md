@@ -178,6 +178,8 @@ A plain brass sound, brighter the harder it is blown.
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0 and a `release` of 0.25 unless given.
 
@@ -286,6 +288,8 @@ A plucked sitar note with its sympathetic strings, fitted to "sitar01.flac" on F
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 | `sa` | a MIDI note | 49 | The note the sympathetic strings are tuned to, and an octave above it. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless given.
 
@@ -432,6 +436,8 @@ A flute, a model of an air jet at the end of a bore, so a change of note is a sl
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0.17 | The vibrato's depth, reached as the note holds: a flute's vibrato is in the breath, which swells and eases by 0.6 of it, so 0.17 swings a held note's level 1.6 to 2.3 dB, as a played Syrinx's 2 and under VSCO 2's 2 to 4, and its pitch follows. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -469,6 +475,8 @@ A flute played from figures fitted partial by partial to the University of Iowa'
 | `vel` | a number, 0 to 1 | 0.6 | How hard the flute is blown; a change while the note holds swells or eases it. |
 | `vibrato` | a number, 0 to 2 |  | The vibrato's depth in semitones, in place of the recordings'. |
 | `inhale` | a number, 0 to 1 | 0 | 1 takes a breath once the note is let go, as a player does at the end of a phrase. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
@@ -481,6 +489,8 @@ A Bb clarinet at the pitch it sounds, a model of a reed on a bore, fitted to the
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -525,6 +535,8 @@ An oboe, a model of a reed on a bore, fitted to the University of Iowa's oboe fr
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -569,6 +581,8 @@ A bassoon, a model of a reed on a bore, fitted to the University of Iowa's basso
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -613,6 +627,8 @@ A tenor saxophone at the pitch it sounds, a model of a reed on a bore, fitted to
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth, reached as the note holds, where 1 is the depth of the recordings played with vibrato. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -657,6 +673,8 @@ A Bb trumpet at the pitch it sounds, a model of lips on a bore, fitted to the Un
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -701,6 +719,8 @@ A tenor trombone, a model of lips on a bore, fitted to the University of Iowa's 
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -745,6 +765,8 @@ A French horn, a model of lips on a bore, fitted to VSCO 2's F horn from C2 to F
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -789,6 +811,8 @@ A tuba, a model of lips on a bore, fitted to VSCO 2's tuba from Bb1 to Bb3.
 | `note` | a MIDI note | 52 | The pitch; a change while the note holds slurs to the new one. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is blown; a change while the note holds swells or fades it. |
 | `vibrato` | a number, 0 to 2 | 0 | The vibrato's depth in semitones, reached as the note holds. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `breath` | a number, 0 to 3 |  | The breath's pressure, in place of the one fitted for the note's vel; for fitting. |
 | `rise` | seconds, 0.001 to 2 |  | The seconds the breath takes to reach its pressure, in place of the one fitted for the note's vel; for fitting. |
 | `air` | decibels, -90 to 0 |  | The breath's noise in dB, in place of the one fitted for the note's vel; for fitting. |
@@ -835,6 +859,8 @@ A pipe organ fitted to VSCO 2's organ, with a quiet set, a stopped flute, and a 
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
 | `loud` | a number, 0 to 1 | 0 | 1 plays the loud set, a principal chorus, instead of the quiet stopped flute. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 0.15 unless given.
 
@@ -846,6 +872,8 @@ The reed organ pumped by hand that accompanies Hindustani singing, fitted to the
 |---|---|---|---|
 | `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the bellows are pumped. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
@@ -858,6 +886,8 @@ An accordion's right hand: two reeds a few Hz apart, beating, fitted to "Accorde
 | `note` | a MIDI note | 60 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the bellows are pressed. |
 | `detune` | a number, 0 to 20 | 4 | How many Hz the second reed sounds above the first, which beat that many times a second; 0 sounds one reed. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.15 unless given.
 
@@ -1416,6 +1446,7 @@ Ghe, a stroke of the bayan, the tabla's lower drum, which a change of note bends
 |---|---|---|---|
 | `vel` | a number, 0 to 1 | 0.6 | How hard it is struck. |
 | `note` | a MIDI note | 42.25 | The stroke's pitch. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
 
 ### `tabla_ke`
 
