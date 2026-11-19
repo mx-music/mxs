@@ -1,6 +1,7 @@
 //! mx's drums and hand percussion.
 //! Their seeded modes are drawn from mxs's own generator, so they sit at other frequencies than scsynth's draws, with the same levels and rings at each band.
 
+use crate::DEFAULT_VEL;
 use crate::nodes::{Draws, db, white_noise};
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
@@ -172,7 +173,7 @@ fn strike_options(note: f64) -> [Spec; 2] {
     [
         Spec::note("note").default(note).doc("The drum's pitch."),
         Spec::float("vel")
-            .default(0.6)
+            .default(DEFAULT_VEL)
             .range(0.0, 1.0)
             .doc("How hard it is struck."),
     ]

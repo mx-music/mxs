@@ -4,6 +4,7 @@ use super::{
     amps, bpf, high_shelf, hpf, impulse_net, low_shelf, lpf, net, noise, plate, scaled,
     strike_options, times, tune, vel,
 };
+use crate::DEFAULT_VEL;
 use crate::nodes::{between, db, exp_segments, hit, hz, modes, segments};
 use crate::{Context, Note, Spec, Synth};
 use fundsp::prelude::*;
@@ -32,7 +33,7 @@ fn kick() -> Synth {
         .option(Spec::note("note").default(34.0).doc("The drum's pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard it is struck."),
         )
@@ -52,10 +53,10 @@ fn kick() -> Synth {
                 * hit(0.001 + 0.004 * (1.0 - hard), 0.55, -5.0);
             let beater = (noise(ctx) >> hpf(1800.0))
                 * hit(0.0005, 0.012, -4.0)
-                * (0.3 * hard * db((vel - 0.6) * 20.0)) as f32;
+                * (0.3 * hard * db((vel - DEFAULT_VEL) * 20.0)) as f32;
             let shell = modes(impulse_net(), &[hz(note) * 1.75], &[0.1], &[1.5]);
             let struck = (body + beater) >> net(map(|x: &Frame<f32, U1>| x[0].tanh()));
-            Note::rings((struck + shell) * (vel / 0.6).powf(2.5) as f32, 1.5)
+            Note::rings((struck + shell) * (vel / DEFAULT_VEL).powf(2.5) as f32, 1.5)
         })
 }
 
@@ -133,11 +134,11 @@ fn snare() -> Synth {
                 * shake()
                 * (snares * db(-30.5 - buzz * 5.0 - soft.abs() * 14.0)) as f32;
             let mut sound = (head * db(-32.0) as f32 + wires)
-                * ((snares * (1.0 - rim)).sqrt() * (vel / 0.6).powf(3.8)) as f32;
+                * ((snares * (1.0 - rim)).sqrt() * (vel / DEFAULT_VEL).powf(3.8)) as f32;
             let scale = freq / hz(SNARE_OFF.note);
-            let bright = |stick: Net| stick >> high_shelf(2500.0, (vel - 0.6) * 12.0);
+            let bright = |stick: Net| stick >> high_shelf(2500.0, (vel - DEFAULT_VEL) * 12.0);
             if snares < 1.0 && rim < 1.0 {
-                let weight = ((1.0 - snares) * (1.0 - rim)).sqrt() * (vel / 0.6).powf(2.0);
+                let weight = ((1.0 - snares) * (1.0 - rim)).sqrt() * (vel / DEFAULT_VEL).powf(2.0);
                 sound = sound
                     + fitted_net(
                         ctx,
@@ -150,7 +151,7 @@ fn snare() -> Synth {
                     ) * weight as f32;
             }
             if rim > 0.0 {
-                let weight = rim.sqrt() * (vel / 0.6).powf(2.0);
+                let weight = rim.sqrt() * (vel / DEFAULT_VEL).powf(2.0);
                 sound = sound
                     + fitted_net(
                         ctx,
@@ -210,8 +211,9 @@ fn crash() -> Synth {
             fit.extend([50.0, 6.0, -20.0, -14.0, 2.0]);
             let levels = &fit[0..9];
             let shorter = [0.75, 0.75, 0.68, 0.51, 0.4, 0.31, 0.18, 0.0, 0.0];
-            let stick = (noise(ctx) >> hpf(1000.0) >> high_shelf(3000.0, (vel - 0.6) * 4.0))
-                * hit(0.0005, 0.01, -4.0);
+            let stick =
+                (noise(ctx) >> hpf(1000.0) >> high_shelf(3000.0, (vel - DEFAULT_VEL) * 4.0))
+                    * hit(0.0005, 0.01, -4.0);
             let mut bank = Net::wrap(Box::new(zero()));
             for some in plate(160, 300.0, 15000.0) {
                 let mean = some.iter().sum::<f64>() / some.len() as f64;
@@ -247,7 +249,7 @@ fn crash() -> Synth {
                 + ((band_noise(ctx, levels, &noise_rings, 1, scale, &same) * db(fit[12]) as f32
                     + band_noise(ctx, levels, &early_rings, 1, scale, &same)
                     + band_noise(ctx, &[-33.0], &noise_rings, 0, scale * 0.7, &same))
-                    >> high_shelf(3000.0, (vel - 0.6) * 4.0))
+                    >> high_shelf(3000.0, (vel - DEFAULT_VEL) * 4.0))
                     * db(fit[9]) as f32;
             let crack = (noise(ctx) >> hpf(6000.0 * scale))
                 * hit(0.001, 0.06, -4.0)
@@ -261,7 +263,8 @@ fn crash() -> Synth {
                 * (31.6 * db(fit[11])) as f32;
             let (held, release) = (o.number("sustain"), o.number("release"));
             let choke = segments(&[1.0, 1.0, 0.0], &[held, release], &[0.0, -4.0]);
-            let sound = (bank * 0.1 + crack + thud) * 0.9 * choke * (vel / 0.6).powf(1.7) as f32;
+            let sound =
+                (bank * 0.1 + crack + thud) * 0.9 * choke * (vel / DEFAULT_VEL).powf(1.7) as f32;
             Note::rings(sound, held + release)
         })
 }
@@ -311,8 +314,9 @@ fn ride() -> Synth {
             let bell = o.number("bell");
             let vel = vel(o, 0.0);
             let scale = 2f64.powf((o.number("note") - 60.0) / 12.0);
-            let stick = (noise(ctx) >> hpf(1000.0) >> high_shelf(3000.0, (vel - 0.6) * 4.0))
-                * hit(0.0005, 0.01, -4.0);
+            let stick =
+                (noise(ctx) >> hpf(1000.0) >> high_shelf(3000.0, (vel - DEFAULT_VEL) * 4.0))
+                    * hit(0.0005, 0.01, -4.0);
             let mut wash = Net::wrap(Box::new(zero()));
             let mut ping = Net::wrap(Box::new(zero()));
             for some in plate(160, 150.0, 16000.0) {
@@ -339,7 +343,7 @@ fn ride() -> Synth {
                 let r3 = vec![0.35; f3.len()];
                 ping = ping + modes(stick.clone(), &f3, &l3, &r3);
             }
-            let tilt = |sound: Net| sound >> high_shelf(3000.0, (vel - 0.6) * 4.0);
+            let tilt = |sound: Net| sound >> high_shelf(3000.0, (vel - DEFAULT_VEL) * 4.0);
             let same = |level: Net| level;
             let high = db(fit[10]) as f32;
             wash = wash
@@ -372,7 +376,7 @@ fn ride() -> Synth {
                 * 0.007
                 * db(bell * -4.0) as f32
                 * choke
-                * (vel / 0.6).powf(1.7) as f32;
+                * (vel / DEFAULT_VEL).powf(1.7) as f32;
             Note::rings(sound, held + release)
         })
 }
@@ -421,7 +425,8 @@ fn hat(
             >> lpf(400.0 * scale))
             * (soft.max(0.0).sqrt() * if pedal { 0.0 } else { 0.25 }) as f32;
         let gain = if pedal { 3.3 } else { 2.2 };
-        let sound = (dark * 0.1 + sizzle + thud) * gain * choke * (vel / 0.6).powf(2.8) as f32;
+        let sound =
+            (dark * 0.1 + sizzle + thud) * gain * choke * (vel / DEFAULT_VEL).powf(2.8) as f32;
         Note::rings(sound, held + release)
     })
 }
@@ -672,13 +677,14 @@ fn fitted(name: &'static str, env: &'static str, d: &'static Fitted) -> Synth {
         .build(move |o, ctx| {
             let vel = vel(o, 0.0);
             let scale = 2f64.powf((o.number("note") - d.note) / 12.0);
-            let stick =
-                (noise(ctx) * hit(0.0005, 0.004, -4.0)) >> high_shelf(2500.0, (vel - 0.6) * 12.0);
+            let stick = (noise(ctx) * hit(0.0005, 0.004, -4.0))
+                >> high_shelf(2500.0, (vel - DEFAULT_VEL) * 12.0);
             let ring = d.rings.iter().cloned().fold(0.1, f64::max);
-            let tilt = |sound: Net| sound >> high_shelf(2500.0, (vel - 0.6) * 12.0);
+            let tilt = |sound: Net| sound >> high_shelf(2500.0, (vel - DEFAULT_VEL) * 12.0);
             let same = |level: Net| level;
             Note::rings(
-                fitted_net(ctx, d, env, stick, scale, &same, &tilt) * (vel / 0.6).powf(2.0) as f32,
+                fitted_net(ctx, d, env, stick, scale, &same, &tilt)
+                    * (vel / DEFAULT_VEL).powf(2.0) as f32,
                 ring.min(4.0),
             )
         })

@@ -4,6 +4,7 @@ use super::common::{
     along, bpf, hpf, lpf, moved_by, net, partials, silent_after, sine_from, struck, tilted,
 };
 use super::figures::{Figures, Recipe, Voice, evened, fitted, kept, strike_among};
+use crate::DEFAULT_VEL;
 use crate::nodes::{db, decay2, hit, hz, modes, segment_at, shape, struck_gliding, white_noise};
 use crate::{Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
@@ -29,7 +30,7 @@ fn guitar() -> Synth {
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the string is plucked."),
         )
@@ -52,7 +53,7 @@ fn electric_bass() -> Synth {
         .option(Spec::note("note").default(33.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the string is plucked."),
         )
@@ -75,7 +76,7 @@ fn deep_bass() -> Synth {
         .option(Spec::note("note").default(33.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the string is plucked."),
         )
@@ -109,7 +110,7 @@ fn plucked(
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the string is plucked."),
         )
@@ -207,7 +208,7 @@ fn sitar() -> Synth {
                 .map(|(i, f)| {
                     if *f < 16_000.0 {
                         db(along(&centres, &level_table, *f)
-                            + (vel - 0.6) * 4.0 * ((i + 1) as f64).log2())
+                            + (vel - DEFAULT_VEL) * 4.0 * ((i + 1) as f64).log2())
                     } else {
                         0.0
                     }
@@ -241,7 +242,7 @@ fn sitar() -> Synth {
             );
             let pick =
                 (white_noise(ctx.seed()) >> bpf(freq * 12.0, 1.2)) * hit(0.0005, 0.008, -4.0) * 0.3;
-            let gain = 0.0007 * (vel / 0.6).powf(1.5);
+            let gain = 0.0007 * (vel / DEFAULT_VEL).powf(1.5);
             let sound = (string >> (net(pass()) & sympathetic)) * gain as f32 + pick * vel as f32;
             Note::envelope(tilted(o, sound), o).within(silent_after(&levels, &fades, gain) + 6.0)
         })
@@ -256,7 +257,7 @@ fn tanpura() -> Synth {
         )
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the strings are plucked."),
         )
@@ -393,7 +394,7 @@ pub fn piano() -> Synth {
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.05, 1.0)
                 .doc("How hard the key is struck."),
         )

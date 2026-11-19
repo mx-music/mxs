@@ -1,5 +1,6 @@
 //! What the synths share: sines, band-passes, additive partials and the swell of a held note.
 
+use crate::DEFAULT_VEL;
 use crate::nodes::{db, hz, segments};
 use crate::{Options, Spec, Synth};
 use fundsp::prelude::*;
@@ -117,7 +118,7 @@ pub(super) fn struck(name: &str, release: f64) -> crate::SynthDecl {
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard it is struck."),
         )

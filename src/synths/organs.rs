@@ -1,6 +1,7 @@
 //! mx's organ, harmonium and accordion.
 
 use super::common::{along, bpf, harmonics, moved_by, net, partials, spread_phases, swell, tilted};
+use crate::DEFAULT_VEL;
 use crate::nodes::{db, hz, pink_noise, segments, white_noise};
 use crate::{Note, Spec, Synth};
 use fundsp::prelude::*;
@@ -85,7 +86,7 @@ fn harmonium() -> Synth {
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the bellows are pumped."),
         )
@@ -102,16 +103,18 @@ fn harmonium() -> Synth {
                 0.0, 6.85, 3.1, 3.8, -6.5, 3.9, 4.7, -1.0, -10.4, -27.1, -45.7, -55.6,
             ];
             let ratios = harmonics(48);
-            let levels: Vec<f64> = ratios
-                .iter()
-                .map(|n| {
-                    if freq * n < 16_000.0 {
-                        db(along(&centres, &table, freq * n) + (vel - 0.6) * 3.0 * n.log2())
-                    } else {
-                        0.0
-                    }
-                })
-                .collect();
+            let levels: Vec<f64> =
+                ratios
+                    .iter()
+                    .map(|n| {
+                        if freq * n < 16_000.0 {
+                            db(along(&centres, &table, freq * n)
+                                + (vel - DEFAULT_VEL) * 3.0 * n.log2())
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect();
             let pitch = o.follow("note")
                 >> moved_by(o, "bend", |x| x)
                 >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32));
@@ -124,7 +127,8 @@ fn harmonium() -> Synth {
                     + (white_noise(ctx.seed()) >> bpf(*centre, 0.3) >> bpf(*centre, 0.3))
                         * db(level) as f32;
             }
-            let sound = (tone + noise) * swell(o, 0.3) * (0.006 * (vel / 0.6).powf(1.2)) as f32;
+            let sound =
+                (tone + noise) * swell(o, 0.3) * (0.006 * (vel / DEFAULT_VEL).powf(1.2)) as f32;
             Note::envelope(tilted(o, sound), o)
         })
 }
@@ -133,7 +137,7 @@ fn harmonium() -> Synth {
 fn accordion() -> Synth {
     Synth::new("accordion")
         .option(Spec::note("note").default(60.0).doc("The pitch."))
-        .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard the bellows are pressed."))
+        .option(Spec::float("vel").default(DEFAULT_VEL).range(0.0, 1.0).doc("How hard the bellows are pressed."))
         .option(Spec::float("detune").default(ACCORDION_DETUNE).range(0.0, 20.0).doc("How many Hz the second reed sounds above the first, which beat that many times a second; 0 sounds one reed."))
         .options(Spec::envelope(0.5, 0.15))
         .options(Spec::expressions(&["bend", "brightness"]))
@@ -144,7 +148,7 @@ fn accordion() -> Synth {
             let centres = [65.4, 113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, 3162.0, 5019.0, 7937.0, 12649.0];
             let table = [0.0, -1.3, 1.8, 9.2, 7.7, 2.4, 0.5, -1.5, -4.8, -8.3, -23.0, -41.5];
             let ratios = harmonics(48);
-            let levels: Vec<f64> = ratios.iter().map(|n| if freq * n < 16_000.0 { db(along(&centres, &table, freq * n) + (vel - 0.6) * 3.0 * n.log2()) } else { 0.0 }).collect();
+            let levels: Vec<f64> = ratios.iter().map(|n| if freq * n < 16_000.0 { db(along(&centres, &table, freq * n) + (vel - DEFAULT_VEL) * 3.0 * n.log2()) } else { 0.0 }).collect();
             // The louder reed sounds the note and the softer one above it, as the pitch heard follows the louder.
             let pitch = o.follow("note") >> moved_by(o, "bend", |x| x) >> net(map(|x: &Frame<f32, U1>| hz(x[0] as f64) as f32));
             let mut tone = partials(pitch.clone(), &ratios, &levels, &spread_phases(48));
@@ -157,7 +161,7 @@ fn accordion() -> Synth {
                 noise = noise + (white_noise(ctx.seed()) >> bpf(*centre, 0.3) >> bpf(*centre, 0.3)) * db(level) as f32;
             }
             // It holds about as loud as the cello and the clarinet, which a melody instrument sits beside.
-            let sound = (tone + noise) * swell(o, ACCORDION_ATTACK) * (0.036 * (vel / 0.6).powf(1.2)) as f32;
+            let sound = (tone + noise) * swell(o, ACCORDION_ATTACK) * (0.036 * (vel / DEFAULT_VEL).powf(1.2)) as f32;
             Note::envelope(tilted(o, sound), o)
         })
 }

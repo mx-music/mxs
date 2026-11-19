@@ -2,6 +2,7 @@
 
 use super::super::common::moved_by;
 use super::{amps, high_shelf, impulse_net, lpf, net, noise, scaled, vel};
+use crate::DEFAULT_VEL;
 use crate::nodes::{db, exp_segments, hz, modes, segments, struck_gliding};
 use crate::{Note, Spec, Synth};
 use fundsp::prelude::*;
@@ -130,7 +131,7 @@ const BOLS: [Bol; 6] = [
 fn tabla(name: &str, fixed: Option<&'static str>) -> Synth {
     let mut decl = Synth::new(name).option(
         Spec::float("vel")
-            .default(0.6)
+            .default(DEFAULT_VEL)
             .range(0.0, 1.0)
             .doc("How hard it is struck."),
     );
@@ -217,7 +218,10 @@ fn tabla(name: &str, fixed: Option<&'static str>) -> Synth {
                 * exp_segments(&[1.0, 1.0, 0.001], &[0.001, b.fades[i]]);
             hiss = hiss + band * fall * db(b.noise[i]) as f32;
         }
-        let sound = (head + hiss) >> high_shelf(1500.0, (vel - 0.6) * 5.0);
-        Note::rings(sound * (b.gain * (vel / 0.6).powf(1.5)) as f32, b.length)
+        let sound = (head + hiss) >> high_shelf(1500.0, (vel - DEFAULT_VEL) * 5.0);
+        Note::rings(
+            sound * (b.gain * (vel / DEFAULT_VEL).powf(1.5)) as f32,
+            b.length,
+        )
     })
 }

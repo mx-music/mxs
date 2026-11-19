@@ -50,3 +50,6 @@ pub use time::Tempo;
 
 /// The rate an offline engine is usually made with, in frames a second; a live engine runs at its device's.
 pub const RATE: f64 = 48_000.0;
+
+/// The vel a note plays at when it gives none, and the vel each synth's levels and brightness are fitted at.
+pub const DEFAULT_VEL: f64 = 0.6;

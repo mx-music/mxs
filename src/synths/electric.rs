@@ -1,6 +1,7 @@
 //! mx's electric instruments, fitted to recordings: the electric piano and the electric guitar.
 
 use super::figures::{Figures, fitted};
+use crate::DEFAULT_VEL;
 use crate::{Spec, Synth};
 use std::sync::OnceLock;
 
@@ -14,7 +15,7 @@ fn electric_piano() -> Synth {
         .option(Spec::note("note").default(60.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the key is struck."),
         )
@@ -37,7 +38,7 @@ fn electric_guitar() -> Synth {
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the string is picked."),
         )

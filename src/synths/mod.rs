@@ -58,13 +58,13 @@ fn described(mut synth: crate::Synth) -> crate::Synth {
     takes_vel(synth)
 }
 
-/// The synth, given vel after its note when it declares none, scaling its level by vel / 0.6, so a note given no vel plays as before.
+/// The synth, given vel after its note when it declares none, scaling its level by vel / DEFAULT_VEL, so a note given no vel plays as before.
 fn takes_vel(mut synth: crate::Synth) -> crate::Synth {
     if synth.specs.iter().any(|spec| spec.name == "vel") {
         return synth;
     }
     let vel = crate::Spec::float("vel")
-        .default(0.6)
+        .default(crate::DEFAULT_VEL)
         .range(0.0, 1.0)
         .doc("How hard it is played, which scales its level by vel / 0.6.");
     let after_note = synth
@@ -76,7 +76,7 @@ fn takes_vel(mut synth: crate::Synth) -> crate::Synth {
     let build = synth.build.clone();
     synth.build = std::sync::Arc::new(move |o, ctx| {
         let mut note = build(o, ctx);
-        let scale = o.number("vel") / 0.6;
+        let scale = o.number("vel") / crate::DEFAULT_VEL;
         if scale != 1.0 {
             note.sound = note.sound * scale as f32;
         }

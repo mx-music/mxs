@@ -4,6 +4,7 @@
 //! After the model come a peak at each band mx measures, its gain fitted to each instrument's recordings at pp, mf and ff and following vel between them.
 
 use super::common::{combined, effort, followed_effort, moved_by, tilted};
+use crate::DEFAULT_VEL;
 use crate::nodes::{db, hz, shape, white_noise};
 use crate::synth::SynthDecl;
 use crate::{Context, Note, Options, Spec, Synth};
@@ -866,7 +867,7 @@ pub(crate) struct Fit {
 fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
     let mut synth = Synth::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch; a change while the note holds slurs to the new one."))
-        .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard it is blown; a change while the note holds swells or fades it."))
+        .option(Spec::float("vel").default(DEFAULT_VEL).range(0.0, 1.0).doc("How hard it is blown; a change while the note holds swells or fades it."))
         .option(Spec::float("vibrato").default(vibrato).range(0.0, 2.0).doc(vibrato_doc))
         .options(Spec::envelope(0.5, 0.2))
         .options(Spec::expressions(&["bend", "brightness", "pressure"]))
@@ -1053,7 +1054,7 @@ fn flute() -> Synth {
             let vibrato = o.number("vibrato");
             // The breath swings up to the depth that measured clean, and the pitch swings the rest of the way itself, which adds a quarter turn behind the breath's; both are softer the softer the note.
             let swing = (vibrato * FLUTE_BREATH).min(0.5);
-            let rest = (vel / 0.6).powf(0.65) * (vibrato.powi(2) - (swing / FLUTE_BREATH).powi(2)).max(0.0).sqrt();
+            let rest = (vel / DEFAULT_VEL).powf(0.65) * (vibrato.powi(2) - (swing / FLUTE_BREATH).powi(2)).max(0.0).sqrt();
             let mut note = o.follow("note") >> moved_by(o, "bend", |x| x);
             if rest > 0.002 {
                 note = (note | drifting_swing(rest, 5.3, ctx.seed())) >> Net::wrap(Box::new(map(|x: &Frame<f32, U2>| x[0] + x[1])));
@@ -1093,7 +1094,7 @@ fn flute_figured() -> Synth {
                 .doc("The pitch; a change while the note holds slurs to the new one."),
         )
         .option(
-            Spec::float("vel").default(0.6).range(0.0, 1.0).doc(
+            Spec::float("vel").default(DEFAULT_VEL).range(0.0, 1.0).doc(
                 "How hard the flute is blown; a change while the note holds swells or eases it.",
             ),
         )

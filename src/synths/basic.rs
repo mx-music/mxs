@@ -1,6 +1,7 @@
 //! mx's plain synths: waves under a resonant low-pass, FM, a plucked string, a supersaw, an acid bass and a brass.
 
 use super::common::{moved_by, tilted};
+use crate::DEFAULT_VEL;
 use crate::nodes::{db, hz, segments, white_noise};
 use crate::{Note, Options, Spec, Synth};
 use fundsp::prelude::*;
@@ -260,7 +261,7 @@ fn brass() -> Synth {
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard it is blown."),
         )

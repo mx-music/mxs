@@ -4,6 +4,7 @@ use super::cuica::{RUBS, Rub, STEP};
 use super::{
     amps, bpf, high_shelf, hpf, impulse_net, lpf, net, noise, peak, scaled, strike_options, vel,
 };
+use crate::DEFAULT_VEL;
 use crate::nodes::{
     Draws, db, exp_segments, harmonic_tone, hit, hz, modes, perc, shape, struck, white_noise,
 };
@@ -138,8 +139,11 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
                 ))
                 | (hpf(freq * 20.0) * 0.3));
         let jingles = (discs >> net(map(|x: &Frame<f32, U2>| x[0] + x[1]))) * s.jingle[0] as f32;
-        let bright = (skin + body + jingles) >> high_shelf(2000.0, (vel - 0.6) * 5.0);
-        Note::rings(bright * (s.gain * (vel / 0.6).powf(0.75)) as f32, s.length)
+        let bright = (skin + body + jingles) >> high_shelf(2000.0, (vel - DEFAULT_VEL) * 5.0);
+        Note::rings(
+            bright * (s.gain * (vel / DEFAULT_VEL).powf(0.75)) as f32,
+            s.length,
+        )
     })
 }
 
@@ -203,9 +207,9 @@ fn surdo() -> Synth {
                     &SURDO_HIGH[2],
                 )
                 + modes(mallet, &high_hz, &high_tails, &tail_rings);
-            let level = 0.05 * (vel / 0.6).powf(1.6);
+            let level = 0.05 * (vel / DEFAULT_VEL).powf(1.6);
             Note::rings(
-                (head >> high_shelf(800.0, (vel - 0.6) * 6.0)) * level as f32,
+                (head >> high_shelf(800.0, (vel - DEFAULT_VEL) * 6.0)) * level as f32,
                 2.0 - 0.8 * mute,
             )
         })
@@ -348,7 +352,7 @@ fn cuica() -> Synth {
                 let u = place(t);
                 (u + 1.0).clamp(0.0, 1.0) * (count as f64 - u).clamp(0.0, 1.0)
             });
-            let gain = CUICA_LEVEL * vel / 0.6 * db(CUICA_STRAYS[1] * normal());
+            let gain = CUICA_LEVEL * vel / DEFAULT_VEL * db(CUICA_STRAYS[1] * normal());
             Note::rings(
                 (tone + rubbed * rubbing) * fade * gain as f32,
                 length + STEP / 2.0,
@@ -388,9 +392,9 @@ fn tamborim() -> Synth {
             let crack = (noise(ctx) >> hpf(3000.0) >> lpf(12000.0))
                 * hit(0.0005, 0.03, -4.0)
                 * db(TAMBORIM_CRACK) as f32;
-            let level = 0.02 * (vel / 0.6).powf(1.4);
+            let level = 0.02 * (vel / DEFAULT_VEL).powf(1.4);
             Note::rings(
-                ((head + crack) >> high_shelf(2000.0, (vel - 0.6) * 6.0)) * level as f32,
+                ((head + crack) >> high_shelf(2000.0, (vel - DEFAULT_VEL) * 6.0)) * level as f32,
                 1.4,
             )
         })
@@ -413,7 +417,7 @@ fn caxixi() -> Synth {
     Synth::new("caxixi")
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard it is shaken."),
         )
@@ -443,7 +447,7 @@ fn caxixi() -> Synth {
                         * envelope
                         * db(CAXIXI[1][band]) as f32;
             }
-            let level = 0.3 * (vel / 0.6).powf(1.2);
+            let level = 0.3 * (vel / DEFAULT_VEL).powf(1.2);
             Note::rings(
                 (seeds >> hpf(700.0) >> hpf(700.0) >> peak(top, 0.25, CAXIXI_PEAK)) * level as f32,
                 3.0,
@@ -492,7 +496,7 @@ pub fn berimbau() -> Synth {
         )
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the stick strikes."),
         )
@@ -614,8 +618,8 @@ pub fn berimbau() -> Synth {
                 sound = sound + rattle;
             }
 
-            let brighter = db((vel - 0.6) * 5.0) as f32;
-            let level = (0.2 * (vel / 0.6).powf(1.5)) as f32;
+            let brighter = db((vel - DEFAULT_VEL) * 5.0) as f32;
+            let level = (0.2 * (vel / DEFAULT_VEL).powf(1.5)) as f32;
             Note::rings(
                 (sound >> highshelf_hz(1500.0, 0.707, brighter)) * level,
                 LENGTH,

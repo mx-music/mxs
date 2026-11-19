@@ -4,6 +4,7 @@ use super::{
     HAT_BANDS, bpf, high_shelf, hpf, impulse_net, low_shelf, lpf, net, noise, peak, plate,
     resonant_highpass, resonant_lowpass, scaled, strike_options, times, vel,
 };
+use crate::DEFAULT_VEL;
 use crate::nodes::{Draws, between, db, decay2, dust, exp_segments, hit, hz, modes, segments};
 use crate::{Context, Note, Spec, Synth};
 use fundsp::prelude::*;
@@ -47,7 +48,7 @@ fn cowbell() -> Synth {
             let vel = vel(o, 0.05);
             let muted = o.number("muted").clamp(0.0, 1.0);
             let freq = hz(o.number("note"));
-            let bright = vel - 0.6;
+            let bright = vel - DEFAULT_VEL;
             let strike =
                 impulse_net() + (noise(ctx) >> hpf(3000.0)) * hit(0.0002, 0.002, -4.0) * 0.3;
             let ratios = [
@@ -100,7 +101,10 @@ fn cowbell() -> Synth {
                     &times(&a, 0.06),
                     &times(&rings, 1.0 - muted * 0.1),
                 );
-            Note::rings(bell * (db(-27.5) * (vel / 0.6).powf(2.3)) as f32, 1.5)
+            Note::rings(
+                bell * (db(-27.5) * (vel / DEFAULT_VEL).powf(2.3)) as f32,
+                1.5,
+            )
         })
 }
 
@@ -110,7 +114,7 @@ fn clave() -> Synth {
         .build(|o, ctx| {
             let vel = vel(o, 0.05);
             let freq = hz(o.number("note"));
-            let bright = (vel - 0.6) * 30.0;
+            let bright = (vel - DEFAULT_VEL) * 30.0;
             let strike =
                 impulse_net() + (noise(ctx) >> hpf(1000.0)) * hit(0.0002, 0.002, -4.0) * 0.3;
             let ratios = [0.65, 1.0, 1.08, 1.5, 2.72, 3.6, 6.2];
@@ -123,7 +127,10 @@ fn clave() -> Synth {
             let f = scaled(&ratios, freq);
             let stick = modes(strike.clone(), &f, &levels, &times(&rings, 0.08))
                 + modes(strike, &f, &times(&levels, 0.1), &rings);
-            Note::rings(stick * (db(-21.8) * (vel / 0.6).powf(1.72)) as f32, 1.0)
+            Note::rings(
+                stick * (db(-21.8) * (vel / DEFAULT_VEL).powf(1.72)) as f32,
+                1.0,
+            )
         })
 }
 
@@ -253,7 +260,10 @@ fn shake(name: &'static str, s: &'static Shake) -> Synth {
                 >> net(map(move |x: &Frame<f32, U4>| {
                     x[0] * x[2] * (1.0 - keep) + x[1] * x[3] * keep
                 }));
-            Note::rings(mixed * ending * (s.gain * vel / 0.6) as f32, s.length)
+            Note::rings(
+                mixed * ending * (s.gain * vel / DEFAULT_VEL) as f32,
+                s.length,
+            )
         })
 }
 
@@ -273,7 +283,7 @@ fn coloured(shape: &[f64], s: &Shake, freq: f64, vel: f64, ctx: &mut Context) ->
     let top = exp_segments(&[highest, highest * s.darken], &[shape[1]])
         >> net(map(|x: &Frame<f32, U1>| x[0].clamp(20.0, 20000.0)));
     let bright = ((dipped | top | net(dc(1.0))) >> net(lowpass::<f32>()))
-        >> high_shelf(freq * 1.2, (vel - 0.6) * 8.0);
+        >> high_shelf(freq * 1.2, (vel - DEFAULT_VEL) * 8.0);
     bright >> (net(pass()) ^ resonant_lowpass(freq * shape[10], 1.0))
 }
 
@@ -398,7 +408,7 @@ fn conga(name: &'static str, c: &'static Conga) -> Synth {
                 .zip(c.head_tap)
                 .map(|(l, t)| db(l + mute * t - slap * 6.0))
                 .collect();
-            let soft = (vel.max(0.1) / 0.6).powf(-c.soft);
+            let soft = (vel.max(0.1) / DEFAULT_VEL).powf(-c.soft);
             let rings: Vec<f64> = times(c.rings, mix(1.0, 0.7) * (1.0 - slap * 0.75))
                 .iter()
                 .zip(c.ratios)
@@ -424,14 +434,14 @@ fn conga(name: &'static str, c: &'static Conga) -> Synth {
                 .collect();
             let same = |n: Net| n;
             let skin = super::kit::band_noise(ctx, &skin_levels, &skin_ring, 2, 1.0, &same)
-                >> high_shelf(2000.0, (vel - 0.6) * 10.0);
+                >> high_shelf(2000.0, (vel - DEFAULT_VEL) * 10.0);
             let crack =
                 (noise(ctx) >> bpf(3000.0, 0.7)) * hit(0.0005, 0.04, -4.0) * (slap * 4.0) as f32;
-            let tone = (vel - 0.6).min(0.0) / -0.3 * c.bright[0]
-                + (vel - 0.6).max(0.0) / 0.4 * c.bright[1];
+            let tone = (vel - DEFAULT_VEL).min(0.0) / -0.3 * c.bright[0]
+                + (vel - DEFAULT_VEL).max(0.0) / 0.4 * c.bright[1];
             let sound = (head + skin + crack) >> peak(900.0, 2.0, tone);
             Note::rings(
-                sound * (db(c.gain + mute * c.tap_gain) * (vel / 0.6).powf(c.curve)) as f32,
+                sound * (db(c.gain + mute * c.tap_gain) * (vel / DEFAULT_VEL).powf(c.curve)) as f32,
                 1.31,
             )
         })
@@ -488,7 +498,7 @@ fn guiro() -> Synth {
             let freq = hz(o.number("note"));
             let vel = vel(o, 0.05);
             let length = o.number("sustain").max(0.02);
-            let bright = vel - 0.6;
+            let bright = vel - DEFAULT_VEL;
             let rate = (55.0 / length).clamp(40.0, 125.0);
             // The ridges come at a rate that wanders by 15 percent, and each clicks at a level from 0.6 to 1.
             let mut draws = Draws::new(ctx.seed());
@@ -520,7 +530,7 @@ fn guiro() -> Synth {
                 + modes(ticks, &f, &times(&levels, 0.05), &times(&rings, 4.0)))
                 * 0.03;
             Note::rings(
-                gourd * (db(-6.0) * (vel / 0.6).powf(1.15)) as f32,
+                gourd * (db(-6.0) * (vel / DEFAULT_VEL).powf(1.15)) as f32,
                 length + 0.5,
             )
         })
@@ -569,9 +579,9 @@ fn triangle() -> Synth {
                 let r: Vec<f64> = some.iter().map(|&f| between(f, &bands, &rings)).collect();
                 bar = bar + modes(beater.clone(), &f, &l, &r) * hand;
             }
-            let hard = (vel - 0.6).max(0.0) / 0.4;
+            let hard = (vel - DEFAULT_VEL).max(0.0) / 0.4;
             let sound = bar >> peak(1300.0, 0.8, hard * 8.0) >> low_shelf(3500.0, hard * 5.0);
-            let level = db(-46.0) * (vel / 0.6).powf(2.6);
+            let level = db(-46.0) * (vel / DEFAULT_VEL).powf(2.6);
             // The bar falls below scsynth's silence threshold well before its 10 s rings run out.
             Note::rings(sound * level as f32, longest.min(held + 12.0))
         })
@@ -625,8 +635,8 @@ fn tambourine(name: &'static str, shaken: bool) -> Synth {
             let r: Vec<f64> = some.iter().map(|&f| between(f, &bands, &rings)).collect();
             jingles = jingles + modes(exciter.clone(), &f, &l, &r);
         }
-        let sound = (jingles >> low_shelf(1000.0, (vel - 0.6).max(0.0) * 16.0))
-            * (db(-36.0) * (vel / 0.6).powf(1.9)) as f32;
+        let sound = (jingles >> low_shelf(1000.0, (vel - DEFAULT_VEL).max(0.0) * 16.0))
+            * (db(-36.0) * (vel / DEFAULT_VEL).powf(1.9)) as f32;
         Note::rings(sound, 0.005 + held + rattle + 0.7)
     })
 }
@@ -664,9 +674,9 @@ fn cabasa() -> Synth {
             let shell = (noise(ctx) >> bpf(freq * 0.25, 1.0)) * (0.15 * (1.0 - rub)) as f32;
             let bright = ((colour >> high_shelf(freq * 3.0, 4.0) >> peak(freq * 2.4, 1.0, -3.0))
                 + shell)
-                >> high_shelf(freq * 2.0, (vel - 0.6) * 6.0);
+                >> high_shelf(freq * 2.0, (vel - DEFAULT_VEL) * 6.0);
             let both = bright >> (net(pass()) ^ resonant_lowpass(freq * 3.5, 1.0));
-            let level = (0.5 * (1.0 - rub * 0.52) * (vel / 0.6).powf(1.1)) as f32;
+            let level = (0.5 * (1.0 - rub * 0.52) * (vel / DEFAULT_VEL).powf(1.1)) as f32;
             let sound = (both | burst | tail)
                 >> net(map(|x: &Frame<f32, U4>| {
                     x[0] * x[2] * 0.9 + x[1] * x[3] * 0.1
@@ -738,9 +748,10 @@ fn cajon() -> Synth {
                 &levels,
                 &rings,
             ) * mix(0.00175, 0.0078) as f32;
-            let sound = (box_ * 0.05 + plate_ + shimmer) >> high_shelf(1500.0, (vel - 0.6) * 5.0);
+            let sound =
+                (box_ * 0.05 + plate_ + shimmer) >> high_shelf(1500.0, (vel - DEFAULT_VEL) * 5.0);
             Note::rings(
-                sound * (mix(1.0, 0.106) * (vel / 0.6).powf(1.6)) as f32,
+                sound * (mix(1.0, 0.106) * (vel / DEFAULT_VEL).powf(1.6)) as f32,
                 1.72,
             )
         })
@@ -843,9 +854,9 @@ fn bongo(name: &'static str, b: &'static Bongo) -> Synth {
             let fast: Vec<f64> = rings.iter().zip(b.fast).map(|(r, f)| r * f).collect();
             let tails: Vec<f64> = levels.iter().zip(b.tail).map(|(l, t)| l * t).collect();
             let head = modes(hand.clone(), &f, &levels, &fast) + modes(hand, &f, &tails, &rings);
-            let level = b.gain * (vel / 0.6).powf(mix(b.curve[0], b.curve[1]));
+            let level = b.gain * (vel / DEFAULT_VEL).powf(mix(b.curve[0], b.curve[1]));
             Note::rings(
-                (head >> high_shelf(1500.0, (vel - 0.6) * 5.0)) * level as f32,
+                (head >> high_shelf(1500.0, (vel - DEFAULT_VEL) * 5.0)) * level as f32,
                 1.18,
             )
         })

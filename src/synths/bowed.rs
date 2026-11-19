@@ -3,6 +3,7 @@
 
 use super::common::{harmonics, moved_by, net, silent_after, tilted};
 use super::figures::{Figures, held_note};
+use crate::DEFAULT_VEL;
 use crate::nodes::modes;
 use crate::nodes::{db, hz, pink_noise, shape, shape_node};
 use crate::synth::SynthDecl;
@@ -329,7 +330,7 @@ fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the string is bowed or plucked."),
         )
@@ -393,7 +394,7 @@ fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, leve
         .option(Spec::note("note").default(52.0).doc("The pitch; a change while the note holds slides to the new one."))
         .option(
             Spec::float("vel")
-                .default(0.6)
+                .default(DEFAULT_VEL)
                 .range(0.0, 1.0)
                 .doc("How hard the string is bowed or plucked."),
         )
