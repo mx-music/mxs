@@ -2,7 +2,7 @@
 //! The audio thread only copies its output into a ring buffer while levels are wanted; a thread of the engine's own works the reports out, so nothing here makes the audio wait.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
@@ -41,11 +41,13 @@ pub enum Topic {
     Passes,
     /// Each key that goes down or comes up on a MIDI input the engine plays, and an input that goes away.
     Keys,
+    /// What each analysis [`Engine::analyse`](crate::Engine::analyse) started hears: the loudness and the pitch at its interval, and each onset as it happens.
+    Analysis,
 }
 
 impl Topic {
-    fn bit(self) -> u8 {
-        1 << self as u8
+    fn bit(self) -> u16 {
+        1 << self as u16
     }
 }
 
@@ -178,6 +180,26 @@ pub enum Report {
         /// The input's name.
         input: String,
     },
+    /// The loudness and the pitch an analysis hears over the window that ends at `seconds`.
+    Analysis {
+        /// The analysis, as [`Engine::analyse`](crate::Engine::analyse) returned it.
+        id: u64,
+        /// The engine's seconds of the last sample heard.
+        seconds: f64,
+        /// The loudness, in decibels below full scale, of the sound summed to one channel at the level a sound in the middle is played at.
+        loudness: f64,
+        /// The pitch in Hz, from 50 to 2000, or none when the sound has no clear pitch.
+        pitch: Option<f64>,
+        /// How sure the pitch is, from 0 to 1.
+        confidence: f64,
+    },
+    /// A new note or hit starts in what an analysis hears.
+    Onset {
+        /// The analysis, as [`Engine::analyse`](crate::Engine::analyse) returned it.
+        id: u64,
+        /// The engine's seconds of the sample it starts at.
+        seconds: f64,
+    },
     /// Reports were dropped, the oldest first, as the subscriber did not take them in time; this stands where they were.
     Dropped {
         /// The engine's seconds of the report that follows.
@@ -201,6 +223,8 @@ impl Report {
             | Report::PassStarted { seconds, .. }
             | Report::Key { seconds, .. }
             | Report::InputGone { seconds, .. }
+            | Report::Analysis { seconds, .. }
+            | Report::Onset { seconds, .. }
             | Report::Dropped { seconds, .. } => *seconds,
         }
     }
@@ -216,13 +240,14 @@ impl Report {
             Report::Beat { .. } => Some(Topic::Beats),
             Report::PassEnding { .. } | Report::PassStarted { .. } => Some(Topic::Passes),
             Report::Key { .. } | Report::InputGone { .. } => Some(Topic::Keys),
+            Report::Analysis { .. } | Report::Onset { .. } => Some(Topic::Analysis),
             Report::Dropped { .. } => None,
         }
     }
 }
 
 struct Queue {
-    topics: u8,
+    topics: u16,
     reports: VecDeque<Report>,
     dropped: u64,
 }
@@ -245,7 +270,7 @@ struct Inner {
 
 /// Where reports go: each subscriber's queue, and the warnings kept for [`Engine::warnings`](crate::Engine::warnings).
 pub(crate) struct Hub {
-    wanted: AtomicU8,
+    wanted: AtomicU16,
     inner: Mutex<Inner>,
     woken: Condvar,
 }
@@ -257,7 +282,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Hub {
     pub fn new() -> Arc<Hub> {
         Arc::new(Hub {
-            wanted: AtomicU8::new(0),
+            wanted: AtomicU16::new(0),
             inner: Mutex::new(Inner {
                 sinks: Vec::new(),
                 kept: Vec::new(),

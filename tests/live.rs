@@ -2,7 +2,8 @@
 
 use fundsp::prelude::*;
 use mxs::{
-    Engine, Error, Event, Note, Pass, Report, Settings, Spec, Synth, Target, Tempo, Topic, synths,
+    Analysed, Engine, Error, Event, Note, Pass, Report, Settings, Spec, Synth, Target, Tempo,
+    Topic, synths,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -629,4 +630,69 @@ fn a_note_no_ready_voice_can_play_handed_over_after_its_time_starts_within_5_ms_
         "{warnings:?}"
     );
     assert!(late < 5.0, "{warnings:?}");
+}
+
+#[test]
+#[ignore]
+fn each_report_of_an_analysis_reaches_the_caller_within_30_ms_of_its_time() {
+    let mut engine = live(512);
+    let reports = engine.subscribe(&[Topic::Analysis]);
+    std::thread::sleep(Duration::from_millis(500));
+    let start = engine.now() + 0.1;
+    engine.analyse(Analysed::Output, 0.01, start).unwrap();
+    let notes: Vec<(f64, Event)> = (0..8)
+        .map(|k| {
+            (
+                start + 0.25 * k as f64,
+                Event::note(None, "piano", &[("note", 57.0 + k as f64)]),
+            )
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    let mut lags = Vec::new();
+    let until = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < until {
+        if let Some(Report::Analysis { seconds, .. }) = reports.wait(Duration::from_millis(50)) {
+            lags.push(engine.now() - seconds);
+        }
+    }
+    let worst = lags.iter().cloned().fold(f64::MIN, f64::max);
+    println!(
+        "{} reports, the latest {:.1} ms after its time",
+        lags.len(),
+        worst * 1000.0
+    );
+    assert!(lags.len() > 150);
+    assert!(worst < 0.03);
+}
+
+#[test]
+#[ignore]
+fn an_analysis_whose_reports_go_untaken_for_10_seconds_leaves_no_buffer_late() {
+    let mut engine = live(512);
+    let reports = engine.subscribe(&[Topic::Analysis]);
+    std::thread::sleep(Duration::from_millis(500));
+    engine.load();
+    let start = engine.now() + 0.1;
+    engine.analyse(Analysed::Output, 0.01, start).unwrap();
+    let notes: Vec<(f64, Event)> = (0..40)
+        .map(|k| {
+            (
+                start + 0.25 * k as f64,
+                Event::note(None, "piano", &[("note", 57.0 + (k % 12) as f64)]),
+            )
+        })
+        .collect();
+    engine.play(&notes).unwrap();
+    std::thread::sleep(Duration::from_secs(10));
+    let load = engine.load();
+    assert_eq!(load.late, 0, "{load:?}");
+    let Some(Report::Dropped {
+        reports: dropped, ..
+    }) = reports.wait(Duration::ZERO)
+    else {
+        panic!("no count of dropped reports");
+    };
+    println!("{dropped} reports dropped, {load:?}");
+    assert!(dropped > 900);
 }

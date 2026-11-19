@@ -2,10 +2,11 @@
 
 use crate::clock::Timing;
 use crate::device::{self, Format, Range, Settings};
+use crate::listen::Listening;
 use crate::load::{Load, Meter};
 use crate::mixer::{
-    CAPACITY, Chain, Change, Command, Garbage, Heard, INPUTS, Input, Mixer, Out, PartChange,
-    Recorder, Voice, Voices,
+    CAPACITY, Chain, Change, Command, Garbage, Heard, INPUTS, Input, Listened, Listener, Mixer,
+    Out, PartChange, Recorder, Voice, Voices,
 };
 use crate::options::{Context, Control, Options};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
@@ -132,6 +133,19 @@ pub enum Source {
     Sample(u64),
 }
 
+/// A sound an analysis hears, for [`Engine::analyse`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Analysed {
+    /// One channel of the sound card's input, numbered from 0.
+    Input(usize),
+    /// A sample [`Engine::load_sample`] returned, played once in place of the input, to the analysis alone.
+    Sample(u64),
+    /// An effect chain's output, or a part's, after its gain, mute and solo.
+    Chain(u64),
+    /// The main output.
+    Output,
+}
+
 impl Event {
     /// A note of `synth` with number options and no effect chain; `id` lets a later change reach it.
     ///
@@ -235,6 +249,8 @@ pub enum Error {
     Device(String),
     /// The sound card has no input of this number, counted from 0.
     UnknownInput(usize),
+    /// No analysis runs under this id.
+    UnknownAnalysis(u64),
     /// A recording could not start or finish; the reason.
     Record(String),
     /// More events are waiting than the engine can take.
@@ -280,6 +296,7 @@ impl std::fmt::Display for Error {
                 let number = input + 1;
                 write!(f, "the sound card has no input {number}")
             }
+            Error::UnknownAnalysis(id) => write!(f, "no analysis runs as {id}"),
             Error::Record(reason) => write!(f, "{reason}"),
             Error::Busy => write!(f, "the engine has more events waiting than it can take"),
             Error::Offline => write!(f, "this engine renders offline and has no output"),
@@ -388,6 +405,10 @@ pub struct Engine {
     /// The whole second an offline engine last reported its voices in.
     voiced: Option<u64>,
     reporter: Option<JoinHandle<()>>,
+    /// The reporting side of each analysis, which the reporting thread reads, or an offline engine as it renders.
+    listening: Arc<Mutex<Vec<Listening>>>,
+    /// The sound each analysis plays to itself alone, by the analysis.
+    analyses: HashMap<u64, Option<u64>>,
     clock: Arc<AtomicU64>,
     voices: Arc<Voices>,
     meter: Arc<Meter>,
@@ -604,6 +625,8 @@ impl Engine {
             tapped: None,
             voiced: None,
             reporter: None,
+            listening: Arc::new(Mutex::new(Vec::new())),
+            analyses: HashMap::new(),
             clock,
             voices,
             meter,
@@ -1003,6 +1026,89 @@ impl Engine {
             return Err(Error::UnknownChain(chain));
         }
         book.send(Command::StopChain { key: chain, at })
+    }
+
+    /// Starts an analysis of `sound` from `at` seconds and returns its id: the subscribers to [`Topic::Analysis`] are sent its loudness and its pitch every `interval` seconds, and each onset as it happens, until [`Engine::stop_analysis`].
+    /// It leaves the sound as it is, and several run at once.
+    pub fn analyse(&mut self, sound: Analysed, interval: f64, at: f64) -> Result<u64, Error> {
+        self.check_running()?;
+        self.settle();
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let (listened, draft) = match sound {
+            Analysed::Input(input) => (
+                Listened::Own,
+                Some(self.input_draft(None, input, 1, &[], at, Out::Listen(id))?),
+            ),
+            Analysed::Sample(sample) => (
+                Listened::Own,
+                Some(self.sample_draft(None, sample, &[], at, Out::Listen(id))?),
+            ),
+            Analysed::Chain(chain) if self.book().chains.contains_key(&chain) => {
+                (Listened::Chain(chain), None)
+            }
+            Analysed::Chain(chain) => return Err(Error::UnknownChain(chain)),
+            Analysed::Output => (Listened::Main, None),
+        };
+        let started = match draft {
+            Some(draft) => {
+                let built = build(draft, self.rate)?;
+                let mut book = self.book();
+                book.sweep();
+                Some(book.start(built))
+            }
+            None => None,
+        };
+        let start = match &started {
+            Some((voice, _)) => voice.start,
+            None => Ord::max(self.frames(at), self.clock.load(Ordering::Acquire)),
+        };
+        let interval = Ord::max((interval * self.rate).round() as u64, 1);
+        let (samples, heard) = rtrb::RingBuffer::new(self.rate as usize);
+        let (spans, spanned) = rtrb::RingBuffer::new(4096);
+        let listener = Listener {
+            id,
+            listened,
+            start,
+            stop: None,
+            sound: BufferVec::new(2),
+            samples,
+            spans,
+        };
+        let listening = Listening::new(id, heard, spanned, self.rate, interval, start);
+        self.listening
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(listening);
+        let mut book = self.book();
+        book.send(Command::Listen(Box::new(listener)))?;
+        let key = match started {
+            Some((voice, sound)) => {
+                let key = voice.key;
+                book.sounds.insert(sound.key, sound);
+                book.send(Command::Start(voice))?;
+                Some(key)
+            }
+            None => None,
+        };
+        drop(book);
+        self.analyses.insert(id, key);
+        Ok(id)
+    }
+
+    /// Stops the analysis `id` at `at` seconds; the reports of what it heard up to then are still sent.
+    pub fn stop_analysis(&mut self, id: u64, at: f64) -> Result<(), Error> {
+        let key = self
+            .analyses
+            .remove(&id)
+            .ok_or(Error::UnknownAnalysis(id))?;
+        self.settle();
+        let at = self.frames(at);
+        let mut book = self.book();
+        book.send(Command::StopListening { id, at })?;
+        if let Some(key) = key {
+            book.send(Command::Stop { key, at })?;
+        }
+        Ok(())
     }
 
     /// Records `source` to a stereo 24-bit WAV file at `path` from `at` seconds, apart from the main output, until [`Engine::stop_recording`].
@@ -1498,6 +1604,7 @@ impl Engine {
         let (hub, clock, voices) = (self.hub.clone(), self.clock.clone(), self.voices.clone());
         let (analyser, voiced) = (&mut self.analyser, &mut self.voiced);
         let tapped = &mut self.tapped;
+        let listening = self.listening.clone();
         let Output::Offline(mixer) = &mut self.output else {
             return Err(Error::Live);
         };
@@ -1513,6 +1620,7 @@ impl Engine {
             if let Some(tapped) = tapped {
                 tapped.report(analyser, &hub);
             }
+            hear(&listening, &hub);
             let seconds = (first + left.len() as u64) as f64 / rate;
             let whole = seconds.floor() as u64;
             if hub.wants(Topic::Voices) && *voiced != Some(whole) {
@@ -2321,8 +2429,15 @@ fn count_warnings(hub: &Hub, meter: &Meter, voices: &Voices, rate: f64, seconds:
 }
 
 /// Starts a live engine's thread that works its reports out and sends them, asleep while nobody subscribes.
+/// Hands each analysis what was copied for it so far, and lets go of those the audio side has let go of.
+fn hear(listening: &Mutex<Vec<Listening>>, hub: &Hub) {
+    let mut listening = listening.lock().unwrap_or_else(|e| e.into_inner());
+    listening.retain_mut(|analysis| analysis.hear(hub));
+}
+
 fn report(engine: &Engine, mut tapped: Tapped) -> JoinHandle<()> {
     let (hub, rate) = (engine.hub.clone(), engine.rate);
+    let listening = engine.listening.clone();
     let (clock, voices, meter) = (
         engine.clock.clone(),
         engine.voices.clone(),
@@ -2340,6 +2455,7 @@ fn report(engine: &Engine, mut tapped: Tapped) -> JoinHandle<()> {
                 let fresh = seen.replace(changes) != Some(changes);
                 let now = clock.load(Ordering::Acquire) as f64 / rate;
                 tapped.report(&mut analyser, &hub);
+                hear(&listening, &hub);
                 let read = timing
                     .as_ref()
                     .filter(|_| hub.wants(Topic::Clock))
@@ -3286,5 +3402,35 @@ mod tests {
         let centre = std::f32::consts::FRAC_1_SQRT_2;
         assert!((samples[200] as f32 / 8_388_607.0 - 0.5 * centre).abs() < 1e-4);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_analysis_of_an_input_hears_it_alone_and_reports_its_pitch() {
+        let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 1);
+        let reports = engine.subscribe(&[Topic::Analysis]);
+        engine.analyse(Analysed::Input(0), 0.01, 0.0).unwrap();
+        let mut pitches = Vec::new();
+        for block in 0..48 {
+            for i in 0..1000 {
+                let t = (block * 1000 + i) as f64 / 48_000.0;
+                feed.push(0.5 * (2.0 * std::f64::consts::PI * 220.0 * t).sin() as f32)
+                    .unwrap();
+            }
+            let (left, right) = engine.render(1000.0 / 48_000.0).unwrap();
+            assert!(left.iter().chain(&right).all(|x| *x == 0.0));
+            while let Some(report) = reports.wait(Duration::ZERO) {
+                if let Report::Analysis {
+                    pitch: Some(hz), ..
+                } = report
+                {
+                    pitches.push(hz);
+                }
+            }
+        }
+        assert!(pitches.len() > 40);
+        assert!(
+            pitches.iter().all(|hz| (hz - 220.0).abs() < 0.5),
+            "{pitches:?}"
+        );
     }
 }

@@ -22,6 +22,7 @@ mod engine;
 pub mod graph;
 pub mod guide;
 pub mod keys;
+mod listen;
 mod load;
 mod mixer;
 pub mod nodes;
@@ -34,7 +35,7 @@ pub mod synths;
 mod time;
 
 pub use device::{Device, Settings, devices};
-pub use engine::{Engine, Error, Event, Pass, Source, Target, VOICES};
+pub use engine::{Analysed, Engine, Error, Event, Pass, Source, Target, VOICES};
 pub use load::Load;
 pub use options::{Context, Options};
 pub use report::{BANDS, FLOOR, Levels, PartLevels, Report, Reports, Topic, WAVE};

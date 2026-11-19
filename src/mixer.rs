@@ -21,6 +21,59 @@ pub(crate) enum Out {
     Chain(u64),
     /// Only to the recorder, apart from the main output.
     Tap,
+    /// Only to the analysis of this id, apart from the main output.
+    Listen(u64),
+}
+
+/// Where a voice's sound is added in the block being filled.
+#[derive(Clone, Copy)]
+enum Target {
+    Chain(usize),
+    Tap,
+    Listener(usize),
+    /// An analysis that has ended, whose sound goes nowhere.
+    Nowhere,
+}
+
+/// What an analysis hears.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Listened {
+    /// The sounds played to it alone, as an input or a sample is.
+    Own,
+    /// A chain's output, after its gain, mute and solo.
+    Chain(u64),
+    Main,
+}
+
+/// Copies what an analysis hears, summed to one channel, from `start` until `stop`, into rings the reporting side reads; it never waits.
+pub(crate) struct Listener {
+    pub id: u64,
+    pub listened: Listened,
+    pub start: u64,
+    pub stop: Option<u64>,
+    pub sound: BufferVec,
+    pub samples: rtrb::Producer<f32>,
+    pub spans: rtrb::Producer<(u64, u32)>,
+}
+
+impl Listener {
+    /// Copies frames `from..to` of its sound, the block starting at `now`, when the rings have room for all of them.
+    fn copy(&mut self, now: u64, n: usize) {
+        let from = self.start.saturating_sub(now) as usize;
+        let to = match self.stop {
+            Some(stop) => Ord::min(stop.saturating_sub(now) as usize, n),
+            None => n,
+        };
+        if from >= to || self.samples.slots() < to - from || self.spans.slots() == 0 {
+            return;
+        }
+        for k in from..to {
+            let mono = (self.sound.at_f32(0, k) + self.sound.at_f32(1, k))
+                * std::f32::consts::FRAC_1_SQRT_2;
+            let _ = self.samples.push(mono);
+        }
+        let _ = self.spans.push((now + from as u64, (to - from) as u32));
+    }
 }
 
 /// How many notes may sound at once, how many sound in the block being filled, how many the mixer has stolen to keep to the limit, and how many events reached it after their time, by up to how many frames.
@@ -185,6 +238,11 @@ pub(crate) enum Command {
     StopRecording,
     RecordOutput(Box<Recorder>),
     StopRecordingOutput,
+    Listen(Box<Listener>),
+    StopListening {
+        id: u64,
+        at: u64,
+    },
 }
 
 // Held only so the engine drops them, off the audio thread.
@@ -194,6 +252,7 @@ pub(crate) enum Garbage {
     Change(Box<Change>),
     Chain(Box<Chain>),
     Recorder(Box<Recorder>),
+    Listener(Box<Listener>),
 }
 
 pub(crate) struct Mixer {
@@ -213,6 +272,8 @@ pub(crate) struct Mixer {
     tap: BufferVec,
     recorder: Option<Box<Recorder>>,
     output_recorder: Option<Box<Recorder>>,
+    #[allow(clippy::vec_box)]
+    listeners: Vec<Box<Listener>>,
     now: u64,
     clock: Arc<AtomicU64>,
     limit: Arc<Voices>,
@@ -240,6 +301,7 @@ impl Mixer {
             tap: BufferVec::new(2),
             recorder: None,
             output_recorder: None,
+            listeners: Vec::with_capacity(64),
             now: clock.load(Ordering::Acquire),
             clock,
             limit,
@@ -342,6 +404,18 @@ impl Mixer {
                         let _ = self.garbage.push(Garbage::Recorder(old));
                     }
                 }
+                Command::Listen(listener) => {
+                    if self.listeners.len() < self.listeners.capacity() {
+                        self.listeners.push(listener);
+                    } else {
+                        let _ = self.garbage.push(Garbage::Listener(listener));
+                    }
+                }
+                Command::StopListening { id, at } => {
+                    if let Some(listener) = self.listeners.iter_mut().find(|l| l.id == id) {
+                        listener.stop = Some(Ord::max(at, self.now));
+                    }
+                }
             }
         }
     }
@@ -401,6 +475,9 @@ impl Mixer {
             chain.input.clear();
             chain.heard.aim(solo);
         }
+        for listener in &mut self.listeners {
+            listener.sound.clear();
+        }
         self.tap.clear();
         self.read_input(n);
 
@@ -430,8 +507,18 @@ impl Mixer {
                     .unit
                     .process(length, &input, &mut self.buffer.buffer_mut());
                 let target = match voice.out {
-                    Out::Chain(key) => self.chains.iter_mut().position(|c| c.key == key).map(Some),
-                    Out::Tap => Some(None),
+                    Out::Chain(key) => self
+                        .chains
+                        .iter()
+                        .position(|c| c.key == key)
+                        .map(Target::Chain),
+                    Out::Tap => Some(Target::Tap),
+                    Out::Listen(id) => Some(
+                        self.listeners
+                            .iter()
+                            .position(|l| l.id == id)
+                            .map_or(Target::Nowhere, Target::Listener),
+                    ),
                     Out::Main => None,
                 };
                 let mut loudest = 0.0f32;
@@ -447,10 +534,12 @@ impl Mixer {
                     let r = self.buffer.at_f32(1, k) * gain;
                     loudest = loudest.max(l.abs()).max(r.abs());
                     match target {
-                        Some(c) => {
-                            let input = match c {
-                                Some(c) => &mut self.chains[c].input,
-                                None => &mut self.tap,
+                        Some(Target::Nowhere) => {}
+                        Some(target) => {
+                            let input = match target {
+                                Target::Chain(c) => &mut self.chains[c].input,
+                                Target::Listener(l) => &mut self.listeners[l].sound,
+                                _ => &mut self.tap,
                             };
                             input.set_f32(0, from + k, input.at_f32(0, from + k) + l);
                             input.set_f32(1, from + k, input.at_f32(1, from + k) + r);
@@ -486,6 +575,12 @@ impl Mixer {
                 );
                 left[k] += l;
                 right[k] += r;
+                for listener in &mut self.listeners {
+                    if listener.listened == Listened::Chain(chain.key) {
+                        listener.sound.set_f32(0, k, l);
+                        listener.sound.set_f32(1, k, r);
+                    }
+                }
                 if let Some(Some(every)) = levels {
                     let (frames, peak, squares) = &mut chain.played;
                     *frames += 1;
@@ -517,6 +612,24 @@ impl Mixer {
             if finished {
                 let chain = self.chains.swap_remove(i);
                 let _ = self.garbage.push(Garbage::Chain(chain));
+            } else {
+                i += 1;
+            }
+        }
+
+        let mut i = 0;
+        while i < self.listeners.len() {
+            let listener = &mut self.listeners[i];
+            if listener.listened == Listened::Main {
+                for k in 0..n {
+                    listener.sound.set_f32(0, k, left[k]);
+                    listener.sound.set_f32(1, k, right[k]);
+                }
+            }
+            listener.copy(self.now, n);
+            if listener.stop.is_some_and(|stop| stop <= end) {
+                let listener = self.listeners.swap_remove(i);
+                let _ = self.garbage.push(Garbage::Listener(listener));
             } else {
                 i += 1;
             }
