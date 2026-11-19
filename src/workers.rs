@@ -213,17 +213,38 @@ pub(crate) fn performance_cores() -> usize {
     *CORES.get_or_init(|| {
         let all = std::thread::available_parallelism().map_or(1, |n| n.get());
         #[cfg(target_os = "macos")]
-        if let Some(cores) = std::process::Command::new("sysctl")
-            .args(["-n", "hw.perflevel0.physicalcpu"])
-            .output()
-            .ok()
-            .and_then(|out| String::from_utf8(out.stdout).ok())
-            .and_then(|text| text.trim().parse::<usize>().ok())
-        {
+        if let Some(cores) = perflevel0_cores() {
             return Ord::clamp(cores, 1, all);
         }
         all
     })
+}
+
+/// The performance cores macOS counts, asked of the kernel rather than of a `sysctl` process, whose wait was seen to hang inside the BEAM.
+#[cfg(target_os = "macos")]
+fn perflevel0_cores() -> Option<usize> {
+    unsafe extern "C" {
+        fn sysctlbyname(
+            name: *const std::ffi::c_char,
+            old: *mut std::ffi::c_void,
+            old_length: *mut usize,
+            new: *mut std::ffi::c_void,
+            new_length: usize,
+        ) -> i32;
+    }
+    let mut cores: i32 = 0;
+    let mut length = std::mem::size_of::<i32>();
+    // Safety: the kernel writes at most `length` bytes into `cores`, an i32 as it gives this name.
+    let read = unsafe {
+        sysctlbyname(
+            c"hw.perflevel0.physicalcpu".as_ptr(),
+            (&mut cores as *mut i32).cast(),
+            &mut length,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (read == 0 && cores > 0).then_some(cores as usize)
 }
 
 /// Asks macOS to run the calling thread as the audio thread is run, with a time constraint of a few milliseconds in each period.
@@ -272,3 +293,23 @@ fn raise_priority() {
 
 #[cfg(not(target_os = "macos"))]
 fn raise_priority() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_kernel_counts_the_performance_cores_sysctl_prints() {
+        let printed = std::process::Command::new("sysctl")
+            .args(["-n", "hw.perflevel0.physicalcpu"])
+            .output()
+            .unwrap();
+        let printed: usize = String::from_utf8(printed.stdout)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(perflevel0_cores(), Some(printed));
+    }
+}
