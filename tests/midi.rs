@@ -423,3 +423,31 @@ fn an_offline_engine_plays_no_midi_input() {
         Err(Error::Offline)
     );
 }
+
+#[test]
+#[ignore]
+fn every_input_connected_plays_when_none_is_named_and_stopping_lets_go_of_its_notes() {
+    let (_name, mut keyboard) = source("every");
+    let mut engine = live();
+    engine.start_part("keys", &[]).unwrap();
+    engine.play_midi(None, "keys", "one", &[]).unwrap();
+    settle(&mut engine);
+    let from = engine.now() + 0.05;
+    let path = record(&mut engine, from, "every");
+    keyboard.send(&[0x90, 69, 127]).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    engine.stop_midi(None).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    keyboard.send(&[0x90, 72, 127]).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    let sound = recorded(&mut engine, &path);
+    let held = magnitude(&sound[seconds(0.05, 0.15)], 440.0);
+    let after = &sound[seconds(0.4, 0.55)];
+    println!("{held:.3} while the key is down");
+    assert!(held > 0.1, "{held}");
+    assert!(
+        after.iter().all(|s| *s == 0.0),
+        "a note sounds once the input is stopped"
+    );
+    assert!(matches!(engine.stop_midi(None), Err(Error::Midi(_))));
+}
