@@ -626,3 +626,67 @@ impl AudioNode for Decay2 {
         [(self.levels.1 - self.levels.0) as f32].into()
     }
 }
+
+/// `x` rounded off smoothly towards `level`, which it never passes; silence at a level of 0 or less.
+pub fn saturate(x: f32, level: f32) -> f32 {
+    if level <= 0.0 {
+        return 0.0;
+    }
+    level * (x / level).tanh()
+}
+
+/// `x` cut off at `level` either side of 0; silence at a level of 0 or less.
+pub fn clip(x: f32, level: f32) -> f32 {
+    let level = level.max(0.0);
+    x.clamp(-level, level)
+}
+
+/// `x` folded back each time it passes `level` either side of 0, as a wavefolder folds it; silence at a level of 0 or less.
+pub fn fold(x: f32, level: f32) -> f32 {
+    if level <= 0.0 {
+        return 0.0;
+    }
+    let t = (x + level).rem_euclid(4.0 * level);
+    if t < 2.0 * level {
+        t - level
+    } else {
+        3.0 * level - t
+    }
+}
+
+/// A four-pole resonant lowpass of a sound, its cutoff in Hz and its resonance from 0 to 1, at which it rings on at its cutoff once set ringing.
+pub fn ladder() -> Net {
+    Net::wrap(Box::new(An(Ladder {
+        moog: moog::<f32>(),
+        rate: DEFAULT_SR,
+    })))
+}
+
+#[derive(Clone)]
+struct Ladder {
+    moog: An<Moog<f32, U3>>,
+    rate: f64,
+}
+
+impl AudioNode for Ladder {
+    const ID: u64 = 0x6d78_0072;
+    type Inputs = U3;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        self.moog.reset();
+    }
+
+    fn set_sample_rate(&mut self, rate: f64) {
+        self.rate = rate;
+        self.moog.set_sample_rate(rate);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U1> {
+        // FunDSP's ladder rings sharp of its cutoff, by 2 semitones low down; this cubic, fitted to its ringing at 44.1 and 48 kHz, tunes it within 4 cents.
+        let x = (input[1] as f64 / self.rate).min(0.3);
+        let sharp = 1.12403 + x * (-1.23225 + x * (3.168 - 1.38608 * x));
+        let cutoff = (input[1] as f64 / sharp) as f32;
+        self.moog.tick(&[input[0], cutoff, input[2]].into())
+    }
+}

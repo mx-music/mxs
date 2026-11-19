@@ -27,11 +27,22 @@
 //!
 //! | Call | What it does to `sound` |
 //! | --- | --- |
-//! | `lowpass(sound, hz:, q:, poles:)`, `highpass`, `bandpass` | Filters it; `q` is 0.707 and `poles` is 2 unless given, and `hz` is held from 20 to 20000. |
+//! | `lowpass(sound, hz:, q:, poles:)`, `highpass`, `bandpass` | Filters it; `q` is 0.707 and `poles` is 2 unless given, and `hz` is held from 20 to 20000; `hz` and `q` may change while the note sounds. |
+//! | `ladder(sound, hz:, resonance:)` | Filters it through a four-pole resonant lowpass, the ladder of analog synths; `resonance` is from 0, unless given, to 1, where the filter rings on at `hz` once set ringing, and both may change while the note sounds. |
 //! | `lowshelf(sound, hz:, q:, db:)`, `highshelf`, `peak` | Raises or lowers it by `db` below, above or around `hz`. |
 //! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; all three are known when the note starts. |
 //! | `delay(sound, seconds:, max:)` | Delays it by `seconds`, which may change up to `max`. |
-//! | `dc_block(sound)` | Takes its constant offset away. |
+//! | `dc_block(sound, hz:)` | Takes its constant offset away, below `hz`, 10 unless given. |
+//!
+//! ## Distortion
+//!
+//! Each works at twice the engine's rate, so it makes fewer aliases, and its `drive:` in decibels, 0 unless given, and its `level:`, 1 unless given, may change while the note sounds.
+//!
+//! | Call | What it does to `sound` |
+//! | --- | --- |
+//! | `saturate(sound, drive:, level:)` | Rounds it off smoothly towards `level`, which it never passes. |
+//! | `clip(sound, drive:, level:)` | Cuts it off at `level` either side of 0. |
+//! | `fold(sound, drive:, level:)` | Folds it back each time it passes `level` either side of 0. |
 //!
 //! ## Levels
 //!
@@ -146,6 +157,10 @@ const NODES: &[&str] = &[
     "mode",
     "delay",
     "dc_block",
+    "saturate",
+    "clip",
+    "fold",
+    "ladder",
     "envelope",
     "perc",
     "mix",
@@ -565,10 +580,10 @@ impl Build<'_> {
             "lowpass" | "highpass" | "bandpass" => {
                 let mut sound = signal(arg(0)?)?;
                 let freq = take("hz").ok_or(format!("{name} needs hz:"))?;
-                let q = take("q")
-                    .map(|q| number(q, "a filter's q"))
-                    .transpose()?
-                    .unwrap_or(std::f64::consts::FRAC_1_SQRT_2);
+                let q = match take("q").unwrap_or(V::Num(std::f64::consts::FRAC_1_SQRT_2)) {
+                    V::Num(q) => Ok(q),
+                    moving => Err(signal(moving)?),
+                };
                 let poles = take("poles")
                     .map(|p| number(p, "a filter's poles"))
                     .transpose()?
@@ -583,10 +598,21 @@ impl Build<'_> {
                     let filter: Net = match name {
                         "lowpass" => net(lowpass::<f32>()),
                         "highpass" => net(highpass::<f32>()),
-                        // FunDSP's band-pass peaks at its q, so it is scaled back to a peak of 1.
-                        _ => net(bandpass::<f32>()) * (1.0 / q) as f32,
+                        _ => net(bandpass::<f32>()),
                     };
-                    sound = (sound | freq.clone() | net(dc(q as f32))) >> filter;
+                    // FunDSP's band-pass peaks at its q, so it is scaled back to a peak of 1.
+                    sound = match &q {
+                        Ok(q) if name == "bandpass" => {
+                            (sound | freq.clone() | net(dc(*q as f32)))
+                                >> (filter * (1.0 / q) as f32)
+                        }
+                        Ok(q) => (sound | freq.clone() | net(dc(*q as f32))) >> filter,
+                        Err(q) if name == "bandpass" => {
+                            ((sound | freq.clone() | q.clone()) >> filter | q.clone())
+                                >> net(map(|x: &Frame<f32, U2>| x[0] / x[1]))
+                        }
+                        Err(q) => (sound | freq.clone() | q.clone()) >> filter,
+                    };
                 }
                 Ok(V::Sig(sound))
             }
@@ -618,7 +644,53 @@ impl Build<'_> {
                 let longest = number(take("max").ok_or("delay needs max:")?, "a delay's max")?;
                 Ok(V::Sig((sound | seconds) >> net(tap(0.0, longest as f32))))
             }
-            "dc_block" => Ok(V::Sig(signal(arg(0)?)? >> net(dcblock::<f32>()))),
+            "dc_block" => {
+                let sound = signal(arg(0)?)?;
+                let cutoff = take("hz")
+                    .map(|hz| number(hz, "a dc_block's hz"))
+                    .transpose()?
+                    .unwrap_or(10.0);
+                Ok(V::Sig(sound >> net(dcblock_hz(cutoff as f32))))
+            }
+            "saturate" | "clip" | "fold" => {
+                let sound = signal(arg(0)?)?;
+                let gain = signal(unary(take("drive").unwrap_or(V::Num(0.0)), db)?)?;
+                let level = signal(take("level").unwrap_or(V::Num(1.0)))?;
+                let shaper = match name {
+                    "saturate" => net(oversample(map(|x: &Frame<f32, U3>| {
+                        nodes::saturate(x[0] * x[1], x[2])
+                    }))),
+                    "clip" => net(oversample(map(|x: &Frame<f32, U3>| {
+                        nodes::clip(x[0] * x[1], x[2])
+                    }))),
+                    _ => net(oversample(map(|x: &Frame<f32, U3>| {
+                        nodes::fold(x[0] * x[1], x[2])
+                    }))),
+                };
+                // The filters of the higher rate ring past the level, so the shaped sound is held to it again.
+                let shaped = (sound | gain | level.clone()) >> shaper;
+                Ok(V::Sig(
+                    (shaped | level) >> net(map(|x: &Frame<f32, U2>| nodes::clip(x[0], x[1]))),
+                ))
+            }
+            "ladder" => {
+                let sound = signal(arg(0)?)?;
+                let freq = take("hz").ok_or("ladder needs hz:")?;
+                let freq = binary(
+                    binary(freq, V::Num(20.0), f64::max)?,
+                    V::Num(20_000.0),
+                    f64::min,
+                )?;
+                let resonance = take("resonance").unwrap_or(V::Num(0.0));
+                let resonance = binary(
+                    binary(resonance, V::Num(0.0), f64::max)?,
+                    V::Num(1.0),
+                    f64::min,
+                )?;
+                Ok(V::Sig(
+                    (sound | signal(freq)? | signal(resonance)?) >> nodes::ladder(),
+                ))
+            }
             "envelope" => {
                 let (sound, points) = if count == 2 {
                     (Some(arg(0)?), arg(1)?)
