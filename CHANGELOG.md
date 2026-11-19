@@ -1,5 +1,15 @@
 # Changelog for mxs v0.2
 
+## v0.2.1 (2026-11-19)
+
+### 1. Enhancements
+
+  * [synths] Add `DEFAULT_VEL`, the vel a note plays at when it gives none and the vel each synth's levels and brightness are fitted at
+
+### 2. Bug fixes
+
+  * [engine] On macOS, an engine counts the performance cores by asking the kernel, not a `sysctl` process, whose wait could hang the first engine made inside the BEAM
+
 ## v0.2.0 (2026-11-19)
 
 ### 1. Breaking changes
