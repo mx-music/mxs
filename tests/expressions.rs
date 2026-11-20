@@ -545,6 +545,30 @@ fn a_held_clarinet_note_given_pressure_1_after_a_second_plays_as_one_given_vel_1
 }
 
 #[test]
+fn a_held_violin_note_at_vel_0_4_given_pressure_1_after_a_second_plays_from_10_ms_later_as_one_at_vel_1()
+ {
+    let options = |vel: f64| [("note", 60.0), ("vel", vel), ("vibrato", 0.0)];
+    let pressed = held_render("violin", &options(0.4), Some(("pressure", 1.0)));
+    let loud = held_render("violin", &options(1.0), None);
+    let soft = held_render("violin", &options(0.4), None);
+    let window = |s: &[f32]| s[(1.01 * RATE) as usize..(1.06 * RATE) as usize].to_vec();
+    let level = |s: &[f32]| 20.0 * rms(&window(s)).log10();
+    let bright = |s: &[f32]| above_the_fourth(&window(s), 261.63);
+    println!(
+        "pressed {:.3} dB {:.4}, vel 1 {:.3} dB {:.4}, vel 0.4 {:.3} dB {:.4}",
+        level(&pressed),
+        bright(&pressed),
+        level(&loud),
+        bright(&loud),
+        level(&soft),
+        bright(&soft)
+    );
+    assert!((level(&pressed) - level(&loud)).abs() < 0.2);
+    assert!((bright(&pressed) / bright(&loud) - 1.0).abs() < 0.1);
+    assert!(level(&loud) - level(&soft) > 1.0);
+}
+
+#[test]
 fn a_held_clarinet_note_at_vel_0_4_given_pressure_0_5_plays_as_one_at_vel_0_7() {
     let pressed = held_render(
         "clarinet",
@@ -562,6 +586,33 @@ fn a_held_clarinet_note_at_vel_0_4_given_pressure_0_5_plays_as_one_at_vel_0_7() 
     );
     assert!((level(&pressed) - level(&firmer)).abs() < 0.1);
     assert!(level(&firmer) - level(&soft) > 1.0);
+}
+
+#[test]
+fn a_note_of_each_synth_that_follows_pressure_given_pressure_0_plays_as_one_given_none() {
+    for synth in [
+        "violin",
+        "cello",
+        "flute",
+        "flute_figured",
+        "clarinet",
+        "oboe",
+        "bassoon",
+        "tenor_sax",
+        "trumpet",
+        "trombone",
+        "horn",
+        "tuba",
+    ] {
+        let options = [("note", 60.0), ("vel", 0.4)];
+        let given = held_render(
+            synth,
+            &[("note", 60.0), ("vel", 0.4), ("pressure", 0.0)],
+            None,
+        );
+        assert!(given.iter().any(|s| s.abs() > 0.001), "{synth} is silent");
+        assert!(given == held_render(synth, &options, None), "{synth}");
+    }
 }
 
 #[test]

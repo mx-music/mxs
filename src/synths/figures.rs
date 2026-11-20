@@ -1742,7 +1742,15 @@ impl Sustained {
 
     // Plays a change of note or vel as a wind player does.
     fn breathe(&mut self, note: f64, vel: f64, t: f64) {
-        if self.breath.is_none() || self.let_go.is_some() {
+        if self.let_go.is_some() {
+            return;
+        }
+        if self.breath.is_none() {
+            // A bowed string has no breath, but follows how hard it is played as vel or pressure moves.
+            if (vel - self.vel).abs() > 0.03 && t >= self.swelled + SWELL {
+                self.swelled = t;
+                self.revoice(self.base, vel, t, From::Same);
+            }
             return;
         }
         // The breath's level is the loudest vel lately, easing over a fifth of a second, so a quick dip under half of it is the tongue.
