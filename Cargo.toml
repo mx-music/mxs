@@ -18,6 +18,9 @@ serde_json = { version = "1.0.154", features = ["preserve_order"] }
 stacker = "0.1.25"
 
 [features]
+default = ["tables"]
+# The measured tables of the instruments fitted to recordings, compiled in; without it a program loads them with synths::load_table.
+tables = []
 keys = ["dep:midir"]
 
 [package.metadata.docs.rs]

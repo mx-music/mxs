@@ -1081,8 +1081,7 @@ const FLUTE_BREATH: f64 = 0.17 / 0.045;
 
 /// The flute's figures, fitted partial by partial to the University of Iowa's flute played with vibrato at pp, mf and ff.
 fn flute_figures() -> &'static super::figures::Figures {
-    static FIGURES: std::sync::OnceLock<super::figures::Figures> = std::sync::OnceLock::new();
-    FIGURES.get_or_init(|| super::figures::Figures::read(include_bytes!("figures/flute.mxh")))
+    super::tables::figures("flute.mxh")
 }
 
 /// A flute played from figures fitted to its recordings partial by partial, a change of note a slur to the new note's figures, its loudness following vel as the recordings' loudest partial does.

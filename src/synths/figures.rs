@@ -112,16 +112,31 @@ pub(super) struct Voice {
     spare: Vec<Shape>,
 }
 
+/// Reads figures; past the end it gives zeros and is short, and a count that more items than the bytes left could hold is 0 and short.
 struct Reader<'a> {
     bytes: &'a [u8],
     at: usize,
+    short: bool,
 }
 
 impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> [u8; N] {
-        let taken = self.bytes[self.at..self.at + N].try_into().unwrap();
+        let Some(taken) = self.bytes.get(self.at..self.at + N) else {
+            self.short = true;
+            return [0; N];
+        };
         self.at += N;
-        taken
+        taken.try_into().unwrap()
+    }
+
+    /// A count of items each at least `each` bytes long.
+    fn count(&mut self, each: usize) -> usize {
+        let count = self.u16() as usize;
+        if count * each > self.bytes.len() - self.at {
+            self.short = true;
+            return 0;
+        }
+        count
     }
 
     fn u8(&mut self) -> u8 {
@@ -152,20 +167,32 @@ impl Reader<'_> {
 impl Figures {
     /// Reads figures as `mix mx.fit` writes them: "MXF1", the times, the noise bands, then each recording's note, velocity, partials and noise.
     /// Figures of held notes start "MXH1", and give each recording's vibrato before its partials, and each partial's swing with it after its slope.
+    #[cfg(any(feature = "tables", test))]
     pub fn read(bytes: &[u8]) -> Figures {
-        let mut reader = Reader { bytes, at: 0 };
+        Figures::try_read(bytes).expect("figures compiled in are whole")
+    }
+
+    /// Reads figures as [`Figures::read`] does, or says why the bytes are not figures.
+    pub fn try_read(bytes: &[u8]) -> Result<Figures, String> {
+        let mut reader = Reader {
+            bytes,
+            at: 0,
+            short: false,
+        };
         let magic = reader.take::<4>();
         let held = &magic == b"MXH1";
-        assert!(
-            held || &magic == b"MXF1",
-            "not figures of struck or held notes"
-        );
-        let count = reader.u16() as usize;
+        if !held && &magic != b"MXF1" {
+            return Err("not figures of struck or held notes".to_string());
+        }
+        let count = reader.count(4);
         let times: Vec<f64> = (0..count).map(|_| reader.f32()).collect();
-        let bands = (0..reader.u16())
+        let bands = (0..reader.count(8))
             .map(|_| (reader.f32(), reader.f32()))
             .collect::<Vec<_>>();
-        let recordings = (0..reader.u16())
+        let vibrato_bytes = if held { 16 } else { 0 };
+        let noise_bytes = bands.len() * 2 * (1 + times.len());
+        let partial_bytes = 8 + if held { 2 } else { 0 } + 2 * times.len();
+        let recordings = (0..reader.count(4 + vibrato_bytes + noise_bytes))
             .map(|_| {
                 let (note, velocity) = (reader.u8(), reader.u8());
                 let vibrato = held.then(|| {
@@ -177,7 +204,7 @@ impl Figures {
                         depth,
                     }
                 });
-                let partials = (0..reader.u16())
+                let partials = (0..reader.count(partial_bytes))
                     .map(|_| {
                         let (ratio, harmonic) = (reader.f32(), reader.u16());
                         let tail = reader.tenths();
@@ -203,7 +230,10 @@ impl Figures {
                 }
             })
             .collect();
-        Figures::new(times, bands, recordings)
+        if reader.short || reader.at != bytes.len() {
+            return Err("figures cut short, or with bytes after them".to_string());
+        }
+        Ok(Figures::new(times, bands, recordings))
     }
 
     // Each recording's partials are kept in the order a note groups them in, so a note merges them

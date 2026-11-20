@@ -21,6 +21,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --release --all-features
+      - run: cargo clippy --lib --no-default-features -- -D warnings
+      - run: cargo test --release --no-default-features --test tables
 
   webassembly:
     runs-on: ubuntu-latest

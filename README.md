@@ -70,6 +70,7 @@ fn main() -> Result<(), mxs::Error> {
 
 An offline engine also runs in WebAssembly, as `wasm32-unknown-unknown`, with no imports, so a web page or Node can render with it; [the notes on playing in the browser](notes/playing-in-the-browser.md) have a page that plays the piano in an audio worklet.
 There, a sample is loaded from its bytes with `load_sample_bytes`, and a live engine, worker threads, files read by path, MIDI and audio input do not work.
+Built without the default `tables` feature, the module carries none of the instruments' measured tables, and a page loads only those it plays, as [the guide to tables](docs/guide/tables.md) shows.
 
 ## What it does
 
@@ -182,6 +183,12 @@ The check that an offline engine renders in WebAssembly as it does natively need
 
 ```sh
 cargo test --release --test webassembly -- --ignored
+```
+
+The checks of a build without the measured tables compiled in run apart:
+
+```sh
+cargo test --no-default-features --test tables
 ```
 
 `cargo doc --open` builds the documentation with its diagrams, which need a connection to load the script that draws them.

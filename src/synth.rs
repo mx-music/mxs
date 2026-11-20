@@ -19,6 +19,8 @@ pub struct Synth {
     pub(crate) doc: String,
     pub(crate) specs: Vec<Spec>,
     pub(crate) build: Arc<BuildNote>,
+    /// The files of the measured tables the synth plays, which a build without the `tables` feature loads first.
+    pub(crate) tables: &'static [&'static str],
 }
 
 /// A synth being declared, until `build` gives it its sound.
@@ -53,6 +55,12 @@ impl Synth {
     pub fn specs(&self) -> &[Spec] {
         &self.specs
     }
+
+    /// The files of the measured tables the synth plays, such as `piano.mxf`, none for most synths.
+    /// A build of mxs without the `tables` feature loads each with [`load_table`](crate::synths::load_table) before the synth plays.
+    pub fn tables(&self) -> &[&'static str] {
+        self.tables
+    }
 }
 
 impl SynthDecl {
@@ -84,6 +92,7 @@ impl SynthDecl {
             doc: self.doc,
             specs: self.specs,
             build: Arc::new(build),
+            tables: &[],
         }
     }
 }

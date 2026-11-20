@@ -378,6 +378,7 @@ impl Engine {
             .synths
             .get(synth)
             .ok_or_else(|| Error::UnknownSynth(synth.to_string()))?;
+        super::tables_loaded(&registered.item)?;
         let (item, owner, specs) = (
             registered.item.clone(),
             registered.owner.clone(),

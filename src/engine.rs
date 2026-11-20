@@ -284,6 +284,25 @@ pub enum Error {
     CannotKeepReady(String),
     /// A MIDI input could not be played; the reason.
     Midi(String),
+    /// The synth plays measured tables, and these files of them are not loaded, in a build of mxs without the `tables` feature.
+    TablesNotLoaded {
+        /// The synth played.
+        synth: String,
+        /// The files of its tables not loaded yet.
+        tables: Vec<String>,
+    },
+}
+
+/// Refuses a synth whose tables are not loaded.
+pub(crate) fn tables_loaded(synth: &Synth) -> Result<(), Error> {
+    let missing = crate::synths::missing_tables(synth.tables());
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(Error::TablesNotLoaded {
+        synth: synth.name().to_string(),
+        tables: missing.into_iter().map(str::to_string).collect(),
+    })
 }
 
 impl std::fmt::Display for Error {
@@ -326,6 +345,13 @@ impl std::fmt::Display for Error {
                 f,
                 "the output device {name} went away, and the engine has to be started again"
             ),
+            Error::TablesNotLoaded { synth, tables } => {
+                let tables = tables.join(" and ");
+                write!(
+                    f,
+                    "the {synth}'s tables are not loaded: load {tables} first"
+                )
+            }
             Error::CannotKeepReady(name) => write!(
                 f,
                 "{name} builds each note for its note and vel alone, so no voice of it can be kept ready"
@@ -1850,6 +1876,7 @@ impl Engine {
             .synths
             .get(synth)
             .ok_or_else(|| Error::UnknownSynth(synth.to_string()))?;
+        tables_loaded(&registered.item)?;
         let (owner, specs, build) = (
             registered.owner.clone(),
             registered.specs.clone(),

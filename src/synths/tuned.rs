@@ -5,7 +5,6 @@ use super::figures::{Figures, kept, kept_gain};
 use crate::nodes::shape;
 use crate::{Note, Spec, Synth};
 use std::f64::consts::PI;
-use std::sync::OnceLock;
 
 /// Every synth of this family mx ships.
 pub fn all() -> Vec<Synth> {
@@ -26,8 +25,7 @@ fn marimba() -> Synth {
 
 /// The marimba's figures, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets.
 fn marimba_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/marimba.mxf")))
+    super::tables::figures("marimba.mxf")
 }
 
 /// The marimba's gain, as loud at C4 at vel 1 as the version measured band by band.
@@ -55,8 +53,7 @@ fn vibraphone() -> Synth {
 
 /// The vibraphone's figures, fitted partial by partial to the University of Iowa's vibraphone played with the motor off.
 fn vibraphone_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/vibraphone.mxf")))
+    super::tables::figures("vibraphone.mxf")
 }
 
 /// The vibraphone's gain, as loud at C4 at vel 1 as the version measured band by band.
@@ -70,8 +67,7 @@ fn xylophone() -> Synth {
 
 /// The xylophone's figures, fitted partial by partial to the University of Iowa's xylophone struck with rosewood mallets.
 fn xylophone_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/xylophone.mxf")))
+    super::tables::figures("xylophone.mxf")
 }
 
 /// The xylophone's gain, as loud at C5 at vel 1 as the version measured band by band.
@@ -85,8 +81,7 @@ fn glockenspiel() -> Synth {
 
 /// The glockenspiel's figures, fitted partial by partial to the University of Iowa's orchestral bells struck with plastic mallets.
 fn glockenspiel_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/glockenspiel.mxf")))
+    super::tables::figures("glockenspiel.mxf")
 }
 
 /// The glockenspiel's gain, as loud at C6 at vel 1 as the version measured band by band.
@@ -100,8 +95,7 @@ fn timpani() -> Synth {
 
 /// The timpani's figures, fitted partial by partial to the five timpani of VSCO 2.
 fn timpani_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/timpani.mxf")))
+    super::tables::figures("timpani.mxf")
 }
 
 /// The timpani's gain, as loud at drum 3's pitch at vel 1 as the version measured band by band.

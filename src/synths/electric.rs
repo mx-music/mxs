@@ -3,7 +3,6 @@
 use super::figures::{Figures, fitted};
 use crate::DEFAULT_VEL;
 use crate::{Spec, Synth};
-use std::sync::OnceLock;
 
 /// Every synth of this family mx ships.
 pub fn all() -> Vec<Synth> {
@@ -26,8 +25,7 @@ fn electric_piano() -> Synth {
 
 /// The electric piano's figures, fitted partial by partial to NSynth's keyboard_electronic_098.
 fn epiano() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/electric_piano.mxf")))
+    super::tables::figures("electric_piano.mxf")
 }
 
 /// The electric piano's gain at vel 1, as loud at E3 as its alpha version.
@@ -49,8 +47,7 @@ fn electric_guitar() -> Synth {
 
 /// The electric guitar's figures, fitted partial by partial to NSynth's guitar_electronic_028.
 fn eguitar() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/electric_guitar.mxf")))
+    super::tables::figures("electric_guitar.mxf")
 }
 
 /// The electric guitar's gain at vel 1, as loud at A2 as its alpha version.

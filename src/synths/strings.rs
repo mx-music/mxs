@@ -9,7 +9,6 @@ use crate::nodes::{db, decay2, hit, hz, modes, segment_at, shape, struck_gliding
 use crate::{Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
-use std::sync::OnceLock;
 
 /// Every synth of this family mx ships.
 pub fn all() -> Vec<Synth> {
@@ -41,8 +40,7 @@ fn guitar() -> Synth {
 
 /// The guitar's figures, fitted partial by partial to the University of Iowa's guitar.
 fn guitar_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/guitar.mxf")))
+    super::tables::figures("guitar.mxf")
 }
 
 /// The guitar's gain, as loud at E3 at vel 1 as the version measured band by band.
@@ -64,8 +62,7 @@ fn electric_bass() -> Synth {
 
 /// The electric bass's figures, fitted partial by partial to NSynth's bass_electronic_018.
 fn ebass() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/electric_bass.mxf")))
+    super::tables::figures("electric_bass.mxf")
 }
 
 /// The electric bass's gain at vel 1, as loud at A1 as the version measured band by band.
@@ -87,8 +84,7 @@ fn deep_bass() -> Synth {
 
 /// The deep bass's figures, fitted partial by partial to NSynth's bass_electronic_025 and bass_electronic_027.
 fn dbass() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/deep_bass.mxf")))
+    super::tables::figures("deep_bass.mxf")
 }
 
 /// The deep bass's gain at vel 1, as loud at A1 as the version measured band by band.
@@ -178,8 +174,7 @@ fn harp() -> Synth {
 
 /// The harp's figures, fitted partial by partial to the folk harp of the Versilian Community Sample Library.
 fn harp_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/harp.mxf")))
+    super::tables::figures("harp.mxf")
 }
 
 /// The harp's gain, as loud at C4 at vel 1 as the version measured band by band.
@@ -452,14 +447,12 @@ pub fn piano() -> Synth {
 
 /// The piano's figures without the pedal, fitted partial by partial to the Steinway's recordings.
 fn piano_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/piano.mxf")))
+    super::tables::figures("piano.mxf")
 }
 
 /// The piano's figures with the pedal down.
 fn piano_pedal_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/piano_pedal.mxf")))
+    super::tables::figures("piano_pedal.mxf")
 }
 
 /// The piano's gain at vel 1, as loud at C4 as the version measured band by band.

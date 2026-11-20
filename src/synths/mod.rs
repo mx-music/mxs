@@ -34,11 +34,14 @@ mod electric;
 mod figures;
 mod organs;
 mod strings;
+mod tables;
 mod tuned;
 mod winds;
 
 pub(crate) use bowed::bowed_string;
 pub(crate) use common::partials;
+pub use tables::load_table;
+pub(crate) use tables::missing as missing_tables;
 pub(crate) use winds::{drifting_swing, played_jet, wind_bands};
 
 /// The piano: each harmonic a resonator struck once, with a thump of noise.
@@ -55,6 +58,7 @@ pub fn berimbau() -> crate::Synth {
 
 fn described(mut synth: crate::Synth) -> crate::Synth {
     synth.doc = about(&synth.name).to_string();
+    synth.tables = tables::of(&synth.name);
     takes_vel(synth)
 }
 

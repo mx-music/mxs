@@ -7,8 +7,12 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["tables"]
+tables = ["mxs/tables"]
+
 [dependencies]
-mxs = { path = "../.." }
+mxs = { path = "../..", default-features = false }
 hound = "3.5.1"
 
 [profile.release]

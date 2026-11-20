@@ -10,7 +10,6 @@ use crate::synth::SynthDecl;
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
-use std::sync::OnceLock;
 
 /// The centres of the bands mx measures, from 80 Hz to 4 kHz.
 const BANDS: [f64; 8] = [113.0, 200.0, 316.0, 502.0, 794.0, 1265.0, 2000.0, 3162.0];
@@ -439,8 +438,7 @@ fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, leve
 
 /// The violin's figures, fitted partial by partial to the University of Iowa's arco violin at pp, mf and ff.
 fn violin_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/violin.mxh")))
+    super::tables::figures("violin.mxh")
 }
 
 /// The violin's gain at vel 1, as loud at vel 1 as its bowed model on average over G3 to C7, since its recordings' high notes stand up to 9 dB quieter.
@@ -448,8 +446,7 @@ const VIOLIN_LEVEL: f64 = 1.39;
 
 /// The cello's figures, fitted partial by partial to the University of Iowa's arco cello at pp, mf and ff.
 fn cello_figures() -> &'static Figures {
-    static FIGURES: OnceLock<Figures> = OnceLock::new();
-    FIGURES.get_or_init(|| Figures::read(include_bytes!("figures/cello.mxh")))
+    super::tables::figures("cello.mxh")
 }
 
 /// The cello's gain at vel 1, as loud at C3 at vel 1 as its bowed model, within 0.1 dB.

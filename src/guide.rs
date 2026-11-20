@@ -11,6 +11,7 @@
 //! | [`live`] | Devices, latency, how far ahead to hand a note over, whether the engine keeps up, a MIDI keyboard, and a MIDI input played on a part. |
 //! | [`building`] | A synth or an effect of your own, in Rust or as data. |
 //! | [`samples`] | Sound files, the sound card's input, and recording to a file. |
+//! | [`tables`] | The synths that play measured tables, and loading those tables at run time. |
 //!
 //! The same pages are in the repository's `docs/guide`, where each links the next by its file.
 
@@ -30,6 +31,7 @@ macro_rules! guide {
             #[doc = "[live]: live"]
             #[doc = "[building]: building"]
             #[doc = "[samples]: samples"]
+            #[doc = "[tables]: tables"]
             #[doc = ""]
             #[doc = include_str!(concat!("../docs/guide/", stringify!($name), ".md"))]
             pub mod $name {}
@@ -45,5 +47,6 @@ guide!(
     reports,
     live,
     building,
-    samples
+    samples,
+    tables
 );
