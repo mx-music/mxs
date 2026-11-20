@@ -21,6 +21,72 @@ pub struct Synth {
     pub(crate) build: Arc<BuildNote>,
     /// The files of the measured tables the synth plays, which a build without the `tables` feature loads first.
     pub(crate) tables: &'static [&'static str],
+    pub(crate) family: Family,
+    pub(crate) range: Option<(f64, f64)>,
+}
+
+/// The family a synth belongs to, as a musician would look for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Family {
+    /// The piano, the electric piano, the organs and the accordion.
+    Keys,
+    /// The guitars, basses, harp and the plucked strings of Brazil and India.
+    PluckedStrings,
+    /// The violin, viola, cello and double bass.
+    BowedStrings,
+    /// The woodwinds and the brass.
+    Winds,
+    /// The marimba, vibraphone, xylophone, glockenspiel and timpani.
+    Mallets,
+    /// The waveforms and the synthesizer sounds.
+    Synths,
+    /// The drum kit and the percussion.
+    Drums,
+}
+
+impl Family {
+    /// Every family, in the order a list of synths shows them.
+    pub const ALL: [Family; 7] = [
+        Family::Keys,
+        Family::PluckedStrings,
+        Family::BowedStrings,
+        Family::Winds,
+        Family::Mallets,
+        Family::Synths,
+        Family::Drums,
+    ];
+
+    /// The family's name in lower case, such as `plucked strings`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Family::Keys => "keys",
+            Family::PluckedStrings => "plucked strings",
+            Family::BowedStrings => "bowed strings",
+            Family::Winds => "winds",
+            Family::Mallets => "mallets",
+            Family::Synths => "synths",
+            Family::Drums => "drums",
+        }
+    }
+
+    /// The family's name as a heading, such as `Plucked strings`.
+    pub fn title(self) -> &'static str {
+        match self {
+            Family::Keys => "Keys",
+            Family::PluckedStrings => "Plucked strings",
+            Family::BowedStrings => "Bowed strings",
+            Family::Winds => "Winds",
+            Family::Mallets => "Mallets",
+            Family::Synths => "Synths",
+            Family::Drums => "Drums",
+        }
+    }
+}
+
+impl std::fmt::Display for Family {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }
 
 /// A synth being declared, until `build` gives it its sound.
@@ -61,6 +127,17 @@ impl Synth {
     pub fn tables(&self) -> &[&'static str] {
         self.tables
     }
+
+    /// The synth's family; a synth declared outside the crate is one of the synths.
+    pub fn family(&self) -> Family {
+        self.family
+    }
+
+    /// The lowest and highest MIDI notes the synth is meant to play, or none for a synth with no natural range, such as `saw` or a drum.
+    /// A note outside the range still plays.
+    pub fn range(&self) -> Option<(f64, f64)> {
+        self.range
+    }
 }
 
 impl SynthDecl {
@@ -93,6 +170,8 @@ impl SynthDecl {
             specs: self.specs,
             build: Arc::new(build),
             tables: &[],
+            family: Family::Synths,
+            range: None,
         }
     }
 }

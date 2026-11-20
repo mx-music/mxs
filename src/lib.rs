@@ -45,7 +45,7 @@ pub use sample::check_bytes as check_sample_bytes;
 pub use sample::peak as sample_peak;
 pub use sample::peak_bytes as sample_peak_bytes;
 pub use spec::{Kind, Spec, Value};
-pub use synth::{Effect, EffectDecl, Note, Synth, SynthDecl};
+pub use synth::{Effect, EffectDecl, Family, Note, Synth, SynthDecl};
 pub use time::Tempo;
 
 /// The rate an offline engine is usually made with, in frames a second; a live engine runs at its device's.

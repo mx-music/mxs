@@ -2,13 +2,13 @@
 
 | Family | Synths |
 |---|---|
-| Basic waveforms | [`saw`](#saw), [`square`](#square), [`tri`](#tri), [`pulse`](#pulse), [`noise`](#noise), [`fm`](#fm), [`pluck`](#pluck), [`supersaw`](#supersaw), [`acid`](#acid), [`brass`](#brass) |
-| Piano and plucked strings | [`piano`](#piano), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`deep_bass`](#deep_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura), [`electric_piano`](#electric_piano), [`electric_guitar`](#electric_guitar) |
+| Keys | [`piano`](#piano), [`electric_piano`](#electric_piano), [`organ`](#organ), [`harmonium`](#harmonium), [`accordion`](#accordion) |
+| Plucked strings | [`berimbau`](#berimbau), [`pluck`](#pluck), [`guitar`](#guitar), [`electric_bass`](#electric_bass), [`cavaquinho`](#cavaquinho), [`bandolim`](#bandolim), [`harp`](#harp), [`sitar`](#sitar), [`tanpura`](#tanpura), [`electric_guitar`](#electric_guitar) |
 | Bowed strings | [`violin`](#violin), [`viola`](#viola), [`cello`](#cello), [`double_bass`](#double_bass) |
-| Winds | [`flute`](#flute), [`flute_figured`](#flute_figured), [`clarinet`](#clarinet), [`oboe`](#oboe), [`bassoon`](#bassoon), [`tenor_sax`](#tenor_sax), [`trumpet`](#trumpet), [`trombone`](#trombone), [`horn`](#horn), [`tuba`](#tuba) |
-| Organs and reeds | [`organ`](#organ), [`harmonium`](#harmonium), [`accordion`](#accordion) |
-| Tuned percussion | [`marimba`](#marimba), [`vibraphone`](#vibraphone), [`xylophone`](#xylophone), [`glockenspiel`](#glockenspiel), [`timpani`](#timpani) |
-| Drums | [`berimbau`](#berimbau), [`kick`](#kick), [`snare`](#snare), [`clap`](#clap), [`crash`](#crash), [`ride`](#ride), [`closed_hihat`](#closed_hihat), [`open_hihat`](#open_hihat), [`low_tom`](#low_tom), [`mid_tom`](#mid_tom), [`high_tom`](#high_tom), [`rimshot`](#rimshot), [`cross_stick`](#cross_stick), [`pedal_hihat`](#pedal_hihat), [`cowbell`](#cowbell), [`clave`](#clave), [`low_agogo`](#low_agogo), [`high_agogo`](#high_agogo), [`ganza`](#ganza), [`shaker`](#shaker), [`low_conga`](#low_conga), [`mid_conga`](#mid_conga), [`high_conga`](#high_conga), [`low_timbale`](#low_timbale), [`high_timbale`](#high_timbale), [`timbale_shell`](#timbale_shell), [`guiro`](#guiro), [`triangle`](#triangle), [`tambourine`](#tambourine), [`tambourine_shake`](#tambourine_shake), [`cabasa`](#cabasa), [`cajon`](#cajon), [`low_bongo`](#low_bongo), [`high_bongo`](#high_bongo), [`pandeiro`](#pandeiro), [`surdo`](#surdo), [`cuica`](#cuica), [`tamborim`](#tamborim), [`caxixi`](#caxixi), [`pandeiro_thumb`](#pandeiro_thumb), [`pandeiro_heel`](#pandeiro_heel), [`pandeiro_slap`](#pandeiro_slap), [`pandeiro_jingles`](#pandeiro_jingles), [`tabla`](#tabla), [`tabla_na`](#tabla_na), [`tabla_tun`](#tabla_tun), [`tabla_te`](#tabla_te), [`tabla_tas`](#tabla_tas), [`tabla_ghe`](#tabla_ghe), [`tabla_ke`](#tabla_ke) |
+| Winds | [`brass`](#brass), [`flute`](#flute), [`flute_figured`](#flute_figured), [`clarinet`](#clarinet), [`oboe`](#oboe), [`bassoon`](#bassoon), [`tenor_sax`](#tenor_sax), [`trumpet`](#trumpet), [`trombone`](#trombone), [`horn`](#horn), [`tuba`](#tuba) |
+| Mallets | [`marimba`](#marimba), [`vibraphone`](#vibraphone), [`xylophone`](#xylophone), [`glockenspiel`](#glockenspiel), [`timpani`](#timpani) |
+| Synths | [`saw`](#saw), [`square`](#square), [`tri`](#tri), [`pulse`](#pulse), [`noise`](#noise), [`fm`](#fm), [`supersaw`](#supersaw), [`acid`](#acid), [`deep_bass`](#deep_bass) |
+| Drums | [`kick`](#kick), [`snare`](#snare), [`clap`](#clap), [`crash`](#crash), [`ride`](#ride), [`closed_hihat`](#closed_hihat), [`open_hihat`](#open_hihat), [`low_tom`](#low_tom), [`mid_tom`](#mid_tom), [`high_tom`](#high_tom), [`rimshot`](#rimshot), [`cross_stick`](#cross_stick), [`pedal_hihat`](#pedal_hihat), [`cowbell`](#cowbell), [`clave`](#clave), [`low_agogo`](#low_agogo), [`high_agogo`](#high_agogo), [`ganza`](#ganza), [`shaker`](#shaker), [`low_conga`](#low_conga), [`mid_conga`](#mid_conga), [`high_conga`](#high_conga), [`low_timbale`](#low_timbale), [`high_timbale`](#high_timbale), [`timbale_shell`](#timbale_shell), [`guiro`](#guiro), [`triangle`](#triangle), [`tambourine`](#tambourine), [`tambourine_shake`](#tambourine_shake), [`cabasa`](#cabasa), [`cajon`](#cajon), [`low_bongo`](#low_bongo), [`high_bongo`](#high_bongo), [`pandeiro`](#pandeiro), [`surdo`](#surdo), [`cuica`](#cuica), [`tamborim`](#tamborim), [`caxixi`](#caxixi), [`pandeiro_thumb`](#pandeiro_thumb), [`pandeiro_heel`](#pandeiro_heel), [`pandeiro_slap`](#pandeiro_slap), [`pandeiro_jingles`](#pandeiro_jingles), [`tabla`](#tabla), [`tabla_na`](#tabla_na), [`tabla_tun`](#tabla_tun), [`tabla_te`](#tabla_te), [`tabla_tas`](#tabla_tas), [`tabla_ghe`](#tabla_ghe), [`tabla_ke`](#tabla_ke) |
 
 ## What every note takes
 
@@ -38,158 +38,11 @@ A synth that takes the envelope takes these seven options, with its own defaults
 | `decay_level` | a number | -1 | The level the decay falls to; sustain_level when below 0. |
 | `sustain_level` | a number, 0 or more | 1 | The level the note holds at. |
 
-## Basic waveforms
-
-### `saw`
-
-A sawtooth wave under a resonant low-pass filter.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
-| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
-
-### `square`
-
-A square wave under a resonant low-pass filter.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
-| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
-
-### `tri`
-
-A triangle wave under a resonant low-pass filter.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
-| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
-
-### `pulse`
-
-A pulse wave of any width under a resonant low-pass filter.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
-| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
-| `pulse_width` | a number, 0.01 to 0.99 | 0.3 | The part of each cycle that is up. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
-
-### `noise`
-
-Noise under a resonant low-pass filter.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `cutoff` | a MIDI note | 110 | The MIDI note above which the low-pass cuts. |
-| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
-
-### `fm`
-
-A sine wave whose frequency another sine wave swings.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `divisor` | a number, 0.01 or more | 2 | The note's frequency over the modulator's. |
-| `depth` | a number | 1 | How far the modulator swings the frequency, in times the note's. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
-
-### `pluck`
-
-A plain plucked string, which rings for as long as asked and dulls as it rings.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `ring` | seconds, 0 or more | 3 | How many seconds the string takes to fall 60 dB. |
-| `coef` | a number, -0.99 to 0.99 | 0.3 | How fast the string loses its brightness. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 2 unless given.
-
-### `supersaw`
-
-Sawtooth waves spread around the note, under a resonant low-pass filter.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `cutoff` | a MIDI note | 110 | The MIDI note above which the low-pass cuts. |
-| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
-| `detune` | a number | 0.2 | How far in semitones the saws spread around the note. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
-
-### `acid`
-
-An acid bass, a wave under a resonant filter that closes as the note sounds.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `cutoff` | a MIDI note | 70 | The MIDI note the filter closes to. |
-| `res` | a number, 0 to 1 | 0.7 | How much the filter rings at its cutoff. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 0.5 unless given.
-
-### `brass`
-
-A plain brass sound, brighter the harder it is blown.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is blown. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0 and a `release` of 0.25 unless given.
-
-## Piano and plucked strings
+## Keys
 
 ### `piano`
 
-A grand piano fitted partial by partial to the Steinway B of the Versilian Community Sample Library from A#0 to G#7, with the sustain pedal and without, and played from A0 to C8. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partials between them as twins of the nearest harmonic, the noise of the strike and the knock under 600 Hz.
+A grand piano fitted partial by partial to the Steinway B of the Versilian Community Sample Library from A#0 to G#7, with the sustain pedal and without, and played from A0 to C8. What a note is made of can be had without playing it, from the same options: its harmonics, each with a frequency, a level and the seconds it takes to fall 60 dB, the partials between them as twins of the nearest harmonic, the noise of the strike and the knock under 600 Hz. One of the keys, meant to play from A0 to C8.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -205,9 +58,90 @@ A grand piano fitted partial by partial to the Steinway B of the Versilian Commu
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 1 unless given.
 
+### `electric_piano`
+
+An electric piano whose hammers strike tines, fitted to the notes of the keyboard_electronic_098 instrument of Google's NSynth dataset from E1 to E6. A note rings while the key is held until it fades by itself. One of the keys, meant to play from E1 to E6.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 60 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the key is struck. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 1000 and a `release` of 0.15 unless given.
+
+### `organ`
+
+A pipe organ fitted to VSCO 2's organ, with a quiet set, a stopped flute, and a loud one, a principal chorus. One of the keys, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `loud` | a number, 0 to 1 | 0 | 1 plays the loud set, a principal chorus, instead of the quiet stopped flute. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 1 and a `release` of 0.15 unless given.
+
+### `harmonium`
+
+The reed organ pumped by hand that accompanies Hindustani singing, fitted to the "Harmonium" pack by cabled_mess on Freesound. One of the keys, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the bellows are pumped. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
+
+### `accordion`
+
+An accordion's right hand: two reeds a few Hz apart, beating, fitted to "Accordeon master" by hammondman on Freesound. One of the keys, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 60 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the bellows are pressed. |
+| `detune` | a number, 0 to 20 | 4 | How many Hz the second reed sounds above the first, which beat that many times a second; 0 sounds one reed. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.15 unless given.
+
+## Plucked strings
+
+### `berimbau`
+
+The berimbau of capoeira: the string struck by the stick, open, with the coin pressed or buzzed, and swung by the gourd. Fitted to "Berimbau jam without caxixi" by EliasArtista on Freesound. One of the plucked strings, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 39.11 | The open string's pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the stick strikes. |
+| `coin` | a number, 0 to 1 | 0 | How hard the coin presses the wire, raising it a whole tone. |
+| `buzz` | a number, 0 to 1 | 0 | How loosely the coin rests on the wire, rattling against it. |
+| `gourd` | a number, 0 to 20 | 2.3 | How many times a second the gourd swings against the belly. |
+
+### `pluck`
+
+A plain plucked string, which rings for as long as asked and dulls as it rings. One of the plucked strings, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `ring` | seconds, 0 or more | 3 | How many seconds the string takes to fall 60 dB. |
+| `coef` | a number, -0.99 to 0.99 | 0.3 | How fast the string loses its brightness. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 2 unless given.
+
 ### `guitar`
 
-A nylon-string guitar fitted partial by partial to the University of Iowa's guitar from E2 to B5, and played down to B1, the low string of a 7-string guitar. A note rings until it fades by itself.
+A nylon-string guitar fitted partial by partial to the University of Iowa's guitar from E2 to B5, and played down to B1, the low string of a 7-string guitar. A note rings until it fades by itself. One of the plucked strings, meant to play from B1 to B5.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -220,20 +154,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless give
 
 ### `electric_bass`
 
-An electric bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 33 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard the string is plucked. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 1000 and a `release` of 0.1 unless given.
-
-### `deep_bass`
-
-A dark bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself.
+An electric bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_018 instrument of Google's NSynth dataset from E1 to D#4. A note rings until it fades by itself. One of the plucked strings, meant to play from E1 to D#4.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -246,7 +167,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.1 unless gi
 
 ### `cavaquinho`
 
-A cavaquinho, with steel strings, brighter and shorter than the guitar.
+A cavaquinho, with steel strings, brighter and shorter than the guitar. One of the plucked strings, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -258,7 +179,7 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.8 unless given
 
 ### `bandolim`
 
-A bandolim, the Brazilian mandolin, with steel strings and a tremolo.
+A bandolim, the Brazilian mandolin, with steel strings and a tremolo. One of the plucked strings, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -270,7 +191,7 @@ It takes the envelope, with a `sustain` of 0 and a `release` of 0.8 unless given
 
 ### `harp`
 
-A folk harp, the kind the Paraguayan and llanera harps are, fitted partial by partial to the folk harp of the Versilian Community Sample Library from C2 to G#6.
+A folk harp, the kind the Paraguayan and llanera harps are, fitted partial by partial to the folk harp of the Versilian Community Sample Library from C2 to G#6. One of the plucked strings, meant to play from C2 to G#6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -283,7 +204,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless give
 
 ### `sitar`
 
-A plucked sitar note with its sympathetic strings, fitted to "sitar01.flac" on Freesound.
+A plucked sitar note with its sympathetic strings, fitted to "sitar01.flac" on Freesound. One of the plucked strings, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -297,7 +218,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 2 unless give
 
 ### `tanpura`
 
-A tanpura's drone, four strings plucked in turn with the note as Sa, fitted to "Tanpura 10" by sankalp on Freesound.
+A tanpura's drone, four strings plucked in turn with the note as Sa, fitted to "Tanpura 10" by sankalp on Freesound. One of the plucked strings, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -307,22 +228,9 @@ A tanpura's drone, four strings plucked in turn with the note as Sa, fitted to "
 
 It takes the envelope, with a `sustain` of 16 and a `release` of 4 unless given.
 
-### `electric_piano`
-
-An electric piano whose hammers strike tines, fitted to the notes of the keyboard_electronic_098 instrument of Google's NSynth dataset from E1 to E6. A note rings while the key is held until it fades by itself.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 60 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard the key is struck. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 1000 and a `release` of 0.15 unless given.
-
 ### `electric_guitar`
 
-A solid-body electric guitar picked clean, fitted to the notes of the guitar_electronic_028 instrument of Google's NSynth dataset from E2 to D6. A note rings until it fades by itself.
+A solid-body electric guitar picked clean, fitted to the notes of the guitar_electronic_028 instrument of Google's NSynth dataset from E2 to D6. A note rings until it fades by itself. One of the plucked strings, meant to play from E2 to D6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -337,7 +245,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.08 unless g
 
 ### `violin`
 
-A violin, bowed or plucked, its bowed notes fitted partial by partial to the University of Iowa's arco violin at pp, mf and ff from G3 to B7, played there without vibrato, so its vibrato is a player's; a bowed note follows its note as it slides, so notes slurred in one bow are one note whose note changes.
+A violin, bowed or plucked, its bowed notes fitted partial by partial to the University of Iowa's arco violin at pp, mf and ff from G3 to B7, played there without vibrato, so its vibrato is a player's; a bowed note follows its note as it slides, so notes slurred in one bow are one note whose note changes. One of the bowed strings, meant to play from G3 to B7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -354,7 +262,7 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 
 ### `viola`
 
-A viola, bowed or plucked as the violin is, fitted to the University of Iowa's viola from C3 to Bb6.
+A viola, bowed or plucked as the violin is, fitted to the University of Iowa's viola from C3 to Bb6. One of the bowed strings, meant to play from C3 to A#6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -384,7 +292,7 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 
 ### `cello`
 
-A cello, bowed or plucked, its bowed notes fitted partial by partial to the University of Iowa's arco cello at pp, mf and ff from C2 to Bb5, played there without vibrato, so its vibrato is a player's.
+A cello, bowed or plucked, its bowed notes fitted partial by partial to the University of Iowa's arco cello at pp, mf and ff from C2 to Bb5, played there without vibrato, so its vibrato is a player's. One of the bowed strings, meant to play from C2 to A#5.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -401,7 +309,7 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 
 ### `double_bass`
 
-A double bass at the pitch it sounds, bowed or plucked as the violin is, fitted to the University of Iowa's double bass from E1 to G4.
+A double bass at the pitch it sounds, bowed or plucked as the violin is, fitted to the University of Iowa's double bass from E1 to G4. One of the bowed strings, meant to play from E1 to G4.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -431,9 +339,22 @@ It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given
 
 ## Winds
 
+### `brass`
+
+A plain brass sound, brighter the harder it is blown. One of the winds, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is blown. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 0.25 unless given.
+
 ### `flute`
 
-A flute, a model of an air jet at the end of a bore, so a change of note is a slur on the same breath. Fitted to the University of Iowa's flute from B3 to Db7 and VSCO 2's flute.
+A flute, a model of an air jet at the end of a bore, so a change of note is a slur on the same breath. Fitted to the University of Iowa's flute from B3 to Db7 and VSCO 2's flute. One of the winds, meant to play from B3 to C#7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -472,7 +393,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `flute_figured`
 
-A flute played from figures fitted partial by partial to the University of Iowa's flute; temporary, to compare with the flute.
+A flute played from figures fitted partial by partial to the University of Iowa's flute; temporary, to compare with the flute. One of the winds, meant to play from B3 to C#7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -488,7 +409,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `clarinet`
 
-A Bb clarinet at the pitch it sounds, a model of a reed on a bore, fitted to the University of Iowa's Bb clarinet from D3 to C7.
+A Bb clarinet at the pitch it sounds, a model of a reed on a bore, fitted to the University of Iowa's Bb clarinet from D3 to C7. One of the winds, meant to play from D3 to C7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -535,7 +456,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `oboe`
 
-An oboe, a model of a reed on a bore, fitted to the University of Iowa's oboe from Bb3 to Ab6.
+An oboe, a model of a reed on a bore, fitted to the University of Iowa's oboe from Bb3 to Ab6. One of the winds, meant to play from A#3 to G#6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -582,7 +503,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `bassoon`
 
-A bassoon, a model of a reed on a bore, fitted to the University of Iowa's bassoon from Bb1 to D5.
+A bassoon, a model of a reed on a bore, fitted to the University of Iowa's bassoon from Bb1 to D5. One of the winds, meant to play from A#1 to D5.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -629,7 +550,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `tenor_sax`
 
-A tenor saxophone at the pitch it sounds, a model of a reed on a bore, fitted to the tenor saxophone of the Versilian Community Sample Library from Ab2 to E5.
+A tenor saxophone at the pitch it sounds, a model of a reed on a bore, fitted to the tenor saxophone of the Versilian Community Sample Library from Ab2 to E5. One of the winds, meant to play from G#2 to E5.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -676,7 +597,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `trumpet`
 
-A Bb trumpet at the pitch it sounds, a model of lips on a bore, fitted to the University of Iowa's Bb trumpet from E3 to Eb6.
+A Bb trumpet at the pitch it sounds, a model of lips on a bore, fitted to the University of Iowa's Bb trumpet from E3 to Eb6. One of the winds, meant to play from E3 to D#6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -723,7 +644,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `trombone`
 
-A tenor trombone, a model of lips on a bore, fitted to the University of Iowa's tenor trombone from E2 to C5.
+A tenor trombone, a model of lips on a bore, fitted to the University of Iowa's tenor trombone from E2 to C5. One of the winds, meant to play from E2 to C5.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -770,7 +691,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `horn`
 
-A French horn, a model of lips on a bore, fitted to VSCO 2's F horn from C2 to F5.
+A French horn, a model of lips on a bore, fitted to VSCO 2's F horn from C2 to F5. One of the winds, meant to play from C2 to F5.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -817,7 +738,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `tuba`
 
-A tuba, a model of lips on a bore, fitted to VSCO 2's tuba from Bb1 to Bb3.
+A tuba, a model of lips on a bore, fitted to VSCO 2's tuba from Bb1 to Bb3. One of the winds, meant to play from A#1 to A#3.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -862,54 +783,11 @@ A tuba, a model of lips on a bore, fitted to VSCO 2's tuba from Bb1 to Bb3.
 
 It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
 
-## Organs and reeds
-
-### `organ`
-
-A pipe organ fitted to VSCO 2's organ, with a quiet set, a stopped flute, and a loud one, a principal chorus.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
-| `loud` | a number, 0 to 1 | 0 | 1 plays the loud set, a principal chorus, instead of the quiet stopped flute. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 1 and a `release` of 0.15 unless given.
-
-### `harmonium`
-
-The reed organ pumped by hand that accompanies Hindustani singing, fitted to the "Harmonium" pack by cabled_mess on Freesound.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard the bellows are pumped. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless given.
-
-### `accordion`
-
-An accordion's right hand: two reeds a few Hz apart, beating, fitted to "Accordeon master" by hammondman on Freesound.
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `note` | a MIDI note | 60 | The pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard the bellows are pressed. |
-| `detune` | a number, 0 to 20 | 4 | How many Hz the second reed sounds above the first, which beat that many times a second; 0 sounds one reed. |
-| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
-| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
-
-It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.15 unless given.
-
-## Tuned percussion
+## Mallets
 
 ### `marimba`
 
-A marimba, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets, from C2 to C7, and played down to F1.
+A marimba, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets, from C2 to C7, and played down to F1. One of the mallets, meant to play from F1 to C7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -922,7 +800,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `vibraphone`
 
-A vibraphone with its motor, fitted partial by partial to the University of Iowa's vibraphone played with the motor off, from C3 to F6.
+A vibraphone with its motor, fitted partial by partial to the University of Iowa's vibraphone played with the motor off, from C3 to F6. One of the mallets, meant to play from C3 to F6.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -936,7 +814,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `xylophone`
 
-A xylophone, fitted partial by partial to the University of Iowa's xylophone struck with rosewood mallets, from F4 to C8.
+A xylophone, fitted partial by partial to the University of Iowa's xylophone struck with rosewood mallets, from F4 to C8. One of the mallets, meant to play from F4 to C8.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -949,7 +827,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `glockenspiel`
 
-A glockenspiel, fitted partial by partial to the University of Iowa's orchestral bells struck with plastic mallets, from C5 to E8.
+A glockenspiel, fitted partial by partial to the University of Iowa's orchestral bells struck with plastic mallets, from C5 to E8. One of the mallets, meant to play from C5 to E8.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -962,7 +840,7 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless gi
 
 ### `timpani`
 
-A timpani, whose partials are not whole multiples of its note, fitted partial by partial to the five timpani of VSCO 2, from 92 to 153 Hz.
+A timpani, whose partials are not whole multiples of its note, fitted partial by partial to the five timpani of VSCO 2, from 92 to 153 Hz. One of the mallets, meant to play from D2 to A3.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -973,23 +851,145 @@ A timpani, whose partials are not whole multiples of its note, fitted partial by
 
 It takes the envelope, with a `sustain` of 1000 and a `release` of 0.3 unless given.
 
-## Drums
+## Synths
 
-### `berimbau`
+### `saw`
 
-The berimbau of capoeira: the string struck by the stick, open, with the coin pressed or buzzed, and swung by the gourd. Fitted to "Berimbau jam without caxixi" by EliasArtista on Freesound.
+A sawtooth wave under a resonant low-pass filter. One of the synths, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
-| `note` | a MIDI note | 39.11 | The open string's pitch. |
-| `vel` | a number, 0 to 1 | 0.6 | How hard the stick strikes. |
-| `coin` | a number, 0 to 1 | 0 | How hard the coin presses the wire, raising it a whole tone. |
-| `buzz` | a number, 0 to 1 | 0 | How loosely the coin rests on the wire, rattling against it. |
-| `gourd` | a number, 0 to 20 | 2.3 | How many times a second the gourd swings against the belly. |
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
+| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
+
+### `square`
+
+A square wave under a resonant low-pass filter. One of the synths, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
+| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
+
+### `tri`
+
+A triangle wave under a resonant low-pass filter. One of the synths, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
+| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
+
+### `pulse`
+
+A pulse wave of any width under a resonant low-pass filter. One of the synths, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `cutoff` | a MIDI note | 100 | The MIDI note above which the low-pass cuts. |
+| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `pulse_width` | a number, 0.01 to 0.99 | 0.3 | The part of each cycle that is up. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
+
+### `noise`
+
+Noise under a resonant low-pass filter. One of the synths, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `cutoff` | a MIDI note | 110 | The MIDI note above which the low-pass cuts. |
+| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
+
+### `fm`
+
+A sine wave whose frequency another sine wave swings. One of the synths, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `divisor` | a number, 0.01 or more | 2 | The note's frequency over the modulator's. |
+| `depth` | a number | 1 | How far the modulator swings the frequency, in times the note's. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
+
+### `supersaw`
+
+Sawtooth waves spread around the note, under a resonant low-pass filter. One of the synths, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `cutoff` | a MIDI note | 110 | The MIDI note above which the low-pass cuts. |
+| `res` | a number, 0 to 1 | 0.2 | How much the low-pass rings at its cutoff. |
+| `detune` | a number | 0.2 | How far in semitones the saws spread around the note. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 1 unless given.
+
+### `acid`
+
+An acid bass, a wave under a resonant filter that closes as the note sounds. One of the synths, with no range of its own.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 52 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard it is played, which scales its level by vel / 0.6. |
+| `cutoff` | a MIDI note | 70 | The MIDI note the filter closes to. |
+| `res` | a number, 0 to 1 | 0.7 | How much the filter rings at its cutoff. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 0 and a `release` of 0.5 unless given.
+
+### `deep_bass`
+
+A dark bass played with the fingers, fitted partial by partial to the notes of the bass_electronic_025 and bass_electronic_027 instruments of Google's NSynth dataset from E1 to D#4. A note rings long until it fades by itself. One of the synths, meant to play from E1 to D#4.
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `note` | a MIDI note | 33 | The pitch. |
+| `vel` | a number, 0 to 1 | 0.6 | How hard the string is plucked. |
+| `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
+| `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
+
+It takes the envelope, with a `sustain` of 1000 and a `release` of 0.1 unless given.
+
+## Drums
 
 ### `kick`
 
-A kick drum.
+A kick drum. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -999,7 +999,7 @@ A kick drum.
 
 ### `snare`
 
-A snare drum, fitted to the snare of VSCO 2 with its snares on.
+A snare drum, fitted to the snare of VSCO 2 with its snares on. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1011,7 +1011,7 @@ A snare drum, fitted to the snare of VSCO 2 with its snares on.
 
 ### `clap`
 
-A hand clap.
+A hand clap. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1020,7 +1020,7 @@ A hand clap.
 
 ### `crash`
 
-A crash cymbal, fitted to the crash cymbal of VSCO 2.
+A crash cymbal, fitted to the crash cymbal of VSCO 2. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1031,7 +1031,7 @@ A crash cymbal, fitted to the crash cymbal of VSCO 2.
 
 ### `ride`
 
-A ride cymbal.
+A ride cymbal. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1043,7 +1043,7 @@ A ride cymbal.
 
 ### `closed_hihat`
 
-A closed hi-hat, fitted to the hi-hat of the Versilian Community Sample Library.
+A closed hi-hat, fitted to the hi-hat of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1053,7 +1053,7 @@ A closed hi-hat, fitted to the hi-hat of the Versilian Community Sample Library.
 
 ### `open_hihat`
 
-An open hi-hat, fitted to the hi-hat of the Versilian Community Sample Library, which a shorter sustain closes as the pedal does.
+An open hi-hat, fitted to the hi-hat of the Versilian Community Sample Library, which a shorter sustain closes as the pedal does. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1064,7 +1064,7 @@ An open hi-hat, fitted to the hi-hat of the Versilian Community Sample Library, 
 
 ### `low_tom`
 
-A low tom, fitted to the low tom of the Versilian Community Sample Library.
+A low tom, fitted to the low tom of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1073,7 +1073,7 @@ A low tom, fitted to the low tom of the Versilian Community Sample Library.
 
 ### `mid_tom`
 
-A middle tom, the high tom tuned between the high and the low one.
+A middle tom, the high tom tuned between the high and the low one. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1082,7 +1082,7 @@ A middle tom, the high tom tuned between the high and the low one.
 
 ### `high_tom`
 
-A high tom, fitted to the high tom of the Versilian Community Sample Library.
+A high tom, fitted to the high tom of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1091,7 +1091,7 @@ A high tom, fitted to the high tom of the Versilian Community Sample Library.
 
 ### `rimshot`
 
-A rimshot.
+A rimshot. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1100,7 +1100,7 @@ A rimshot.
 
 ### `cross_stick`
 
-A cross stick, the stick laid on the snare's head and struck on its rim.
+A cross stick, the stick laid on the snare's head and struck on its rim. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1109,7 +1109,7 @@ A cross stick, the stick laid on the snare's head and struck on its rim.
 
 ### `pedal_hihat`
 
-A hi-hat closed with the pedal.
+A hi-hat closed with the pedal. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1118,7 +1118,7 @@ A hi-hat closed with the pedal.
 
 ### `cowbell`
 
-A cowbell, open or muted by the hand, fitted to the cowbells of VSCO 2 and the Versilian Community Sample Library.
+A cowbell, open or muted by the hand, fitted to the cowbells of VSCO 2 and the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1128,7 +1128,7 @@ A cowbell, open or muted by the hand, fitted to the cowbells of VSCO 2 and the V
 
 ### `clave`
 
-Claves, fitted to those of the Versilian Community Sample Library and VSCO 2.
+Claves, fitted to those of the Versilian Community Sample Library and VSCO 2. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1137,7 +1137,7 @@ Claves, fitted to those of the Versilian Community Sample Library and VSCO 2.
 
 ### `low_agogo`
 
-The low bell of an agogô, fitted to the agogô of the Versilian Community Sample Library.
+The low bell of an agogô, fitted to the agogô of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1146,7 +1146,7 @@ The low bell of an agogô, fitted to the agogô of the Versilian Community Sampl
 
 ### `high_agogo`
 
-The high bell of an agogô, fitted to the agogô of the Versilian Community Sample Library.
+The high bell of an agogô, fitted to the agogô of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1155,7 +1155,7 @@ The high bell of an agogô, fitted to the agogô of the Versilian Community Samp
 
 ### `ganza`
 
-A ganzá, a small shaker, with a down and an up stroke, fitted to the small shaker of the Versilian Community Sample Library.
+A ganzá, a small shaker, with a down and an up stroke, fitted to the small shaker of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1165,7 +1165,7 @@ A ganzá, a small shaker, with a down and an up stroke, fitted to the small shak
 
 ### `shaker`
 
-A large shaker, with a down and an up stroke, fitted to the large shaker of the Versilian Community Sample Library.
+A large shaker, with a down and an up stroke, fitted to the large shaker of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1175,7 +1175,7 @@ A large shaker, with a down and an up stroke, fitted to the large shaker of the 
 
 ### `low_conga`
 
-The tumba, the low conga, with open, muted and slapped strokes, fitted to VSCO 2's congas.
+The tumba, the low conga, with open, muted and slapped strokes, fitted to VSCO 2's congas. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1187,7 +1187,7 @@ The tumba, the low conga, with open, muted and slapped strokes, fitted to VSCO 2
 
 ### `mid_conga`
 
-The conga, the middle drum of the three, with open, muted and slapped strokes, fitted to VSCO 2's congas.
+The conga, the middle drum of the three, with open, muted and slapped strokes, fitted to VSCO 2's congas. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1199,7 +1199,7 @@ The conga, the middle drum of the three, with open, muted and slapped strokes, f
 
 ### `high_conga`
 
-The quinto, the high conga, with open, muted and slapped strokes, fitted to VSCO 2's congas.
+The quinto, the high conga, with open, muted and slapped strokes, fitted to VSCO 2's congas. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1211,7 +1211,7 @@ The quinto, the high conga, with open, muted and slapped strokes, fitted to VSCO
 
 ### `low_timbale`
 
-The low timbale.
+The low timbale. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1220,7 +1220,7 @@ The low timbale.
 
 ### `high_timbale`
 
-The high timbale.
+The high timbale. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1229,7 +1229,7 @@ The high timbale.
 
 ### `timbale_shell`
 
-A stroke on the timbale's shell, as cáscara is played.
+A stroke on the timbale's shell, as cáscara is played. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1238,7 +1238,7 @@ A stroke on the timbale's shell, as cáscara is played.
 
 ### `guiro`
 
-A güiro, scraped for as long as its sustain, fitted to the University of Iowa's güiro and those of VSCO 2 and the Versilian Community Sample Library.
+A güiro, scraped for as long as its sustain, fitted to the University of Iowa's güiro and those of VSCO 2 and the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1248,7 +1248,7 @@ A güiro, scraped for as long as its sustain, fitted to the University of Iowa's
 
 ### `triangle`
 
-A triangle, which a hand damps, fitted to the University of Iowa's 6- and 8-inch triangles.
+A triangle, which a hand damps, fitted to the University of Iowa's 6- and 8-inch triangles. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1259,7 +1259,7 @@ A triangle, which a hand damps, fitted to the University of Iowa's 6- and 8-inch
 
 ### `tambourine`
 
-A tambourine struck, fitted to the University of Iowa's three tambourines.
+A tambourine struck, fitted to the University of Iowa's three tambourines. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1268,7 +1268,7 @@ A tambourine struck, fitted to the University of Iowa's three tambourines.
 
 ### `tambourine_shake`
 
-A tambourine shaken for as long as its sustain.
+A tambourine shaken for as long as its sustain. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1278,7 +1278,7 @@ A tambourine shaken for as long as its sustain.
 
 ### `cabasa`
 
-A cabasa, struck or turned, fitted to the cabasa of the Versilian Community Sample Library.
+A cabasa, struck or turned, fitted to the cabasa of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1289,7 +1289,7 @@ A cabasa, struck or turned, fitted to the cabasa of the Versilian Community Samp
 
 ### `cajon`
 
-A cajón, from its bass tone to its slap, fitted to the cajón of the Versilian Community Sample Library.
+A cajón, from its bass tone to its slap, fitted to the cajón of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1299,7 +1299,7 @@ A cajón, from its bass tone to its slap, fitted to the cajón of the Versilian 
 
 ### `low_bongo`
 
-The low bongo, open or muted, fitted to the bongos of the Versilian Community Sample Library.
+The low bongo, open or muted, fitted to the bongos of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1309,7 +1309,7 @@ The low bongo, open or muted, fitted to the bongos of the Versilian Community Sa
 
 ### `high_bongo`
 
-The high bongo, open or muted, fitted to the bongos of the Versilian Community Sample Library.
+The high bongo, open or muted, fitted to the bongos of the Versilian Community Sample Library. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1319,7 +1319,7 @@ The high bongo, open or muted, fitted to the bongos of the Versilian Community S
 
 ### `pandeiro`
 
-The pandeiro of choro and samba, whose `stroke` option picks the thumb, the heel, the slap or the jingles, fitted to pandeiro recordings on Freesound.
+The pandeiro of choro and samba, whose `stroke` option picks the thumb, the heel, the slap or the jingles, fitted to pandeiro recordings on Freesound. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1330,7 +1330,7 @@ The pandeiro of choro and samba, whose `stroke` option picks the thumb, the heel
 
 ### `surdo`
 
-The large drum that holds samba's beat, struck with a felt mallet, open or muted, fitted to three loops by plotzki on Freesound.
+The large drum that holds samba's beat, struck with a felt mallet, open or muted, fitted to three loops by plotzki on Freesound. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1340,7 +1340,7 @@ The large drum that holds samba's beat, struck with a felt mallet, open or muted
 
 ### `cuica`
 
-The friction drum of samba: each stroke is played back from the nearest of 28 strokes measured in reinsamba's pack "Cuica" on Freesound.
+The friction drum of samba: each stroke is played back from the nearest of 28 strokes measured in reinsamba's pack "Cuica" on Freesound. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1351,7 +1351,7 @@ The friction drum of samba: each stroke is played back from the nearest of 28 st
 
 ### `tamborim`
 
-The small high drum of samba struck with a stick, fitted to "Tamborim Sound.ogg" by Samba-x on Wikimedia Commons.
+The small high drum of samba struck with a stick, fitted to "Tamborim Sound.ogg" by Samba-x on Wikimedia Commons. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1360,7 +1360,7 @@ The small high drum of samba struck with a stick, fitted to "Tamborim Sound.ogg"
 
 ### `caxixi`
 
-The woven basket shaker a berimbau player shakes, fitted to "Caxixi.ogg" by Freddythehat on Wikimedia Commons.
+The woven basket shaker a berimbau player shakes, fitted to "Caxixi.ogg" by Freddythehat on Wikimedia Commons. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1368,7 +1368,7 @@ The woven basket shaker a berimbau player shakes, fitted to "Caxixi.ogg" by Fred
 
 ### `pandeiro_thumb`
 
-The pandeiro's thumb stroke, its low tone.
+The pandeiro's thumb stroke, its low tone. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1378,7 +1378,7 @@ The pandeiro's thumb stroke, its low tone.
 
 ### `pandeiro_heel`
 
-The pandeiro's heel stroke.
+The pandeiro's heel stroke. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1388,7 +1388,7 @@ The pandeiro's heel stroke.
 
 ### `pandeiro_slap`
 
-The pandeiro's slap.
+The pandeiro's slap. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1398,7 +1398,7 @@ The pandeiro's slap.
 
 ### `pandeiro_jingles`
 
-The pandeiro's jingles.
+The pandeiro's jingles. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1408,7 +1408,7 @@ The pandeiro's jingles.
 
 ### `tabla`
 
-The tabla, whose `bol` option picks the stroke of the dayan or the bayan, fitted to the "tabla bols" pack by mmiron on Freesound.
+The tabla, whose `bol` option picks the stroke of the dayan or the bayan, fitted to the "tabla bols" pack by mmiron on Freesound. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1418,7 +1418,7 @@ The tabla, whose `bol` option picks the stroke of the dayan or the bayan, fitted
 
 ### `tabla_na`
 
-Na, a stroke of the dayan, the tabla's higher drum.
+Na, a stroke of the dayan, the tabla's higher drum. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1427,7 +1427,7 @@ Na, a stroke of the dayan, the tabla's higher drum.
 
 ### `tabla_tun`
 
-Tun, a stroke of the dayan, the tabla's higher drum.
+Tun, a stroke of the dayan, the tabla's higher drum. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1436,7 +1436,7 @@ Tun, a stroke of the dayan, the tabla's higher drum.
 
 ### `tabla_te`
 
-Te, a stroke of the dayan, the tabla's higher drum.
+Te, a stroke of the dayan, the tabla's higher drum. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1445,7 +1445,7 @@ Te, a stroke of the dayan, the tabla's higher drum.
 
 ### `tabla_tas`
 
-Tas, a stroke of the dayan, the tabla's higher drum.
+Tas, a stroke of the dayan, the tabla's higher drum. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1454,7 +1454,7 @@ Tas, a stroke of the dayan, the tabla's higher drum.
 
 ### `tabla_ghe`
 
-Ghe, a stroke of the bayan, the tabla's lower drum, which a change of note bends as the palm does.
+Ghe, a stroke of the bayan, the tabla's lower drum, which a change of note bends as the palm does. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -1464,7 +1464,7 @@ Ghe, a stroke of the bayan, the tabla's lower drum, which a change of note bends
 
 ### `tabla_ke`
 
-Ke, a stroke of the bayan, the tabla's lower drum.
+Ke, a stroke of the bayan, the tabla's lower drum. One of the drums, with no range of its own.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|

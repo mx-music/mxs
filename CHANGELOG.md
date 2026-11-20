@@ -5,10 +5,12 @@
 ### 1. Breaking changes
 
   * [engine] `Error` has a `TablesNotLoaded` variant, so code that matches every variant adds it
+  * [synths] `synths::families` gives each family as a `Family`, and sorts the synths into the seven families mx Studio's Sounds panel shows: keys, plucked strings, bowed strings, winds, mallets, synths and drums
 
 ### 2. Enhancements
 
   * [synths] The `tables` feature, on by default, compiles in the measured tables of the fifteen synths fitted to recordings; built without it, a program loads a table with `synths::load_table` from its bytes, `Synth::tables` names those a synth plays, and a note of a synth whose tables are not loaded is refused with `Error::TablesNotLoaded`
+  * [synths] `Synth::family` says which family a synth belongs to, and `Synth::range` the lowest and highest notes it is meant to play, none for a synth with no range of its own; the synths' catalog says both
   * [graph] `Synth::from_json` and `Effect::from_json` read a synth or an effect from a JSON file, and `from_json_file` from its path, refusing a mistake with the path to it in the file
 
 ## v0.2.1 (2026-11-19)

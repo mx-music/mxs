@@ -92,6 +92,28 @@ fn section(name: &str, doc: &str, specs: &[Spec]) -> String {
     out
 }
 
+/// A MIDI note by its name, such as 59 as B3.
+fn note_name(note: f64) -> String {
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
+    let note = note as i64;
+    let (name, octave) = (NAMES[note.rem_euclid(12) as usize], note.div_euclid(12) - 1);
+    format!("{name}{octave}")
+}
+
+/// The sentence that gives a synth's family and the notes it is meant to play.
+fn meant(synth: &mxs::Synth) -> String {
+    let family = synth.family();
+    match synth.range() {
+        Some((low, high)) => {
+            let (low, high) = (note_name(low), note_name(high));
+            format!("One of the {family}, meant to play from {low} to {high}.")
+        }
+        None => format!("One of the {family}, with no range of its own."),
+    }
+}
+
 fn synths_catalog() -> String {
     let families = synths::families();
     let mut out = String::from("## The synths\n\n| Family | Synths |\n|---|---|\n");
@@ -100,6 +122,7 @@ fn synths_catalog() -> String {
             .iter()
             .map(|s| format!("[`{0}`](#{0})", s.name()))
             .collect();
+        let family = family.title();
         out.push_str(&format!("| {family} | {} |\n", names.join(", ")));
     }
     out.push_str("\n## What every note takes\n\nBesides its synth's own options, every note takes these.\n\n");
@@ -118,9 +141,13 @@ fn synths_catalog() -> String {
     );
     out.push('\n');
     for (family, members) in &families {
+        let family = family.title();
         out.push_str(&format!("## {family}\n\n"));
         for synth in members {
-            out.push_str(&section(synth.name(), synth.doc(), synth.specs()));
+            let doc = format!("{} {}", synth.doc(), meant(synth))
+                .trim()
+                .to_string();
+            out.push_str(&section(synth.name(), &doc, synth.specs()));
         }
     }
     out

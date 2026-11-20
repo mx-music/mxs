@@ -38,6 +38,7 @@ mod tables;
 mod tuned;
 mod winds;
 
+use crate::Family;
 pub(crate) use bowed::bowed_string;
 pub(crate) use common::partials;
 pub use tables::load_table;
@@ -59,7 +60,60 @@ pub fn berimbau() -> crate::Synth {
 fn described(mut synth: crate::Synth) -> crate::Synth {
     synth.doc = about(&synth.name).to_string();
     synth.tables = tables::of(&synth.name);
+    synth.family = family(&synth.name);
+    synth.range = range(&synth.name);
     takes_vel(synth)
+}
+
+/// Each synth's family, as mx Studio's Sounds panel groups them.
+fn family(name: &str) -> Family {
+    match name {
+        "piano" | "electric_piano" | "organ" | "harmonium" | "accordion" => Family::Keys,
+        "guitar" | "electric_guitar" | "electric_bass" | "bandolim" | "cavaquinho" | "harp"
+        | "sitar" | "pluck" | "tanpura" | "berimbau" => Family::PluckedStrings,
+        "violin" | "viola" | "cello" | "double_bass" => Family::BowedStrings,
+        "flute" | "flute_figured" | "oboe" | "clarinet" | "bassoon" | "tenor_sax" | "trumpet"
+        | "trombone" | "horn" | "tuba" | "brass" => Family::Winds,
+        "marimba" | "vibraphone" | "xylophone" | "glockenspiel" | "timpani" => Family::Mallets,
+        "tri" | "saw" | "square" | "pulse" | "supersaw" | "fm" | "acid" | "deep_bass" | "noise" => {
+            Family::Synths
+        }
+        _ => Family::Drums,
+    }
+}
+
+/// The lowest and highest MIDI notes each pitched synth is meant to play: the notes of the recordings it was fitted to, as [`about`] names them, or further where it says so.
+/// Timpani take the range of the usual set of four, "roughly D2 to A3", from https://en.wikipedia.org/wiki/Timpani.
+/// The cavaquinho, bandolim, sitar, tanpura, organ, harmonium and accordion were fitted to no run of notes, and no open reference found gives their range, so they have none for now, as do the generic pluck and brass.
+fn range(name: &str) -> Option<(f64, f64)> {
+    let (low, high) = match name {
+        "piano" => (21, 108),
+        "electric_piano" => (28, 88),
+        "guitar" => (35, 83),
+        "electric_guitar" => (40, 86),
+        "electric_bass" | "deep_bass" => (28, 63),
+        "harp" => (36, 92),
+        "violin" => (55, 107),
+        "viola" => (48, 94),
+        "cello" => (36, 82),
+        "double_bass" => (28, 67),
+        "flute" | "flute_figured" => (59, 97),
+        "clarinet" => (50, 96),
+        "oboe" => (58, 92),
+        "bassoon" => (34, 74),
+        "tenor_sax" => (44, 76),
+        "trumpet" => (52, 87),
+        "trombone" => (40, 72),
+        "horn" => (36, 77),
+        "tuba" => (34, 58),
+        "marimba" => (29, 96),
+        "vibraphone" => (48, 89),
+        "xylophone" => (65, 108),
+        "glockenspiel" => (72, 112),
+        "timpani" => (38, 57),
+        _ => return None,
+    };
+    Some((f64::from(low), f64::from(high)))
 }
 
 /// The synth, given vel after its note when it declares none, scaling its level by vel / DEFAULT_VEL, so a note given no vel plays as before.
@@ -303,25 +357,15 @@ fn about(name: &str) -> &'static str {
     }
 }
 
-/// The crate's synths by family, each a name and its synths; together they are the synths of [`all`].
-pub fn families() -> Vec<(&'static str, Vec<crate::Synth>)> {
-    let mut plucked = vec![strings::piano()];
-    plucked.extend(strings::all());
-    plucked.extend(electric::all());
-    let mut struck = vec![drums::berimbau()];
-    struck.extend(drums::all());
-    let families = vec![
-        ("Basic waveforms", basic::all()),
-        ("Piano and plucked strings", plucked),
-        ("Bowed strings", bowed::all()),
-        ("Winds", winds::all()),
-        ("Organs and reeds", organs::all()),
-        ("Tuned percussion", tuned::all()),
-        ("Drums", struck),
-    ];
-    families
+/// The crate's synths by family, in the order of [`Family::ALL`]; together they are the synths of [`all`].
+pub fn families() -> Vec<(Family, Vec<crate::Synth>)> {
+    let all = all();
+    Family::ALL
         .into_iter()
-        .map(|(family, synths)| (family, synths.into_iter().map(described).collect()))
+        .map(|family| {
+            let members = all.iter().filter(|s| s.family == family).cloned().collect();
+            (family, members)
+        })
         .collect()
 }
 
