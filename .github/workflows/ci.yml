@@ -39,7 +39,8 @@ jobs:
       - run: cargo test --release --test webassembly -- --ignored
 
   javascript:
-    runs-on: ubuntu-latest
+    # Playwright 1.49.1 installs its browsers' libraries by Ubuntu 24.04's package names.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
