@@ -294,11 +294,10 @@ fn raise_priority() {
 #[cfg(not(target_os = "macos"))]
 fn raise_priority() {}
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn the_kernel_counts_the_performance_cores_sysctl_prints() {
         let printed = std::process::Command::new("sysctl")
