@@ -1,0 +1,13 @@
+{
+  "name": "mxs",
+  "version": "0.1.0",
+  "description": "A sound engine whose synths are fitted to recordings of real instruments, played on a web page in an audio worklet or rendered offline",
+  "type": "module",
+  "exports": {
+    ".": "./mxs.js",
+    "./core.js": "./core.js"
+  },
+  "files": ["mxs.js", "core.js", "mxs.wasm", "tables/", "example/", "README.md"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/mx-music/mxs", "directory": "js/package" }
+}

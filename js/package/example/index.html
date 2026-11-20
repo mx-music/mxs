@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mxs: a piano phrase</title>
+<style>
+  :root { --bg: #fafaf7; --fg: #1d1d1b; --muted: #6b6b66; --accent: #2f5d8a; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ecece6; --muted: #9a9a93; --accent: #8db8e0; } }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 16px; }
+  button { font: inherit; padding: 0.5rem 1rem; border: 1px solid var(--accent); background: none; color: var(--accent); border-radius: 6px; cursor: pointer; }
+  p { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>A piano phrase</h1>
+<p>mxs's piano, played in an audio worklet. The first press fetches the piano's two tables, about 2.7 MB, and the phrase starts once they are loaded.</p>
+<button id="play">Play the phrase</button>
+<p id="said"></p>
+<script type="module">
+import { live } from "../mxs.js";
+
+const said = document.getElementById("said");
+let engine;
+
+document.getElementById("play").onclick = async () => {
+  try {
+    engine ??= await live();
+    said.textContent = "Fetching the piano's tables …";
+    await engine.loadTables("piano");
+    for (const [i, note] of [60, 64, 67, 72, 67, 64, 60].entries()) {
+      await engine.note(i * 0.3, "piano", { note, vel: 0.5 + i * 0.05, sustain: 0.6 });
+    }
+    said.textContent = "Playing.";
+  } catch (error) {
+    said.textContent = `mxs could not play: ${error.message}`;
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+/target
+/package/mxs.wasm
+/package/tables/
+/package/*.tgz
+/node_modules/

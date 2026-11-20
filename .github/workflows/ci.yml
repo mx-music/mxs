@@ -37,3 +37,23 @@ jobs:
           node-version: 22
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release --test webassembly -- --ignored
+
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            js
+            tests/webassembly
+      - run: js/build.sh
+      - run: npm install -g playwright@1.49.1 && playwright install --with-deps chromium webkit
+      - run: PLAYWRIGHT="$(npm root -g)/playwright/index.mjs" node js/test/run.mjs
