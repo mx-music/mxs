@@ -1,0 +1,15 @@
+[package]
+name = "mxs-python"
+version = "0.1.0"
+edition = "2024"
+description = "Python bindings to mxs, a sound engine with synths fitted to recordings of real instruments"
+license = "MIT"
+publish = false
+
+[lib]
+name = "_mxs"
+crate-type = ["cdylib"]
+
+[dependencies]
+engine = { package = "mxs", path = ".." }
+pyo3 = { version = "0.30.1", features = ["extension-module", "abi3-py39"] }

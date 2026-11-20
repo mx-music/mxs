@@ -396,3 +396,24 @@ fn an_effect_file_of_a_lowpass_filters_a_chain_as_the_same_effect_built_in_rust(
     let energy = |s: &[f32]| s.iter().map(|x| x * x).sum::<f32>();
     assert!(energy(&read) < energy(&dry[..read.len()]) * 0.9);
 }
+
+/// The 64-bit FNV-1a hash of `samples`' bits, as tests/defaults.rs and the Python package's tests take it.
+fn fnv(samples: impl Iterator<Item = f32>) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for sample in samples {
+        for byte in sample.to_bits().to_le_bytes() {
+            hash = (hash ^ byte as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    hash
+}
+
+// The Python package's tests check its render of the marimba file against this hash, of a debug build on Apple silicon, as tests/defaults.rs's are.
+#[test]
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+fn the_marimba_file_renders_middle_c_to_the_samples_the_python_package_checks() {
+    let (left, right) = render(Synth::from_json(MARIMBA).unwrap(), 60.0, 0.6);
+    let second = RATE as usize;
+    let hash = fnv(left[..second].iter().chain(&right[..second]).copied());
+    assert_eq!(format!("{hash:016x}"), "3406ffda23b0932d");
+}

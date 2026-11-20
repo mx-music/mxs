@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "mxs"
+version = "0.1.0"
+description = "A sound engine with synths fitted to recordings of real instruments"
+license = "MIT"
+requires-python = ">=3.9"
+
+[tool.maturin]
+module-name = "mxs._mxs"
+python-source = "."
+include = ["mxs/*.py"]

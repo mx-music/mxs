@@ -5,7 +5,7 @@ edition = "2024"
 description = "A sound engine on FunDSP, with synths fitted to recordings of real instruments"
 license = "MIT"
 repository = "https://github.com/mx-music/mxs"
-exclude = [".cargo"]
+exclude = [".cargo", "python"]
 
 [dependencies]
 claxon = "0.4"
