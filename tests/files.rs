@@ -398,6 +398,7 @@ fn an_effect_file_of_a_lowpass_filters_a_chain_as_the_same_effect_built_in_rust(
 }
 
 /// The 64-bit FNV-1a hash of `samples`' bits, as tests/defaults.rs and the Python package's tests take it.
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 fn fnv(samples: impl Iterator<Item = f32>) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for sample in samples {
