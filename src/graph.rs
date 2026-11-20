@@ -81,6 +81,37 @@
 //!
 //! `partials`, `bowed_string`, `air_jet`, `wind_bands` and `vibrato` are the models the crate's own strings and winds are built from.
 //! Their arguments are in this module's source.
+//!
+//! # Files
+//!
+//! [`Synth::from_json`] and [`Effect::from_json`] read a synth or an effect from a JSON file, and [`Synth::from_json_file`] and [`Effect::from_json_file`] from its path, so a program in any language can write one.
+//!
+//! ```json
+//! {
+//!   "format": "mxs-synth",
+//!   "version": 1,
+//!   "name": "plate",
+//!   "options": [
+//!     {"name": "note", "kind": "note", "default": 60, "doc": "The pitch."},
+//!     {"name": "vel", "kind": "float", "default": 0.6, "range": [0, 1], "doc": "How hard it is struck."}
+//!   ],
+//!   "defs": {"freq": {"call": "hz", "args": [{"option": "note"}]}},
+//!   "clauses": [
+//!     {"matches": {}, "graph": {"call": "rings", "args": [
+//!       {"call": "mode", "args": [{"call": "impulse"}], "named": {"hz": {"ref": "freq"}, "level": 0.2, "fade": 3}}
+//!     ], "named": {"seconds": 4}}}
+//!   ]
+//! }
+//! ```
+//!
+//! - `format` is `mxs-synth` or `mxs-effect`, and `version` is 1; a version newer than this mxs reads is refused, naming both.
+//! - `options` declare the options as [`Spec`] does: `name`, `kind` (`note`, `hz`, `db`, `seconds`, `beats`, `float`, `integer`, `boolean`, or `name` with a list of `names`), `default`, `range` as a pair with `null` where unbounded, `required` and `doc`.
+//! - A value is a number, a list, `{"option": name}`, `{"name": name}` for a name such as a noise's colour, `{"call": name, "args": [...], "named": {...}}` with either part left out when empty, or `{"ref": name}`.
+//! - `defs` names values used more than once, and `{"ref": name}` stands for one; a ref to a name that `defs` lacks, or a def that refers to itself, is refused.
+//! - A synth has `clauses`, each with the `matches` a note's options must meet and its `graph`; an effect has one `graph`.
+//! - A call outside the vocabulary, or one missing an argument it needs by name, is refused with the path to it in the file, such as `clauses[0].graph.args[0]: lowpass needs hz`, and text that is not JSON with the line and column where it stops being JSON.
+
+mod file;
 
 use crate::nodes::{self, db, hz};
 use crate::{Context, Effect, Kind, Note, Options, Spec, Synth, Value};
@@ -169,6 +200,45 @@ const NODES: &[&str] = &[
     "rings",
     "input",
 ];
+
+/// The arguments by name each call cannot do without, which a file is checked for when it loads.
+const NEEDS: &[(&str, &[&str])] = &[
+    ("sine", &["hz"]),
+    ("saw", &["hz"]),
+    ("square", &["hz"]),
+    ("triangle", &["hz"]),
+    ("pulse", &["hz"]),
+    ("lowpass", &["hz"]),
+    ("highpass", &["hz"]),
+    ("bandpass", &["hz"]),
+    ("lowshelf", &["hz", "db"]),
+    ("highshelf", &["hz", "db"]),
+    ("peak", &["hz", "db"]),
+    ("ladder", &["hz"]),
+    ("mode", &["hz", "level", "fade"]),
+    ("delay", &["seconds", "max"]),
+    ("perc", &["attack", "release"]),
+    ("rings", &["seconds"]),
+    ("partials", &["ratios", "levels"]),
+    ("vibrato", &["depth", "hz"]),
+    ("wind_bands", &["vel", "gains", "levels"]),
+    (
+        "bowed_string",
+        &["note", "speed", "force", "position", "takes", "rosin"],
+    ),
+    ("air_jet", &["hz", "breath", "even"]),
+];
+
+fn in_vocabulary(name: &str) -> bool {
+    ARITHMETIC.contains(&name) || NODES.contains(&name)
+}
+
+fn needs(name: &str) -> &'static [&'static str] {
+    NEEDS
+        .iter()
+        .find(|(call, _)| *call == name)
+        .map_or(&[], |(_, keys)| keys)
+}
 
 impl Synth {
     /// A synth whose note is built from the first of `clauses` whose matches its options meet, or is silent when none does.
@@ -319,7 +389,7 @@ fn known(graph: &Graph) -> Result<(), String> {
     stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
         Graph::List(items) => items.iter().try_for_each(known),
         Graph::Call { name, args, named } => {
-            if !ARITHMETIC.contains(&name.as_str()) && !NODES.contains(&name.as_str()) {
+            if !in_vocabulary(name) {
                 return Err(format!("{name} is not in the vocabulary"));
             }
             args.iter()

@@ -1,5 +1,11 @@
 # Changelog for mxs v0.2
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [graph] `Synth::from_json` and `Effect::from_json` read a synth or an effect from a JSON file, and `from_json_file` from its path, refusing a mistake with the path to it in the file
+
 ## v0.2.1 (2026-11-19)
 
 ### 1. Enhancements

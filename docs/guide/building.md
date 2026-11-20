@@ -234,6 +234,45 @@ fn main() -> Result<(), String> {
 - [`Synth::graph`] refuses a call that is not in the vocabulary when the synth is made, and names it.
 - [`Effect::graph`] builds an effect the same way. Its graph is one channel's sound, with `input` standing for that channel coming in.
 
+### From a file
+
+A program in another language writes the same graph as a JSON file, in the format the [`graph`] module describes, and [`Synth::from_json`] or [`Synth::from_json_file`] reads it.
+This file is the synth above:
+
+```rust
+use mxs::{Engine, Event, RATE, Synth};
+
+fn main() -> Result<(), String> {
+    let file = r#"{
+      "format": "mxs-synth",
+      "version": 1,
+      "name": "bar",
+      "options": [
+        {"name": "note", "kind": "note", "default": 60},
+        {"name": "vel", "kind": "float", "default": 0.6, "range": [0, 1]}
+      ],
+      "clauses": [{"graph": {"call": "rings", "args": [
+        {"call": "mode", "args": [{"call": "impulse"}], "named": {
+          "hz": {"call": "hz", "args": [{"option": "note"}]},
+          "level": {"call": "mul", "args": [{"option": "vel"}, 0.5]},
+          "fade": 0.5
+        }}
+      ], "named": {"seconds": 0.8}}}]
+    }"#;
+    let bar = Synth::from_json(file)?;
+
+    let mut engine = Engine::offline(RATE);
+    engine.register(bar);
+    engine.play(&[(0.0, Event::note(None, "bar", &[]))]).map_err(|e| e.to_string())?;
+    let (left, _right) = engine.render(1.0).map_err(|e| e.to_string())?;
+    assert!(left.iter().any(|sample| sample.abs() > 0.001));
+    Ok(())
+}
+```
+
+A mistake in the file is refused with the path to it, such as `clauses[0].graph.args[0]: lowpass needs hz`.
+[`Effect::from_json`] reads an effect's file, whose format is `mxs-effect` and which has one `graph` in place of `clauses`.
+
 [The guide to events][events] shows the caller's side: how notes of a synth are started, changed and let go.
 
 [events]: events.md
