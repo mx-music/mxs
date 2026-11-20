@@ -3,10 +3,10 @@
 mxs is a sound engine whose synths are fitted to recordings of real instruments.
 This package plays it on a web page: live in an audio worklet it brings, or offline into arrays of samples, with mxs's synths and effects, synths and effects read from files, and sound files the page fetched.
 
-The package's name on npm is not settled, as `mxs` there is another package; until it is, build it from mxs's `js` folder with `build.sh`, which needs a Rust toolchain with the `wasm32-unknown-unknown` target.
+Install it with `npm install @mx-music/mxs`, or build it from mxs's `js` folder with `build.sh`, which needs a Rust toolchain with the `wasm32-unknown-unknown` target.
 
 ```js
-import { live } from "mxs";
+import { live } from "@mx-music/mxs";
 
 button.onclick = async () => {
   const engine = await live();
