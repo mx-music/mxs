@@ -272,7 +272,7 @@ fn brass() -> Synth {
             let vel = o.number("vel") as f32;
             let breath = || segments(&[0.0, 1.0, 0.8], &[0.05, 0.25], &[2.0, -2.0]);
             let scoop = segments(&[-0.35, 0.0], &[0.06], &[3.0]);
-            let vibrato = (net(sine_hz::<f32>(5.3)) * 0.12)
+            let vibrato = (net(dc(5.3f32) >> An(Sine::<f32>::with_phase(0.0))) * 0.12)
                 * segments(&[0.0, 0.0, 1.0], &[0.3, 0.5], &[0.0, 0.0]);
             let freq = || {
                 ((o.follow("note") >> moved_by(o, "bend", |x| x)) | scoop.clone() | vibrato.clone())
