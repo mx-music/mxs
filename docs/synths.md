@@ -245,18 +245,32 @@ It takes the envelope, with a `sustain` of 1000 and a `release` of 0.08 unless g
 
 ### `violin`
 
-A violin, bowed or plucked, its bowed notes fitted partial by partial to the University of Iowa's arco violin at pp, mf and ff from G3 to B7, played there without vibrato, so its vibrato is a player's; a bowed note follows its note as it slides, so notes slurred in one bow are one note whose note changes. One of the bowed strings, meant to play from G3 to B7.
+A violin, bowed or plucked: a bowed string whose body, hiss, scratch and slow drift are fitted to the University of Iowa's arco violin at pp, mf and ff from G3 to C6, played there without vibrato, so its vibrato is a player's; a bowed note follows its note as it slides, so notes slurred in one bow are one note whose note changes. One of the bowed strings, meant to play from G3 to B7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
-| `note` | a MIDI note | 52 | The pitch; a change while the note holds slides to the new one. |
+| `note` | a MIDI note | 52 | The pitch. |
 | `vel` | a number, 0 to 1 | 0.6 | How hard the string is bowed or plucked. |
 | `pizz` | a number, 0 to 1 | 0 | 1 plucks the string instead of bowing it. |
-| `vibrato` | a number, 0 to 2 | 0.25 | The vibrato's depth in semitones, reached as the note holds, read as the note starts; the recordings are played without one. |
-| `legato` | a number, 0 to 1 | 0 | 1 changes bow from a note still sounding: the string speaks at once, from where the recordings settle, instead of from silence. |
+| `vibrato` | a number, 0 to 2 | 0.25 | The vibrato's depth in semitones, reached as the note holds, read as the note starts. |
 | `bend` | a number, -120 to 120 | 0 | Semitones the pitch is moved by, without starting the note again. |
 | `brightness` | a number, 0 to 1 | 0.5 | How bright the sound is: 0.5 is the synth's own, above it brighter, below it duller. |
 | `pressure` | a number, 0 to 1 | 0 | How hard a held note is pressed once it has started. |
+| `bow_speed` | a number, 0.1 to 4 | 1 | How fast the bow moves, against its speed at the note's vel. |
+| `bow_force` | a number, 0.1 to 4 | 1 | How hard the bow presses, against its force at the note's vel: the harder, the wider the speeds at which it holds the string. |
+| `legato` | a number, 0 to 1 | 0 | 1 changes bow from a note still sounding: the string speaks at once instead of swelling in from silence. |
+| `body_hz` | hertz, 20 to 2000 |  | The corner below which the body radiates little, in place of the one fitted; for fitting. |
+| `rosin` | a number, 0 to 2 |  | How much the rosin's noise sways the bow's speed, in place of the one fitted; for fitting. |
+| `hiss` | decibels, -90 to 0 |  | The bow's hiss in dB, in place of the one fitted for the note's vel; for fitting. |
+| `bow_position` | a number, 0.05 to 0.5 | 0.12 | Where the bow meets the string, as a fraction of its length from the bridge. |
+| `eq0` | decibels, -60 to 60 |  | The gain in dB of the band at 113 Hz, in place of the one fitted for the note's vel; for fitting. |
+| `eq1` | decibels, -60 to 60 |  | The gain in dB of the band at 200 Hz, in place of the one fitted for the note's vel; for fitting. |
+| `eq2` | decibels, -60 to 60 |  | The gain in dB of the band at 316 Hz, in place of the one fitted for the note's vel; for fitting. |
+| `eq3` | decibels, -60 to 60 |  | The gain in dB of the band at 502 Hz, in place of the one fitted for the note's vel; for fitting. |
+| `eq4` | decibels, -60 to 60 |  | The gain in dB of the band at 794 Hz, in place of the one fitted for the note's vel; for fitting. |
+| `eq5` | decibels, -60 to 60 |  | The gain in dB of the band at 1265 Hz, in place of the one fitted for the note's vel; for fitting. |
+| `eq6` | decibels, -60 to 60 |  | The gain in dB of the band at 2000 Hz, in place of the one fitted for the note's vel; for fitting. |
+| `eq7` | decibels, -60 to 60 |  | The gain in dB of the band at 3162 Hz, in place of the one fitted for the note's vel; for fitting. |
 
 It takes the envelope, with a `sustain` of 1 and a `release` of 0.3 unless given.
 

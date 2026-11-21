@@ -2045,7 +2045,7 @@ mod tests {
 
     #[test]
     fn a_voice_with_room_fills_with_any_note_as_a_new_voice_would_and_allocates_nothing() {
-        let all: [(&str, &[u8]); 16] = [
+        let all: [(&str, &[u8]); 15] = [
             ("cello", include_bytes!("figures/cello.mxh")),
             ("deep_bass", include_bytes!("figures/deep_bass.mxf")),
             ("electric_bass", include_bytes!("figures/electric_bass.mxf")),
@@ -2066,7 +2066,6 @@ mod tests {
             ("piano", include_bytes!("figures/piano.mxf")),
             ("timpani", include_bytes!("figures/timpani.mxf")),
             ("vibraphone", include_bytes!("figures/vibraphone.mxf")),
-            ("violin", include_bytes!("figures/violin.mxh")),
             ("xylophone", include_bytes!("figures/xylophone.mxf")),
         ];
         for (name, bytes) in all {
@@ -2259,7 +2258,6 @@ mod ready {
             "xylophone",
             "glockenspiel",
             "timpani",
-            "violin",
             "cello",
             "flute_figured",
         ];

@@ -545,15 +545,15 @@ fn a_held_clarinet_note_given_pressure_1_after_a_second_plays_as_one_given_vel_1
 }
 
 #[test]
-fn a_held_violin_note_at_vel_0_4_given_pressure_1_after_a_second_plays_from_10_ms_later_as_one_at_vel_1()
+fn a_held_cello_note_at_vel_0_4_given_pressure_1_after_a_second_plays_from_10_ms_later_as_one_at_vel_1()
  {
-    let options = |vel: f64| [("note", 60.0), ("vel", vel), ("vibrato", 0.0)];
-    let pressed = held_render("violin", &options(0.4), Some(("pressure", 1.0)));
-    let loud = held_render("violin", &options(1.0), None);
-    let soft = held_render("violin", &options(0.4), None);
+    let options = |vel: f64| [("note", 48.0), ("vel", vel), ("vibrato", 0.0)];
+    let pressed = held_render("cello", &options(0.4), Some(("pressure", 1.0)));
+    let loud = held_render("cello", &options(1.0), None);
+    let soft = held_render("cello", &options(0.4), None);
     let window = |s: &[f32]| s[(1.01 * RATE) as usize..(1.06 * RATE) as usize].to_vec();
     let level = |s: &[f32]| 20.0 * rms(&window(s)).log10();
-    let bright = |s: &[f32]| above_the_fourth(&window(s), 261.63);
+    let bright = |s: &[f32]| above_the_fourth(&window(s), 130.81);
     println!(
         "pressed {:.3} dB {:.4}, vel 1 {:.3} dB {:.4}, vel 0.4 {:.3} dB {:.4}",
         level(&pressed),

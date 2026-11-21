@@ -1,11 +1,11 @@
 //! The bowed string of mx's violin, viola, cello and double bass: a waveguide after the bowed-string model of McIntyre, Schumacher and Woodhouse, "On the oscillations of musical instruments", JASA 74, 1983, and Julius O. Smith III's digital waveguides, <https://ccrma.stanford.edu/~jos/pasp/Bowed_Strings.html>.
 //! After the string come a peak at each band mx measures, with its gain fitted to each instrument's recordings, then vibrato as a swinging delay, a low-pass, the bow's hiss, and the swell in.
 
-use super::common::{harmonics, moved_by, net, silent_after, tilted};
+use super::common::{harmonics, moved_by, net, pressed, silent_after, tilted};
 use super::figures::{Figures, held_note};
 use crate::DEFAULT_VEL;
 use crate::nodes::modes;
-use crate::nodes::{db, hz, pink_noise, shape, shape_node};
+use crate::nodes::{db, hz, pink_noise, shape, shape_node, white_noise};
 use crate::synth::SynthDecl;
 use crate::{Context, Note, Options, Spec, Synth};
 use fundsp::prelude::*;
@@ -33,6 +33,43 @@ pub(crate) struct Fit {
     pub rosin: [f64; 3],
     /// The bow's hiss in dB at pp, mf and ff.
     pub hiss: [f64; 3],
+    /// Whether the instrument takes pressure, which raises how hard a note is bowed from vel towards 1 as it starts.
+    pub pressed: bool,
+    /// What a model fitted after the viola and double bass adds, or nothing for theirs.
+    pub air: Option<Air>,
+}
+
+/// What the violin's model adds to the bowed string, fitted to the University of Iowa's arco violin.
+pub(crate) struct Air {
+    /// The low-pass after the vibrato, in Hz, in place of one that rises with vel.
+    pub cutoff: f64,
+    /// The high shelf after the body bands: its corner in Hz, and its gain in dB at pp, mf and ff.
+    pub shelf_hz: f64,
+    pub shelf: [f64; 3],
+    /// The centre in Hz of the band the bow's hiss is passed through, in place of a high-pass that falls with vel.
+    pub hiss_hz: f64,
+    /// The scratch of the bow catching the string as a note starts: its level in dB, and the seconds it takes to fall by a factor of e.
+    pub scratch: f64,
+    pub scratch_fall: f64,
+    /// How far the pitch drifts while a note holds, in cents, and each body band, in dB, as standard deviations.
+    pub wander_cents: f64,
+    pub wander_db: f64,
+}
+
+/// A slow drift with a standard deviation near 1: three sines at unrelated rates, their phases set by `which` and the note.
+/// mxs's filters stop at 20 Hz, so noise cannot be slowed this far.
+fn wander(note: f64, which: f64) -> Net {
+    shape(move |t| {
+        [0.23, 0.41, 0.67]
+            .iter()
+            .enumerate()
+            .map(|(k, rate)| {
+                let k = k as f64;
+                let phase = note * (1.7 + k) + which * (2.3 + 0.9 * k);
+                (2.0 * PI * rate * (1.0 + 0.05 * which) * t + phase).sin() * 0.816
+            })
+            .sum()
+    })
 }
 
 /// The bow's options, and for fitting, each band's gain in place of the one fitted for the note's vel.
@@ -56,7 +93,12 @@ pub(crate) fn bow_options(mut synth: SynthDecl) -> SynthDecl {
 
 /// A bowed note, swelling in and holding until the envelope ends it.
 pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
-    let vel = options.number("vel").clamp(0.0, 1.0);
+    let pressure = if fit.pressed {
+        options.number("pressure")
+    } else {
+        0.0
+    };
+    let vel = pressed(options.number("vel"), pressure).clamp(0.0, 1.0);
     let sustain = options.number("sustain");
     let by_vel = |pp: f64, mf: f64, ff: f64| {
         pp + (mf - pp) * ((vel - 0.3) / 0.3).clamp(0.0, 1.0)
@@ -79,14 +121,32 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
         seed: ctx.seed(),
     };
     let body = options.given("body_hz").unwrap_or(fit.body);
-    let note = options.follow("note") >> moved_by(options, "bend", |x| x);
+    let air = fit.air.as_ref();
+    let start = options.number("note");
+    let mut note = options.follow("note") >> moved_by(options, "bend", |x| x);
+    if let Some(air) = air {
+        note = note + wander(start, 0.0) * (air.wander_cents / 100.0) as f32;
+    }
     let mut sound =
         string(note, bow) >> highpass_hz(body as f32, 0.541) >> highpass_hz(body as f32, 1.307);
     for (i, hz) in BANDS.into_iter().enumerate() {
         let gain = options
             .given(EQ[i])
             .unwrap_or_else(|| by_vel(fit.gains[0][i], fit.gains[1][i], fit.gains[2][i]));
-        sound = sound >> bell_hz(hz as f32, 1.4, db(gain) as f32);
+        sound = match air {
+            None => sound >> bell_hz(hz as f32, 1.4, db(gain) as f32),
+            Some(air) => {
+                let depth = air.wander_db;
+                let moving = wander(start, i as f64 + 1.0)
+                    >> map(move |x: &Frame<f32, U1>| db(gain + x[0] as f64 * depth) as f32);
+                (sound | dc(hz as f32) | dc(1.4) | moving) >> bell::<f32>()
+            }
+        };
+    }
+    if let Some(air) = air {
+        let gain = db(by_vel(air.shelf[0], air.shelf[1], air.shelf[2])) as f32;
+        sound = (sound | dc(air.shelf_hz as f32) | dc(std::f32::consts::FRAC_1_SQRT_2) | dc(gain))
+            >> highshelf::<f32>();
     }
     // A delay that swings after the string gives the vibrato, which grows in after 0.3 seconds.
     let rate_hz = 5.4;
@@ -95,15 +155,17 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
         let grown = ((t - 0.3).clamp(0.0, 1.0)).powi(2);
         0.002 + (2.0 * PI * rate_hz * t + PI / 2.0).sin() * depth * grown
     });
-    let cutoff = (2000.0 + vel * vel * 7000.0) as f32;
+    let cutoff = air.map_or(2000.0 + vel * vel * 7000.0, |air| air.cutoff) as f32;
     sound =
         (sound | swing) >> tap(0.0, 0.01) >> lowpass_hz(cutoff, 0.541) >> lowpass_hz(cutoff, 1.307);
     let hiss_level = db(options
         .given("hiss")
         .unwrap_or_else(|| by_vel(fit.hiss[0], fit.hiss[1], fit.hiss[2])))
         as f32;
-    let hiss =
-        (pink_noise(ctx.seed()) >> highpass_hz((1800.0 - vel * 400.0) as f32, 0.707)) * hiss_level;
+    let hiss = match air {
+        None => pink_noise(ctx.seed()) >> highpass_hz((1800.0 - vel * 400.0) as f32, 0.707),
+        Some(air) => (pink_noise(ctx.seed()) >> bandpass_hz(air.hiss_hz as f32, 0.7)) * (1.0 / 0.7),
+    } * hiss_level;
     sound = (sound + hiss) >> dcblock::<f32>();
 
     // The string swells in as the recordings do at each dynamic, though never over more than part of its sustain; on a bow change it speaks within 60 ms.
@@ -111,7 +173,14 @@ pub(crate) fn held(options: &Options, ctx: &mut Context, fit: &Fit) -> Net {
     let swell = (from_silence + (0.06f64.min(from_silence) - from_silence) * legato).max(1e-3);
     let rising = shape(move |t| 1.0 - (1.0 - (t / swell).min(1.0)).powi(2));
     let level = (vel.powf(0.6) * db(by_vel(fit.levels[0], fit.levels[1], fit.levels[2]))) as f32;
-    tilted(options, sound) * rising * level
+    let Some(air) = air else {
+        return tilted(options, sound) * rising * level;
+    };
+    // The bow catching the string scratches before the string speaks, unless it changes bow from a sounding note.
+    let (scratch_level, fall) = (db(air.scratch) * (1.0 - legato), air.scratch_fall);
+    let scratch = (white_noise(ctx.seed()) >> highpass_hz(400.0, std::f32::consts::FRAC_1_SQRT_2))
+        * shape(move |t| scratch_level * (1.0 - (-t / 0.004).exp()) * (-t / fall).exp());
+    tilted(options, sound * rising + scratch) * level
 }
 
 /// The seconds each half of the string delays its wave, at a pitch: its share of the period, less the feedback's sample and its loss filter's delay.
@@ -213,7 +282,7 @@ fn string(note: Net, bow: Bow) -> Net {
 /// Every bowed instrument mx ships.
 pub fn all() -> Vec<Synth> {
     vec![
-        figured(
+        bowed(
             "violin",
             Bowed {
                 peak: 333.0,
@@ -228,8 +297,29 @@ pub fn all() -> Vec<Synth> {
                 count: 32,
                 level: 0.0,
             },
-            violin_figures,
-            VIOLIN_LEVEL,
+            Fit {
+                body: 384.3,
+                gains: [
+                    [0.0, 0.0, 12.2, -0.8, 8.0, -1.0, 4.5, 5.0],
+                    [0.0, 0.0, 7.2, 1.5, 1.4, -1.5, 8.0, 6.1],
+                    [0.0, 0.0, 3.8, -3.4, 3.4, -3.2, 3.5, 11.5],
+                ],
+                levels: [-25.05, -28.90, -30.45],
+                swell: [1.3, 1.0, 0.45],
+                rosin: [0.15, 0.23, 0.35],
+                hiss: [0.0, -35.5, -30.5],
+                pressed: true,
+                air: Some(Air {
+                    cutoff: 16_000.0,
+                    shelf_hz: 6000.0,
+                    shelf: [6.0, 17.0, 16.0],
+                    hiss_hz: 3000.0,
+                    scratch: -8.0,
+                    scratch_fall: 0.03,
+                    wander_cents: 2.0,
+                    wander_db: 4.5,
+                }),
+            },
         ),
         bowed(
             "viola",
@@ -257,6 +347,8 @@ pub fn all() -> Vec<Synth> {
                 swell: [0.815, 0.68, 0.5],
                 rosin: [0.1, 0.1, 0.1],
                 hiss: [-35.5, -35.5, -30.5],
+                pressed: false,
+                air: None,
             },
         ),
         figured(
@@ -303,6 +395,8 @@ pub fn all() -> Vec<Synth> {
                 swell: [0.396, 0.342, 0.22],
                 rosin: [0.3, 0.53, 0.1],
                 hiss: [-35.5, -35.5, -30.5],
+                pressed: false,
+                air: None,
             },
         ),
     ]
@@ -343,7 +437,11 @@ fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
             "The vibrato's depth in semitones, reached as the note holds, read as the note starts.",
         ))
         .options(Spec::envelope(1.0, 0.3))
-        .options(Spec::expressions(&["bend", "brightness"]));
+        .options(Spec::expressions(if fit.pressed {
+            &["bend", "brightness", "pressure"]
+        } else {
+            &["bend", "brightness"]
+        }));
     bow_options(synth).build(move |o, ctx| {
         let vel = o.number("vel").clamp(0.0, 1.0);
         let pizz = o.number("pizz").clamp(0.0, 1.0);
@@ -435,14 +533,6 @@ fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, leve
             Note::envelope(bowed.sound * (1.0 - pizz) as f32 + pluck, o).within(end)
         })
 }
-
-/// The violin's figures, fitted partial by partial to the University of Iowa's arco violin at pp, mf and ff.
-fn violin_figures() -> &'static Figures {
-    super::tables::figures("violin.mxh")
-}
-
-/// The violin's gain at vel 1, as loud at vel 1 as its bowed model on average over G3 to C7, since its recordings' high notes stand up to 9 dB quieter.
-const VIOLIN_LEVEL: f64 = 1.39;
 
 /// The cello's figures, fitted partial by partial to the University of Iowa's arco cello at pp, mf and ff.
 fn cello_figures() -> &'static Figures {

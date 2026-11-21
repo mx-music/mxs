@@ -24,7 +24,7 @@ fn loudest(engine: &mut Engine) -> f32 {
 }
 
 #[test]
-fn the_piano_names_its_two_tables_the_pluck_none_and_fifteen_synths_need_some() {
+fn the_piano_names_its_two_tables_the_pluck_none_and_fourteen_synths_need_some() {
     let all = synths::all();
     let tables = |name: &str| {
         all.iter()
@@ -35,7 +35,7 @@ fn the_piano_names_its_two_tables_the_pluck_none_and_fifteen_synths_need_some() 
     };
     assert_eq!(tables("piano"), ["piano.mxf", "piano_pedal.mxf"]);
     assert!(tables("pluck").is_empty());
-    assert_eq!(all.iter().filter(|s| !s.tables().is_empty()).count(), 15);
+    assert_eq!(all.iter().filter(|s| !s.tables().is_empty()).count(), 14);
 }
 
 #[test]

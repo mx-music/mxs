@@ -137,19 +137,15 @@ fn a_synth_that_builds_each_note_for_its_note_alone_is_refused() {
 }
 
 #[test]
-fn held_notes_of_the_violin_cello_and_flute_start_from_ready_voices_as_built_ones_play() {
+fn held_notes_of_the_cello_and_flute_start_from_ready_voices_as_built_ones_play() {
     let notes = || {
-        [
-            ("violin", 67.0, 0.4),
-            ("cello", 43.0, 0.9),
-            ("flute_figured", 74.0, 0.6),
-        ]
-        .iter()
-        .map(|&(synth, note, vel)| Event::note(None, synth, &[("note", note), ("vel", vel)]))
-        .collect::<Vec<_>>()
+        [("cello", 43.0, 0.9), ("flute_figured", 74.0, 0.6)]
+            .iter()
+            .map(|&(synth, note, vel)| Event::note(None, synth, &[("note", note), ("vel", vel)]))
+            .collect::<Vec<_>>()
     };
     let mut engine = engine();
-    for synth in ["violin", "cello", "flute_figured"] {
+    for synth in ["cello", "flute_figured"] {
         engine.keep_ready(synth, 2).unwrap();
     }
     engine.render(0.1).unwrap();
@@ -161,7 +157,7 @@ fn held_notes_of_the_violin_cello_and_flute_start_from_ready_voices_as_built_one
         left == expected,
         "the ready notes play otherwise than built ones"
     );
-    for synth in ["violin", "cello", "flute_figured"] {
+    for synth in ["cello", "flute_figured"] {
         assert_eq!(engine.kept_ready(synth), 2, "{synth}");
     }
 }
@@ -176,25 +172,22 @@ fn a_count_of_0_stops_keeping_voices_ready() {
 }
 
 #[test]
-fn held_notes_of_the_piano_with_the_pedal_up_or_down_and_of_the_violin_play_from_ready_voices_as_built_ones_do()
- {
+fn held_notes_of_the_piano_with_the_pedal_up_or_down_play_from_ready_voices_as_built_ones_do() {
     let notes = || {
         vec![
             Event::held(1, "piano", &[("note", 55.0), ("vel", 0.5), ("pedal", 1.0)]),
             Event::held(2, "piano", &[("note", 72.0), ("vel", 0.8), ("pedal", 0.0)]),
-            Event::held(3, "violin", &[("note", 67.0), ("vel", 0.4)]),
         ]
     };
     let mut engine = engine();
     engine.keep_ready("piano", 2).unwrap();
-    engine.keep_ready("violin", 1).unwrap();
     engine.render(0.1).unwrap();
     let mut built = engine_at_the_same_frame();
     for engine in [&mut engine, &mut built] {
         let now = engine.now();
         let events: Vec<(f64, Event)> = notes().into_iter().map(|e| (now, e)).collect();
         engine.play(&events).unwrap();
-        let let_go = Event::Release { ids: vec![1, 2, 3] };
+        let let_go = Event::Release { ids: vec![1, 2] };
         engine.play(&[(now + 2.5, let_go)]).unwrap();
     }
     let (ready, _) = engine.render(9.0).unwrap();
@@ -207,16 +200,16 @@ fn held_notes_of_the_piano_with_the_pedal_up_or_down_and_of_the_violin_play_from
 }
 
 #[test]
-fn a_held_violin_note_given_pressure_plays_from_a_ready_voice_as_a_built_one_does() {
+fn a_held_cello_note_given_pressure_plays_from_a_ready_voice_as_a_built_one_does() {
     let note = || {
         Event::held(
             1,
-            "violin",
-            &[("note", 67.0), ("vel", 0.4), ("pressure", 0.5)],
+            "cello",
+            &[("note", 43.0), ("vel", 0.4), ("pressure", 0.5)],
         )
     };
     let mut engine = engine();
-    engine.keep_ready("violin", 1).unwrap();
+    engine.keep_ready("cello", 1).unwrap();
     engine.render(0.1).unwrap();
     let mut built = engine_at_the_same_frame();
     for engine in [&mut engine, &mut built] {
@@ -230,6 +223,6 @@ fn a_held_violin_note_given_pressure_plays_from_a_ready_voice_as_a_built_one_doe
     assert!(ready.iter().any(|s| s.abs() > 0.01));
     assert!(
         ready == expected,
-        "the ready violin plays otherwise than a built one"
+        "the ready cello plays otherwise than a built one"
     );
 }

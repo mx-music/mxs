@@ -27,7 +27,6 @@ tables![
     "piano_pedal.mxf",
     "timpani.mxf",
     "vibraphone.mxf",
-    "violin.mxh",
     "xylophone.mxf",
 ];
 
@@ -46,7 +45,6 @@ const SYNTHS: &[(&str, &[&str])] = &[
     ("piano", &["piano.mxf", "piano_pedal.mxf"]),
     ("timpani", &["timpani.mxf"]),
     ("vibraphone", &["vibraphone.mxf"]),
-    ("violin", &["violin.mxh"]),
     ("xylophone", &["xylophone.mxf"]),
 ];
 

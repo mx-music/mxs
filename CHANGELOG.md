@@ -1,5 +1,12 @@
 # Changelog for mxs v0.3
 
+## Unreleased
+
+### 1. Breaking changes
+
+  * [synths] `violin` is a bowed string again, modelled after the University of Iowa's arco violin from G3 to C6 with its bow noise, the scratch of each bow stroke and a slow drift of pitch and tone; its measured table `violin.mxh` is gone, so fourteen synths have tables, and the engine refuses to keep violin voices ready
+  * [synths] `violin` takes the bowed strings' options, `bow_speed`, `bow_force`, `body_hz`, `rosin`, `hiss`, `bow_position` and the bands' gains, and reads `pressure` as a note starts rather than while it sounds
+
 ## v0.3.1 (2026-11-21)
 
 ### 1. Bug fixes
