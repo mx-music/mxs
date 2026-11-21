@@ -393,3 +393,49 @@ fn other_arithmetic_on_an_option_that_takes_names_is_refused_when_the_synth_is_r
         Some("picky: shape takes names, which only eq and ne compare with a name".to_string())
     );
 }
+
+#[test]
+fn a_traced_saw_square_triangle_and_pulse_start_at_phase_0() {
+    let wave = |name: &str| {
+        let freq = call("hz", vec![opt("note")]);
+        let sound = Graph::call(name, vec![], vec![("hz", freq)]);
+        let traced = Synth::graph(
+            name,
+            note_specs(),
+            vec![Clause {
+                matches: vec![],
+                graph: rings(sound, 0.8),
+            }],
+        )
+        .unwrap();
+        render(traced, &[("note", Value::Number(45.0))])
+    };
+    let written = |mut unit: Box<dyn AudioUnit>| {
+        unit.set(Setting::phase(0.0));
+        unit.reset();
+        let synth = Synth::new("written")
+            .options(note_specs())
+            .build(move |o, _| {
+                let mut unit = unit.clone();
+                unit.reset();
+                Note::rings(dc(hz(o.number("note")) as f32) >> Net::wrap(unit), 0.8)
+            });
+        render(synth, &[("note", Value::Number(45.0))])
+    };
+    for (name, unit) in [
+        ("saw", Box::new(saw()) as Box<dyn AudioUnit>),
+        ("square", Box::new(square())),
+        ("triangle", Box::new(triangle())),
+    ] {
+        assert_eq!(wave(name), written(unit), "{name}");
+    }
+    let pulse = Synth::new("written").options(note_specs()).build(|o, _| {
+        let mut wave = pulse();
+        wave.set(Setting::phase(0.0));
+        wave.reset();
+        let freq = dc(hz(o.number("note")) as f32);
+        Note::rings((freq | dc(0.5)) >> Net::wrap(Box::new(wave)), 0.8)
+    });
+    let pulse = render(pulse, &[("note", Value::Number(45.0))]);
+    assert_eq!(wave("pulse"), pulse, "pulse");
+}

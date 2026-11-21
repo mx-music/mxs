@@ -680,22 +680,23 @@ impl Build<'_> {
             }
             "saw" | "square" | "triangle" => {
                 let freq = signal(take("hz").ok_or(format!("{name} needs hz:"))?)?;
-                let mut wave: Net = match name {
-                    "saw" => net(saw()),
-                    "square" => net(square()),
-                    _ => net(triangle()),
+                // A Net ignores a setting with no node address, so the phase is set on the unit itself.
+                let mut wave: Box<dyn AudioUnit> = match name {
+                    "saw" => Box::new(saw()),
+                    "square" => Box::new(square()),
+                    _ => Box::new(triangle()),
                 };
                 wave.set(Setting::phase(0.0));
                 wave.reset();
-                Ok(V::Sig(freq >> wave))
+                Ok(V::Sig(freq >> Net::wrap(wave)))
             }
             "pulse" => {
                 let freq = signal(take("hz").ok_or("pulse needs hz:")?)?;
                 let width = signal(take("width").unwrap_or(V::Num(0.5)))?;
-                let mut wave = net(pulse());
+                let mut wave = pulse();
                 wave.set(Setting::phase(0.0));
                 wave.reset();
-                Ok(V::Sig((freq | width) >> wave))
+                Ok(V::Sig((freq | width) >> net(wave)))
             }
             "noise" => match arg(0)? {
                 V::Name(colour) if colour == "white" => {
