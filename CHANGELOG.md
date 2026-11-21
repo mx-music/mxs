@@ -1,5 +1,11 @@
 # Changelog for mxs v0.3
 
+## v0.3.1 (2026-11-21)
+
+### 1. Bug fixes
+
+  * [engine] A part muted, or left out of a solo, before it has made a sound is silent from its first frame, where its first 10 ms were heard while the mute glided in
+
 ## v0.3.0 (2026-11-20)
 
 ### 1. Breaking changes
