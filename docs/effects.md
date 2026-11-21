@@ -62,7 +62,7 @@ Besides its own options, every effect takes these.
 | `pulse_width` | a number, 0 to 1 | 0.5 | The part of the cycle that is on. |
 | `amp_min` | a number | 0 | The level while off. |
 | `amp_max` | a number | 1 | The level while on. |
-| `smooth` | seconds, 0 or more | 0 | How many seconds each change takes. |
+| `smooth_ms` | milliseconds, 0 or more | 0 | How many milliseconds each change takes. |
 
 ### `compressor`
 
@@ -71,8 +71,8 @@ Besides its own options, every effect takes these.
 | `threshold` | a number, 0.0001 or more | 0.2 | The level above which it lowers the sound. |
 | `slope_below` | a number | 1 | How much the level changes below the threshold. |
 | `slope_above` | a number | 0.5 | How much the level changes above the threshold. |
-| `clamp_time` | seconds, 0 or more | 0.01 | How many seconds it takes to lower the sound. |
-| `relax_time` | seconds, 0 or more | 0.01 | How many seconds it takes to let go. |
+| `clamp_ms` | milliseconds, 0 or more | 10 | How many milliseconds it takes to lower the sound. |
+| `relax_ms` | milliseconds, 0 or more | 10 | How many milliseconds it takes to let go. |
 
 ### `chorus`
 
@@ -123,9 +123,9 @@ Besides its own options, every effect takes these.
 | `invert_wave` | a number, 0 to 1 | 0 | 1 flips the sweep. |
 | `phase_offset` | a number, 0 to 1 | 0 | Where in the sweep it starts. |
 | `stereo_invert_wave` | a number, 0 to 1 | 0 | 1 sweeps the left channel the other way. |
-| `delay` | a number | 5 | The delay in milliseconds it sweeps up from. |
-| `depth` | a number | 5 | How far in milliseconds it sweeps. |
-| `max_delay` | a number, 1 to 1000 | 20 | The longest delay in milliseconds. |
+| `delay_ms` | milliseconds | 5 | The delay it sweeps up from. |
+| `depth_ms` | milliseconds | 5 | How far it sweeps. |
+| `max_delay_ms` | milliseconds, 1 to 1000 | 20 | The longest delay. |
 | `feedback` | a number, 0 to 1 | 0 | How strongly the delayed sound feeds back. |
 | `decay` | seconds | 2 | How long the delayed sound feeds back. |
 | `invert_flange` | a number, 0 to 1 | 0 | 1 subtracts the delayed sound instead. |

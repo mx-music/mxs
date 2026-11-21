@@ -245,10 +245,10 @@ fn slicer() -> Effect {
                 .doc("The level while on."),
         )
         .option(
-            Spec::seconds("smooth")
+            Spec::ms("smooth_ms")
                 .default(0.0)
                 .range(0.0, f64::INFINITY)
-                .doc("How many seconds each change takes."),
+                .doc("How many milliseconds each change takes."),
         )
         .tail(0.0)
         .build(|o, _| {
@@ -259,7 +259,7 @@ fn slicer() -> Effect {
             let low = o.follow("amp_min");
             let level = (open | low | o.follow("amp_max"))
                 >> net(map(|x: &Frame<f32, U3>| x[1] + x[0] * (x[2] - x[1])))
-                >> net(An(Lag::new(o.number("smooth"))));
+                >> net(An(Lag::new(o.number("smooth_ms") / 1000.0)));
             (net(multipass::<U2>()) | level)
                 >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> {
                     [x[0] * x[2], x[1] * x[2]].into()
@@ -291,24 +291,24 @@ fn compressor() -> Effect {
                 .doc("How much the level changes above the threshold."),
         )
         .option(
-            Spec::seconds("clamp_time")
-                .default(0.01)
+            Spec::ms("clamp_ms")
+                .default(10.0)
                 .range(0.0, f64::INFINITY)
-                .doc("How many seconds it takes to lower the sound."),
+                .doc("How many milliseconds it takes to lower the sound."),
         )
         .option(
-            Spec::seconds("relax_time")
-                .default(0.01)
+            Spec::ms("relax_ms")
+                .default(10.0)
                 .range(0.0, f64::INFINITY)
-                .doc("How many seconds it takes to let go."),
+                .doc("How many milliseconds it takes to let go."),
         )
         .tail(0.1)
         .build(|o, _| {
             let controls = o.follow("threshold")
                 | o.follow("slope_below")
                 | o.follow("slope_above")
-                | o.follow("clamp_time")
-                | o.follow("relax_time");
+                | (o.follow("clamp_ms") * 0.001)
+                | (o.follow("relax_ms") * 0.001);
             (net(multipass::<U2>()) | controls) >> net(An(Compander::new()))
         })
 }
@@ -495,20 +495,16 @@ fn flanger() -> Effect {
                 .doc("1 sweeps the left channel the other way."),
         )
         .option(
-            Spec::float("delay")
+            Spec::ms("delay_ms")
                 .default(5.0)
-                .doc("The delay in milliseconds it sweeps up from."),
+                .doc("The delay it sweeps up from."),
         )
+        .option(Spec::ms("depth_ms").default(5.0).doc("How far it sweeps."))
         .option(
-            Spec::float("depth")
-                .default(5.0)
-                .doc("How far in milliseconds it sweeps."),
-        )
-        .option(
-            Spec::float("max_delay")
+            Spec::ms("max_delay_ms")
                 .default(20.0)
                 .range(1.0, 1000.0)
-                .doc("The longest delay in milliseconds."),
+                .doc("The longest delay."),
         )
         .option(
             Spec::float("feedback")
@@ -529,7 +525,7 @@ fn flanger() -> Effect {
         )
         .tail(1.0)
         .build(|o, _| {
-            let most = o.number("max_delay") / 1000.0;
+            let most = o.number("max_delay_ms") / 1000.0;
             let flip = if o.number("stereo_invert_wave") >= 0.5 {
                 1.0
             } else {
@@ -546,7 +542,7 @@ fn flanger() -> Effect {
                         move |x: &Frame<f32, U1>| if flipped > 0.0 { 1.0 - x[0] } else { x[0] },
                     ));
                 let limit = most as f32;
-                let delay = (o.follow("delay") | o.follow("depth") | level)
+                let delay = (o.follow("delay_ms") | o.follow("depth_ms") | level)
                     >> net(map(move |x: &Frame<f32, U3>| {
                         ((x[0] + x[1] * x[2]) / 1000.0).clamp(0.0001, limit)
                     }));

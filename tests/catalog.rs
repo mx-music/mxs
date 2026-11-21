@@ -24,6 +24,7 @@ fn takes(spec: &Spec) -> String {
         Kind::Hz => "hertz".to_string(),
         Kind::Db => "decibels".to_string(),
         Kind::Seconds => "seconds".to_string(),
+        Kind::Ms => "milliseconds".to_string(),
         Kind::Beats => "seconds".to_string(),
         Kind::Float => "a number".to_string(),
         Kind::Integer => "a whole number".to_string(),
@@ -218,4 +219,26 @@ fn the_families_hold_every_synth_once() {
         all.iter().collect::<BTreeSet<_>>(),
         in_families.iter().collect::<BTreeSet<_>>()
     );
+}
+
+#[test]
+fn an_effect_time_not_in_beats_names_its_unit() {
+    for effect in effects::all() {
+        for spec in effect.specs() {
+            let name = spec.name.as_str();
+            let at = format!("{}'s {name}", effect.name());
+            match spec.kind {
+                Kind::Seconds => assert!(name.ends_with("_seconds"), "{at} is in seconds"),
+                Kind::Ms => assert!(name.ends_with("_ms"), "{at} is in milliseconds"),
+                _ => {
+                    assert!(
+                        !name.ends_with("_seconds") && !name.ends_with("_ms"),
+                        "{at}"
+                    );
+                    assert!(!name.ends_with("_time"), "{at} names no unit");
+                    assert!(!spec.doc.contains("seconds"), "{at} says seconds");
+                }
+            }
+        }
+    }
 }

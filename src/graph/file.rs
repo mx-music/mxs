@@ -273,6 +273,7 @@ fn spec(json: &Json, at: &str) -> Result<Spec, String> {
         "hz" => Kind::Hz,
         "db" => Kind::Db,
         "seconds" => Kind::Seconds,
+        "ms" => Kind::Ms,
         "beats" => Kind::Beats,
         "float" => Kind::Float,
         "integer" => Kind::Integer,

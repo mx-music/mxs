@@ -4,6 +4,8 @@
 
 ### 1. Breaking changes
 
+  * [effects] An effect's time that is not in beats names its unit: slicer's `smooth` is `smooth_ms`, flanger's `delay`, `depth` and `max_delay` are `delay_ms`, `depth_ms` and `max_delay_ms`, and compressor's `clamp_time` and `relax_time` are `clamp_ms` and `relax_ms`, all in milliseconds
+  * [engine] `Kind` has an `Ms` variant, a time in milliseconds, made with `Spec::ms`, so code that matches every variant adds it
   * [synths] `violin` is a bowed string again, modelled after the University of Iowa's arco violin from G3 to C6 with its bow noise, the scratch of each bow stroke and a slow drift of pitch and tone; its measured table `violin.mxh` is gone, so fourteen synths have tables, and the engine refuses to keep violin voices ready
   * [synths] `violin` takes the bowed strings' options, `bow_speed`, `bow_force`, `body_hz`, `rosin`, `hiss`, `bow_position` and the bands' gains, and reads `pressure` as a note starts rather than while it sounds
 

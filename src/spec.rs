@@ -32,6 +32,8 @@ pub enum Kind {
     Db,
     /// A time in seconds.
     Seconds,
+    /// A time in milliseconds.
+    Ms,
     /// A time that follows the tempo: given in beats in a pass, and in seconds to [`Engine::play`](crate::Engine::play).
     Beats,
     /// Any number.
@@ -92,6 +94,11 @@ impl Spec {
     /// An option in seconds.
     pub fn seconds(name: &str) -> Self {
         Self::new(name, Kind::Seconds)
+    }
+
+    /// An option in milliseconds.
+    pub fn ms(name: &str) -> Self {
+        Self::new(name, Kind::Ms)
     }
 
     /// An option that is a time that follows the tempo: given in beats in a pass, and in seconds to [`Engine::play`](crate::Engine::play).
