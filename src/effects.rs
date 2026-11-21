@@ -963,7 +963,7 @@ impl AudioNode for Freeverb {
 /// A control wave from 0 to 1: 0 saw, 1 pulse, 2 triangle, 3 sine and 4 cubic, starting `offset` of a cycle in.
 /// Inputs: cycles a second, the pulse's width, the shape, and 1 to flip it.
 #[derive(Clone)]
-struct Lfo {
+pub(crate) struct Lfo {
     offset: f32,
     phase: f32,
     level: f32,
@@ -972,7 +972,7 @@ struct Lfo {
 }
 
 impl Lfo {
-    fn new(offset: f32, level: f32, pulse_only: bool) -> Self {
+    pub(crate) fn new(offset: f32, level: f32, pulse_only: bool) -> Self {
         Lfo {
             offset,
             phase: offset.rem_euclid(1.0),
@@ -1031,14 +1031,14 @@ impl AudioNode for Lfo {
 
 /// Glides to its input, falling 60 dB short of each step over `seconds`.
 #[derive(Clone)]
-struct Lag {
+pub(crate) struct Lag {
     seconds: f64,
     keep: f32,
     level: Option<f32>,
 }
 
 impl Lag {
-    fn new(seconds: f64) -> Self {
+    pub(crate) fn new(seconds: f64) -> Self {
         let mut lag = Lag {
             seconds,
             keep: 0.0,

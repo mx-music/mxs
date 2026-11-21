@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-### 1. Bug fixes
+### 1. Enhancements
+
+  * [graph] An effect's graph that is `sides(left, right)` is built over both sides, each from `left()` and `right()`, so one side can reach the other, and one wrapped in `tail` says how long it sounds on, in seconds or as long as an option says
+  * [graph] Add `sweep`, a level from 0 to 1 with the five waves of the effects' own sweeps, `follower`, the level of a sound, `allpass` and `lag`; each is refused when registered if given an argument by name it does not take
+
+### 2. Bug fixes
 
   * [graph] The `saw`, `square`, `triangle` and `pulse` nodes start at phase 0, as they were meant to, where each started at a phase of its own, so a synth written in the graph plays a saw or a pulse the same as mxs's own `saw` and `pulse` do
 

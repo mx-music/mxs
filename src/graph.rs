@@ -22,6 +22,8 @@
 //! | `time()` | The seconds since the note started. |
 //! | `follow(option)` | An option as a signal, which glides to each new value it is given while the note sounds. |
 //! | `input()` | In an effect, the channel coming in. |
+//! | `left()`, `right()` | In an effect over both sides, the side named coming in. |
+//! | `sweep(length:, wave:, invert:, offset:, width:)` | A level from 0 to 1 once every `length` seconds; `wave` is 0 saw, 1 pulse, 2 triangle, 3 sine or 4 cubic, and 3 unless given, `invert: 1` turns it upside down, `offset` is where in the cycle it starts, from 0 to 1, and `width` the part of a pulse that is up, a half unless given. All but `offset` may change while it sounds. |
 //!
 //! ## Filters
 //!
@@ -33,6 +35,8 @@
 //! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; all three are known when the note starts. |
 //! | `delay(sound, seconds:, max:)` | Delays it by `seconds`, which may change up to `max`. |
 //! | `dc_block(sound, hz:)` | Takes its constant offset away, below `hz`, 10 unless given. |
+//! | `allpass(sound, hz:, q:)` | Passes every frequency at the same level and shifts its phase around `hz`; `q` is 0.707 unless given, and both may change while it sounds. |
+//! | `lag(sound, seconds:)` | Glides to it, falling 60 dB short of each step over `seconds`, known when the note starts. |
 //!
 //! ## Distortion
 //!
@@ -52,6 +56,7 @@
 //! | `perc(attack:, release:)` | A level that rises over `attack` seconds and falls over `release`. |
 //! | `envelope(sound, points)`, `perc(sound, attack:, release:)` | The sound, scaled by that level. |
 //! | `gain(sound, level)` | The sound, scaled. |
+//! | `follower(sound, rise:, fall:)` | The level of the sound, which rises towards its size over `rise` seconds and falls over `fall`, both known when the note starts. |
 //! | `mix(list)` | The sounds of a list, added up. |
 //!
 //! ## How the note ends
@@ -62,6 +67,16 @@
 //! | --- | --- |
 //! | `rings(sound, seconds:)` | A note that fades by itself and is silent after `seconds`. |
 //! | `note_envelope(sound)` | A note shaped by its envelope options, which falls silent over its release when let go. |
+//!
+//! ## An effect's sides and its tail
+//!
+//! An effect's graph is one channel's sound, built once for each channel, unless it is one of these.
+//!
+//! | Call | What it makes |
+//! | --- | --- |
+//! | `sides(left, right)` | An effect over both sides: the sound of each, built from `left()` and `right()`. |
+//! | `tail(graph, seconds:)` | The effect, sounding on `seconds` after its input stops; an effect without it sounds on for 1 second. |
+//! | `tail(graph, option:)` | The effect, sounding on for as long as the option named says. |
 //!
 //! ## Arithmetic
 //!
@@ -199,6 +214,14 @@ const NODES: &[&str] = &[
     "note_envelope",
     "rings",
     "input",
+    "left",
+    "right",
+    "sweep",
+    "follower",
+    "allpass",
+    "lag",
+    "sides",
+    "tail",
 ];
 
 /// The arguments by name each call cannot do without, which a file is checked for when it loads.
@@ -227,6 +250,22 @@ const NEEDS: &[(&str, &[&str])] = &[
         &["note", "speed", "force", "position", "takes", "rosin"],
     ),
     ("air_jet", &["hz", "breath", "even"]),
+    ("sweep", &["length"]),
+    ("follower", &["rise", "fall"]),
+    ("allpass", &["hz"]),
+    ("lag", &["seconds"]),
+];
+
+/// The arguments by name each of these calls takes, any other being refused when the graph is checked.
+const TAKES: &[(&str, &[&str])] = &[
+    ("sweep", &["length", "wave", "invert", "offset", "width"]),
+    ("follower", &["rise", "fall"]),
+    ("allpass", &["hz", "q"]),
+    ("lag", &["seconds"]),
+    ("tail", &["seconds", "option"]),
+    ("sides", &[]),
+    ("left", &[]),
+    ("right", &[]),
 ];
 
 fn in_vocabulary(name: &str) -> bool {
@@ -246,7 +285,10 @@ impl Synth {
         for clause in &clauses {
             known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
             named_options(&clause.graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
-            if calls(&clause.graph, "input") {
+            if ["input", "left", "right", "sides", "tail"]
+                .iter()
+                .any(|node| calls(&clause.graph, node))
+            {
                 return Err(format!("{name}: a synth has no input; an effect takes one"));
             }
         }
@@ -262,6 +304,7 @@ impl Synth {
                 options,
                 ctx,
                 inputs: None,
+                sides: 0,
             })
             .eval(&clause.graph)
             {
@@ -275,27 +318,97 @@ impl Synth {
 
 impl Effect {
     /// An effect built from a graph: `graph` is one channel's sound, its `input` that channel coming in, and it is built once for each channel.
+    /// A graph that is `sides(left, right)` is built once, each side from `left()` and `right()`, and one wrapped in `tail` sounds on for that long after its input stops.
     pub fn graph(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, String> {
         known(&graph).map_err(|reason| format!("{name}: {reason}"))?;
         named_options(&graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
+        let refuse = |reason: String| format!("{name}: {reason}");
+        let (graph, tail) = match graph {
+            Graph::Call { name, args, named } if name == "tail" => {
+                let [inner] = <[Graph; 1]>::try_from(args)
+                    .map_err(|_| refuse("tail takes the effect's graph".to_string()))?;
+                let tail = match named.as_slice() {
+                    [(key, Graph::Number(seconds))] if key == "seconds" && *seconds >= 0.0 => {
+                        Tail::Seconds(*seconds)
+                    }
+                    [(key, Graph::Name(option))] if key == "option" => {
+                        if !specs.iter().any(|s| &s.name == option) {
+                            return Err(refuse(format!(
+                                "tail names {option}, which is not an option"
+                            )));
+                        }
+                        Tail::Option(option.clone())
+                    }
+                    _ => {
+                        return Err(refuse(
+                            "tail takes seconds:, a number from 0 up, or option:, an option's name"
+                                .to_string(),
+                        ));
+                    }
+                };
+                (inner, Some(tail))
+            }
+            graph => (graph, None),
+        };
+        let sides = match graph {
+            Graph::Call { name, args, .. } if name == "sides" => {
+                let pair = <[Graph; 2]>::try_from(args)
+                    .map_err(|_| refuse("sides takes the left sound and the right".to_string()))?;
+                pair.to_vec()
+            }
+            graph => vec![graph],
+        };
+        for side in &sides {
+            if calls(side, "sides") || calls(side, "tail") {
+                return Err(refuse(
+                    "sides and tail go around the whole graph, tail outermost".to_string(),
+                ));
+            }
+            let other: &[&str] = if sides.len() == 2 {
+                &["input"]
+            } else {
+                &["left", "right"]
+            };
+            if other.iter().any(|node| calls(side, node)) {
+                return Err(refuse(if sides.len() == 2 {
+                    "an effect over both sides takes left() and right(), not input()".to_string()
+                } else {
+                    "left() and right() go in an effect over both sides, inside sides".to_string()
+                }));
+            }
+        }
         let owner = name.to_string();
         let decl = specs
             .into_iter()
             .fold(Effect::new(name), |decl, spec| decl.option(spec));
+        let decl = match tail {
+            Some(Tail::Seconds(seconds)) => decl.tail(seconds),
+            Some(Tail::Option(option)) => decl.tail_from(move |o| o.number(&option).abs()),
+            None => decl,
+        };
         Ok(decl.build(move |options, ctx| {
-            let mut channel = || -> Net {
+            let width = sides.len();
+            let mut side = |graph: &Graph| -> Net {
                 let mut build = Build {
                     options,
                     ctx,
-                    inputs: Some(0),
+                    inputs: Some(Vec::new()),
+                    sides: width,
                 };
                 let sound = build
-                    .eval(&graph)
+                    .eval(graph)
                     .and_then(signal)
                     .unwrap_or_else(|reason| panic!("{owner}: {reason}"));
-                fed(build.inputs.unwrap_or(0), sound)
+                let uses = build.inputs.unwrap_or_default();
+                if sound.inputs() != uses.len() {
+                    panic!("{owner}: its input is taken where it is left out or taken twice, such as in a sound multiplied by 0");
+                }
+                fed(&uses, width, sound)
             };
-            channel() | channel()
+            match sides.as_slice() {
+                [left, right] => side(left) ^ side(right),
+                _ => side(&sides[0]) | side(&sides[0]),
+            }
         }))
     }
 }
@@ -305,11 +418,33 @@ impl Effect {
 const RED_ZONE: usize = 256 * 1024;
 const GROWTH: usize = 4 * 1024 * 1024;
 
-/// A sound whose input, taken `uses` times, is the same channel each time.
-fn fed(uses: usize, sound: Net) -> Net {
-    match uses {
-        0 => net(sink()) | sound,
-        uses => (1..uses).fold(net(pass()), |inputs, _| inputs ^ net(pass())) >> sound,
+/// How long an effect's graph says it sounds on after its input stops.
+enum Tail {
+    Seconds(f64),
+    Option(String),
+}
+
+/// A sound fed the channels it takes, in the order it takes them, out of `width` coming in.
+fn fed(uses: &[usize], width: usize, sound: Net) -> Net {
+    let channel = |index: usize| -> Net {
+        (0..width)
+            .map(|side| {
+                if side == index {
+                    net(pass())
+                } else {
+                    net(sink())
+                }
+            })
+            .reduce(|taken, side| taken | side)
+            .unwrap_or_else(|| net(pass()))
+    };
+    match uses.split_first() {
+        None => channel(width) | sound,
+        Some((first, rest)) => {
+            rest.iter()
+                .fold(channel(*first), |inputs, index| inputs ^ channel(*index))
+                >> sound
+        }
     }
 }
 
@@ -391,6 +526,16 @@ fn known(graph: &Graph) -> Result<(), String> {
         Graph::Call { name, args, named } => {
             if !in_vocabulary(name) {
                 return Err(format!("{name} is not in the vocabulary"));
+            }
+            if let Some((_, takes)) = TAKES.iter().find(|(call, _)| call == name)
+                && let Some((key, _)) = named.iter().find(|(k, _)| !takes.contains(&k.as_str()))
+            {
+                return Err(format!("{name} does not take {key}:"));
+            }
+            if let Some(key) = needs(name).iter().find(|key| {
+                TAKES.iter().any(|(call, _)| call == name) && !named.iter().any(|(k, _)| k == *key)
+            }) {
+                return Err(format!("{name} needs {key}:"));
             }
             args.iter()
                 .chain(named.iter().map(|(_, v)| v))
@@ -478,8 +623,10 @@ fn mul(a: V, b: V) -> Result<V, String> {
 struct Build<'a> {
     options: &'a Options,
     ctx: &'a mut Context,
-    /// How many times an effect's graph takes its input so far; None in a synth, which has none.
-    inputs: Option<usize>,
+    /// The channel an effect's graph takes each time it takes its input so far, in order; None in a synth, which has none.
+    inputs: Option<Vec<usize>>,
+    /// How many channels an effect's graph is built over: 1 for each channel on its own, 2 for both sides, and 0 in a synth.
+    sides: usize,
 }
 
 impl Build<'_> {
@@ -525,10 +672,27 @@ impl Build<'_> {
             .map(|g| self.eval(g))
             .collect::<Result<_, _>>()?;
         let count = args.len();
+        let before = self.inputs.as_ref().map_or(0, Vec::len);
+        let mut taking = 0;
         let mut named: Vec<(String, V)> = named
             .iter()
-            .map(|(k, g)| Ok((k.clone(), self.eval(g)?)))
+            .map(|(k, g)| {
+                let start = self.inputs.as_ref().map_or(0, Vec::len);
+                let v = self.eval(g)?;
+                taking += (self.inputs.as_ref().map_or(0, Vec::len) > start) as usize;
+                Ok((k.clone(), v))
+            })
             .collect::<Result<_, String>>()?;
+        // Arguments by name are joined in the node's own order, so two that take different sides could be crossed.
+        if self.sides == 2
+            && taking > 1
+            && let Some(uses) = &self.inputs
+            && uses[before..].iter().any(|side| *side != uses[before])
+        {
+            return Err(format!(
+                "{name} takes the left side in one argument by name and the right in another; give it one side there"
+            ));
+        }
         let mut take = |key: &str| {
             named
                 .iter()
@@ -594,13 +758,59 @@ impl Build<'_> {
                     ))),
                 ))
             }
-            "input" => match self.inputs.as_mut() {
+            "input" | "left" | "right" => match self.inputs.as_mut() {
                 Some(uses) => {
-                    *uses += 1;
+                    uses.push((name == "right") as usize);
                     Ok(V::Sig(net(pass())))
                 }
                 None => Err("a synth has no input; an effect takes one".to_string()),
             },
+            "sweep" => {
+                let length = signal(take("length").ok_or("sweep needs length:")?)?;
+                let wave = signal(take("wave").unwrap_or(V::Num(3.0)))?;
+                let invert = signal(take("invert").unwrap_or(V::Num(0.0)))?;
+                let width = signal(take("width").unwrap_or(V::Num(0.5)))?;
+                let offset = take("offset")
+                    .map(|o| number(o, "a sweep's offset"))
+                    .transpose()?
+                    .unwrap_or(0.0);
+                let rate = length >> net(map(|x: &Frame<f32, U1>| 1.0 / x[0].max(0.001)));
+                Ok(V::Sig(
+                    (rate | width | wave | invert)
+                        >> net(An(crate::effects::Lfo::new(offset as f32, 1.0, false))),
+                ))
+            }
+            "follower" => {
+                let sound = signal(arg(0)?)?;
+                let rise = number(
+                    take("rise").ok_or("follower needs rise:")?,
+                    "a follower's rise",
+                )?;
+                let fall = number(
+                    take("fall").ok_or("follower needs fall:")?,
+                    "a follower's fall",
+                )?;
+                Ok(V::Sig(sound >> net(An(nodes::Follower::new(rise, fall)))))
+            }
+            "allpass" => {
+                let sound = signal(arg(0)?)?;
+                let freq = take("hz").ok_or("allpass needs hz:")?;
+                let freq = binary(
+                    binary(freq, V::Num(20.0), f64::max)?,
+                    V::Num(20_000.0),
+                    f64::min,
+                )?;
+                let q = signal(take("q").unwrap_or(V::Num(std::f64::consts::FRAC_1_SQRT_2)))?;
+                Ok(V::Sig((sound | signal(freq)? | q) >> net(allpass::<f32>())))
+            }
+            "lag" => {
+                let sound = signal(arg(0)?)?;
+                let seconds = number(
+                    take("seconds").ok_or("lag needs seconds:")?,
+                    "a lag's seconds",
+                )?;
+                Ok(V::Sig(sound >> net(An(crate::effects::Lag::new(seconds)))))
+            }
             "time" => Ok(V::Sig(nodes::shape(|t| t))),
             "bowed_string" => {
                 let note = signal(take("note").ok_or("bowed_string needs note:")?)?;
@@ -911,10 +1121,10 @@ impl Build<'_> {
         let Some(graph) = graph else {
             return Ok(None);
         };
-        let outer = self.inputs.replace(0);
+        let outer = self.inputs.replace(Vec::new());
         let sound = self.eval(graph).and_then(signal);
-        let uses = std::mem::replace(&mut self.inputs, outer).unwrap_or(0);
-        Ok(Some(fed(uses, sound?)))
+        let uses = std::mem::replace(&mut self.inputs, outer).unwrap_or_default();
+        Ok(Some(fed(&uses, 1, sound?)))
     }
 }
 

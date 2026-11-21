@@ -4,6 +4,64 @@
 
 use fundsp::prelude::*;
 
+/// The level of a sound, as its peaks: a steady tone brings it within a tenth of the tone's peak in `rise` seconds, and silence within a tenth of 0 in `fall`.
+#[derive(Clone)]
+pub(crate) struct Follower {
+    rise: f64,
+    fall: f64,
+    up: f32,
+    down: f32,
+    level: f32,
+}
+
+impl Follower {
+    pub(crate) fn new(rise: f64, fall: f64) -> Self {
+        let mut follower = Follower {
+            rise,
+            fall,
+            up: 0.0,
+            down: 0.0,
+            level: 0.0,
+        };
+        follower.set_sample_rate(DEFAULT_SR);
+        follower
+    }
+}
+
+impl AudioNode for Follower {
+    const ID: u64 = 0x6d78_0076;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        let keep = |seconds: f64| {
+            if seconds > 0.0 {
+                0.1f64.powf(1.0 / (seconds * sample_rate)) as f32
+            } else {
+                0.0
+            }
+        };
+        // A tone is above the level it has reached only part of each cycle, so the rise is six times as fast as the fall.
+        self.up = keep(self.rise / 6.0);
+        self.down = keep(self.fall);
+    }
+
+    fn reset(&mut self) {
+        self.level = 0.0;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let size = input[0].abs();
+        let keep = if size > self.level {
+            self.up
+        } else {
+            self.down
+        };
+        self.level = size + (self.level - size) * keep;
+        [self.level].into()
+    }
+}
+
 /// The frequency of a MIDI note.
 pub fn hz(note: f64) -> f64 {
     440.0 * 2f64.powf((note - 69.0) / 12.0)

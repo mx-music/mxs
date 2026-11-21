@@ -439,3 +439,231 @@ fn a_traced_saw_square_triangle_and_pulse_start_at_phase_0() {
     let pulse = render(pulse, &[("note", Value::Number(45.0))]);
     assert_eq!(wave("pulse"), pulse, "pulse");
 }
+
+/// The traced mode through a chain of effects, each with its options, as both sides.
+fn through_chain(effects: Vec<Effect>, chain: &[(&str, Vec<(&str, f64)>)]) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = Engine::offline(RATE);
+    engine.register(
+        Synth::graph(
+            "traced",
+            note_specs(),
+            vec![Clause {
+                matches: vec![],
+                graph: rings(struck_mode(1.0, n(0.3)), 0.8),
+            }],
+        )
+        .unwrap(),
+    );
+    for effect in effects {
+        engine.register_effect(effect);
+    }
+    let chain: Vec<(String, Vec<(String, Value)>)> = chain
+        .iter()
+        .map(|(name, options)| {
+            let options = options
+                .iter()
+                .map(|(k, v)| (k.to_string(), Value::Number(*v)))
+                .collect();
+            (name.to_string(), options)
+        })
+        .collect();
+    let chain = engine.start_effects(&chain).unwrap();
+    engine
+        .play(&[(
+            0.0,
+            Event::Note {
+                id: None,
+                synth: "traced".to_string(),
+                options: vec![],
+                chain: Some(chain),
+                held: false,
+            },
+        )])
+        .unwrap();
+    engine.render(1.0).unwrap()
+}
+
+fn peak(samples: &[f32]) -> f32 {
+    samples.iter().fold(0f32, |m, x| m.max(x.abs()))
+}
+
+fn named(name: &str, args: Vec<Graph>, named: Vec<(&str, Graph)>) -> Graph {
+    Graph::call(name, args, named)
+}
+
+/// An effect that keeps the left side and silences the right.
+fn lefty() -> Effect {
+    Effect::graph(
+        "lefty",
+        vec![],
+        call("sides", vec![call("left", vec![]), n(0.0)]),
+    )
+    .unwrap()
+}
+
+#[test]
+fn an_effect_over_both_sides_reaches_one_side_from_the_other() {
+    let swap = Effect::graph(
+        "swap",
+        vec![],
+        call("sides", vec![call("right", vec![]), call("left", vec![])]),
+    )
+    .unwrap();
+    let (left, right) = through_chain(vec![lefty()], &[("lefty", vec![])]);
+    assert!(peak(&left) > 0.01 && peak(&right) == 0.0);
+    let (left, right) = through_chain(vec![lefty(), swap], &[("lefty", vec![]), ("swap", vec![])]);
+    assert!(peak(&right) > 0.01 && peak(&left) == 0.0);
+}
+
+#[test]
+fn an_effect_over_both_sides_adds_them_in_the_order_written() {
+    let side = Effect::graph(
+        "side",
+        vec![],
+        call(
+            "sides",
+            vec![
+                call("sub", vec![call("left", vec![]), call("right", vec![])]),
+                call("sub", vec![call("right", vec![]), call("left", vec![])]),
+            ],
+        ),
+    )
+    .unwrap();
+    let (dry, _) = through_chain(vec![lefty()], &[("lefty", vec![])]);
+    let (left, right) = through_chain(vec![lefty(), side], &[("lefty", vec![]), ("side", vec![])]);
+    for ((dry, left), right) in dry.iter().zip(&left).zip(&right) {
+        assert!((left - dry).abs() < 1e-6 && (right + dry).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn sides_and_inputs_in_the_wrong_place_are_refused_when_the_effect_is_registered() {
+    let refused = |graph: Graph| Effect::graph("wrong", vec![], graph).err().unwrap();
+    assert!(
+        refused(call(
+            "sides",
+            vec![call("input", vec![]), call("left", vec![])]
+        ))
+        .contains("takes left() and right(), not input()")
+    );
+    assert!(refused(call("left", vec![])).contains("inside sides"));
+    assert!(refused(call("sides", vec![call("left", vec![])])).contains("sides takes the left"));
+    let synth = Synth::graph(
+        "wrong",
+        note_specs(),
+        vec![Clause {
+            matches: vec![],
+            graph: rings(call("left", vec![]), 0.5),
+        }],
+    );
+    assert!(synth.err().unwrap().contains("a synth has no input"));
+}
+
+#[test]
+fn an_effect_says_how_long_it_sounds_on_with_tail() {
+    let pass = || call("input", vec![]);
+    let decay = Spec::beats("decay").default(4.0);
+    let effects = vec![
+        Effect::graph("plain", vec![], pass()).unwrap(),
+        Effect::graph(
+            "long",
+            vec![],
+            named("tail", vec![pass()], vec![("seconds", n(3.0))]),
+        )
+        .unwrap(),
+        Effect::graph(
+            "ringing",
+            vec![decay],
+            named("tail", vec![pass()], vec![("option", name("decay"))]),
+        )
+        .unwrap(),
+    ];
+    let mut engine = Engine::offline(RATE);
+    for effect in effects {
+        engine.register_effect(effect);
+    }
+    let chain: Vec<(String, Vec<(String, Value)>)> = ["plain", "long", "ringing"]
+        .iter()
+        .map(|name| (name.to_string(), vec![]))
+        .collect();
+    assert_eq!(
+        engine.effect_tails(&chain, Some(120.0)).unwrap(),
+        vec![1.0, 3.0, 2.0]
+    );
+
+    let refused = |tail: Vec<(&str, Graph)>| {
+        Effect::graph("wrong", vec![], named("tail", vec![pass()], tail))
+            .err()
+            .unwrap()
+    };
+    assert!(
+        refused(vec![("option", name("decay"))])
+            .contains("tail names decay, which is not an option")
+    );
+    assert!(refused(vec![("beats", n(1.0))]).contains("tail does not take beats:"));
+}
+
+#[test]
+fn a_node_given_an_argument_it_does_not_take_is_refused_when_registered() {
+    let allpass = named(
+        "allpass",
+        vec![call("input", vec![])],
+        vec![("seconds", n(1.0))],
+    );
+    assert_eq!(
+        Effect::graph("wrong", vec![], allpass).err().unwrap(),
+        "wrong: allpass does not take seconds:"
+    );
+    let sweep = named("sweep", vec![], vec![("wave", n(1.0))]);
+    assert_eq!(
+        Effect::graph("wrong", vec![], sweep).err().unwrap(),
+        "wrong: sweep needs length:"
+    );
+}
+
+#[test]
+fn a_sweep_starts_where_its_offset_says_on_each_side() {
+    let sweep = |offset: f64| {
+        named(
+            "sweep",
+            vec![],
+            vec![("length", n(0.5)), ("wave", n(3.0)), ("offset", n(offset))],
+        )
+    };
+    let effect = Effect::graph(
+        "sweeps",
+        vec![],
+        call("sides", vec![sweep(0.0), sweep(0.5)]),
+    )
+    .unwrap();
+    let (left, right) = through_chain(vec![effect], &[("sweeps", vec![])]);
+    for (left, right) in left.iter().zip(&right) {
+        assert!((left + right - 1.0).abs() < 1e-4);
+    }
+    let quarter = (0.125 * RATE) as usize;
+    assert!(left[quarter] > 0.999 && right[quarter] < 0.001);
+}
+
+#[test]
+fn a_follower_rises_and_falls_within_its_times() {
+    let tone = named(
+        "mul",
+        vec![
+            named("sine", vec![], vec![("hz", n(200.0))]),
+            call("lt", vec![call("time", vec![]), n(0.5)]),
+        ],
+        vec![],
+    );
+    let level = named(
+        "follower",
+        vec![tone],
+        vec![("rise", n(0.02)), ("fall", n(0.1))],
+    );
+    let effect = Effect::graph("level", vec![], level).unwrap();
+    let (left, _) = through_chain(vec![effect], &[("level", vec![])]);
+    let at = |seconds: f64| left[(seconds * RATE) as usize];
+    assert!(at(0.02) >= 0.9, "{}", at(0.02));
+    assert!(at(0.4) > 0.9 && at(0.4) <= 1.0);
+    assert!(at(0.6) < 0.1, "{}", at(0.6));
+    assert!(at(0.55) > 0.2, "{}", at(0.55));
+}
