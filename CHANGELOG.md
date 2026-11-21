@@ -10,6 +10,7 @@
 ### 2. Bug fixes
 
   * [graph] The `saw`, `square`, `triangle` and `pulse` nodes start at phase 0, as they were meant to, where each started at a phase of its own, so a synth written in the graph plays a saw or a pulse the same as mxs's own `saw` and `pulse` do
+  * [synths] `square`, `tri` and `fm` start their waves at phase 0, as `saw` and `pulse` do, where each started at a phase of its own, so each plays the same as the same synth written in the graph
 
 ## v0.4.0 (2026-11-21)
 

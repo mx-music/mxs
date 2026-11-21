@@ -1,11 +1,11 @@
 piano 564fb1212bbd88c9
 berimbau eca90b60b8d249b5
 saw 9129150e1c1e09a5
-square 437c67a1302642b5
-tri af9d3a884a271829
+square 0490bcaf111335a5
+tri ed759a63184fc6f5
 pulse cb7726b92f566825
 noise 10cc2ebdea04cf45
-fm 7b2c757807ff6ea5
+fm f651fd48d2ff9b59
 pluck 28e94052fba181e1
 supersaw edf5e3cdb9af85e9
 acid f95da78c605deea5

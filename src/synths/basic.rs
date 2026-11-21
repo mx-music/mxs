@@ -26,7 +26,7 @@ fn net(unit: impl AudioUnit + 'static) -> Net {
 }
 
 // FunDSP's saw and pulse waves measure 4.5 dB louder than scsynth's, and its square 3.8 dB, so they are brought down to the level mx's designs were made at.
-// They start at phase 0 rather than FunDSP's hashed phase, so a saw and a pulse at one pitch add up the same in every note.
+// Each wave starts at phase 0 rather than FunDSP's hashed phase, so a saw and a pulse at one pitch add up the same in every note, and a wave written in the graph plays the same.
 fn saw_wave() -> Net {
     from_zero(fundsp::prelude::saw()) * db(-4.5) as f32
 }
@@ -109,7 +109,8 @@ fn square() -> Synth {
         .options(Spec::expressions(&["bend", "brightness"]))
         .build(|o, _| {
             Note::envelope(
-                brightened(o, bent(o) >> net(fundsp::prelude::square())) * (0.5 * db(-3.8)) as f32,
+                brightened(o, bent(o) >> from_zero(fundsp::prelude::square()))
+                    * (0.5 * db(-3.8)) as f32,
                 o,
             )
         })
@@ -118,7 +119,7 @@ fn square() -> Synth {
 fn tri() -> Synth {
     wave("tri", 100.0, 1.0)
         .options(Spec::expressions(&["bend", "brightness"]))
-        .build(|o, _| Note::envelope(brightened(o, bent(o) >> net(triangle())) * 0.6, o))
+        .build(|o, _| Note::envelope(brightened(o, bent(o) >> from_zero(triangle())) * 0.6, o))
 }
 
 fn pulse() -> Synth {
@@ -161,10 +162,10 @@ fn fm() -> Synth {
         .build(|o, _| {
             let modulator = (bent(o) | o.follow("divisor"))
                 >> net(map(|x: &Frame<f32, U2>| x[0] / x[1].max(0.01)))
-                >> net(sine::<f32>());
+                >> net(An(Sine::<f32>::with_phase(0.0)));
             let carrier = (bent(o) | modulator | o.follow("depth"))
                 >> net(map(|x: &Frame<f32, U3>| x[0] + x[1] * x[0] * x[2]))
-                >> net(sine::<f32>());
+                >> net(An(Sine::<f32>::with_phase(0.0)));
             Note::envelope(carrier * 0.6, o)
         })
 }
