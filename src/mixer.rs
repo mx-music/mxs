@@ -190,6 +190,7 @@ pub(crate) struct Heard {
     toward: f32,
     step: f32,
     left: u64,
+    sounded: bool,
 }
 
 impl Heard {
@@ -203,6 +204,7 @@ impl Heard {
             toward: 1.0,
             step: 0.0,
             left: 0,
+            sounded: false,
         }
     }
 
@@ -214,10 +216,12 @@ impl Heard {
         }
     }
 
-    /// Starts gliding to the level the part should have, given whether any part is soloed.
+    /// Starts gliding to the level the part should have, given whether any part is soloed, or takes it at once before the part has sounded.
     fn aim(&mut self, solo: bool) {
         let wanted = self.wanted(solo);
-        if wanted != self.toward {
+        if !self.sounded {
+            (self.level, self.toward, self.left) = (wanted, wanted, 0);
+        } else if wanted != self.toward {
             self.toward = wanted;
             self.left = self.glide;
             self.step = (wanted - self.level) / self.glide as f32;
@@ -226,6 +230,7 @@ impl Heard {
 
     /// The level of the next frame.
     fn next(&mut self) -> f32 {
+        self.sounded = true;
         if self.left > 0 {
             self.left -= 1;
             self.level = if self.left == 0 {
@@ -418,8 +423,6 @@ impl Mixer {
                     // A part created while another is soloed starts unheard, with no glide.
                     let solo = self.chains.iter().any(|c| c.heard.soloed);
                     chain.heard.aim(solo);
-                    chain.heard.left = Ord::min(chain.heard.left, 1);
-                    chain.heard.next();
                     self.chains.push(chain);
                 }
                 Command::Part { key, at, change } => {

@@ -88,6 +88,16 @@ fn a_muted_part_is_silent_within_10_ms_with_what_was_handed_over_before_and_come
 }
 
 #[test]
+fn a_part_muted_or_left_out_of_a_solo_before_it_makes_a_sound_is_silent_from_its_first_frame() {
+    let mut engine = two_parts();
+    engine.mute("first", true, 0.0).unwrap();
+    engine.solo("first", true, 0.0).unwrap();
+    let (left, _) = engine.render(1.0).unwrap();
+    let heard = left.iter().position(|x| *x != 0.0);
+    assert_eq!(heard, None, "heard from frame {heard:?} of {}", left.len());
+}
+
+#[test]
 fn a_solo_leaves_only_the_soloed_parts_heard_until_it_is_cleared() {
     let (untouched, _) = two_parts().render(3.0).unwrap();
     let mut engine = two_parts();
