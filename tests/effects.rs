@@ -115,9 +115,9 @@ fn echo_repeats_a_click_a_phase_apart_each_quieter() {
 
 #[test]
 fn reverb_rings_on_after_the_sound_stops() {
-    let left = through("reverb", &[("room", 0.8)], "hiss", 3.0);
+    let left = through("reverb", &[("decay_seconds", 3.0)], "hiss", 3.0);
     assert!(rms(&left[frame(1.2)..frame(1.7)]) > 0.001);
-    let small = through("reverb", &[("room", 0.1)], "hiss", 3.0);
+    let small = through("reverb", &[("decay_seconds", 0.3)], "hiss", 3.0);
     assert!(rms(&small[frame(1.2)..frame(1.7)]) < rms(&left[frame(1.2)..frame(1.7)]) / 4.0);
 }
 
@@ -166,17 +166,17 @@ fn an_effects_tail_comes_from_its_options() {
 #[test]
 fn each_effect_says_how_long_it_rings_after_its_input_stops_from_its_options_and_the_tempo() {
     let mut engine = engine();
-    let room = |room: f64| {
+    let room = |seconds: f64| {
         (
             "reverb".to_string(),
-            vec![("room".to_string(), Value::Number(room))],
+            vec![("decay_seconds".to_string(), Value::Number(seconds))],
         )
     };
     let echo = (
         "echo".to_string(),
         vec![("decay".to_string(), Value::Number(2.0))],
     );
-    let effects = [room(0.45), echo.clone(), ("lpf".to_string(), vec![])];
+    let effects = [room(5.5), echo.clone(), ("lpf".to_string(), vec![])];
     assert_eq!(
         engine.effect_tails(&effects, None).unwrap(),
         vec![5.5, 2.0, 0.1]
@@ -185,7 +185,10 @@ fn each_effect_says_how_long_it_rings_after_its_input_stops_from_its_options_and
         engine.effect_tails(&effects, Some(120.0)).unwrap(),
         vec![5.5, 1.0, 0.1]
     );
-    assert_eq!(engine.effect_tails(&[room(1.0)], None).unwrap(), vec![11.0]);
+    assert_eq!(
+        engine.effect_tails(&[room(11.0)], None).unwrap(),
+        vec![11.0]
+    );
     let unknown = engine
         .effect_tails(&[("no_such".to_string(), vec![])], None)
         .unwrap_err();
@@ -680,13 +683,13 @@ fn the_compressor_turns_both_sides_down_by_what_the_louder_side_asks() {
     );
 }
 
-/// Both sides of a click at 0.1 seconds through hall with the options given, wet only.
-fn hall_click(given: &[(&str, f64)], seconds: f64) -> (Vec<f32>, Vec<f32>) {
+/// Both sides of a click at 0.1 seconds through the reverb with the options given, wet only.
+fn reverb_click(given: &[(&str, f64)], seconds: f64) -> (Vec<f32>, Vec<f32>) {
     let mut engine = engine();
     let mut given = given.to_vec();
     given.push(("mix", 1.0));
     let chain = engine
-        .start_effects(&[("hall".to_string(), options(&given))])
+        .start_effects(&[("reverb".to_string(), options(&given))])
         .unwrap();
     let click = Event::Note {
         id: None,
@@ -706,12 +709,12 @@ fn first_sound(samples: &[f32]) -> usize {
 }
 
 #[test]
-fn the_hall_keeps_a_sound_louder_on_its_own_side() {
-    let (left, right) = through_both("hall", &[("tone", 0.0, -1.0, 1.0)], 2.0);
+fn the_reverb_keeps_a_sound_louder_on_its_own_side() {
+    let (left, right) = through_both("reverb", &[("tone", 0.0, -1.0, 1.0)], 2.0);
     let (wet_left, wet_right) = {
         let mut engine = engine();
         let chain = engine
-            .start_effects(&[("hall".to_string(), options(&[("mix", 1.0)]))])
+            .start_effects(&[("reverb".to_string(), options(&[("mix", 1.0)]))])
             .unwrap();
         let note = Event::Note {
             id: None,
@@ -730,36 +733,36 @@ fn the_hall_keeps_a_sound_louder_on_its_own_side() {
 }
 
 #[test]
-fn the_hall_fades_60_db_in_its_decay_seconds_after_its_predelay_and_starts_later_in_a_larger_room()
-{
-    let (left, _) = hall_click(&[("decay_seconds", 2.0)], 3.2);
+fn the_reverb_fades_60_db_in_its_decay_seconds_after_its_predelay_and_starts_later_in_a_larger_room()
+ {
+    let (left, _) = reverb_click(&[("decay_seconds", 2.0)], 3.2);
     let level = |at: f64| rms(&left[frame(0.1 + at)..frame(0.1 + at + 0.05)]);
     let start = level(0.05);
     let down = |at: f64| 20.0 * (level(at) / start).log10();
     assert!(down(1.6) > -60.0, "{}", down(1.6));
     assert!(down(2.4) < -60.0, "{}", down(2.4));
 
-    let (long, _) = hall_click(&[("decay_seconds", 6.0)], 3.2);
+    let (long, _) = reverb_click(&[("decay_seconds", 6.0)], 3.2);
     let long_level = |at: f64| rms(&long[frame(0.1 + at)..frame(0.1 + at + 0.05)]);
     assert!(20.0 * (long_level(2.4) / long_level(0.05)).log10() > -40.0);
 
-    let (plain, _) = hall_click(&[], 0.5);
-    let (late, _) = hall_click(&[("predelay_ms", 50.0)], 0.5);
+    let (plain, _) = reverb_click(&[], 0.5);
+    let (late, _) = reverb_click(&[("predelay_ms", 50.0)], 0.5);
     assert!(first_sound(&plain) >= frame(0.1));
     assert_eq!(first_sound(&late), first_sound(&plain) + frame(0.05));
     assert!(late[..frame(0.15)].iter().all(|x| *x == 0.0));
 
-    let (small, _) = hall_click(&[("size", 15.0)], 0.5);
-    let (large, _) = hall_click(&[("size", 40.0)], 0.5);
+    let (small, _) = reverb_click(&[("size", 15.0)], 0.5);
+    let (large, _) = reverb_click(&[("size", 40.0)], 0.5);
     assert!(first_sound(&large) > first_sound(&small) + frame(0.01));
 }
 
 #[test]
-fn the_halls_low_cut_cuts_the_room_below_its_note_and_its_damp_dulls_it() {
+fn the_reverbs_low_cut_cuts_the_room_below_its_note_and_its_damp_dulls_it() {
     let hiss = |given: &[(&str, f64)]| {
         let mut given = given.to_vec();
         given.push(("mix", 1.0));
-        through("hall", &given, "hiss", 2.0)
+        through("reverb", &given, "hiss", 2.0)
     };
     let (open, cut) = (hiss(&[]), hiss(&[("low_cut", 60.0)]));
     let lows = |samples: &[f32]| partial_db(samples, 65.0, 0.5);
@@ -791,7 +794,7 @@ fn the_halls_low_cut_cuts_the_room_below_its_note_and_its_damp_dulls_it() {
     let mut engine = engine();
     let tails = engine
         .effect_tails(
-            &[("hall".to_string(), options(&[("decay_seconds", 3.0)]))],
+            &[("reverb".to_string(), options(&[("decay_seconds", 3.0)]))],
             None,
         )
         .unwrap();

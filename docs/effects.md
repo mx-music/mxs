@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`hall`](#hall), [`phaser`](#phaser).
+[`level`](#level), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`reverb`](#reverb), [`phaser`](#phaser).
 
 ## What every effect takes
 
@@ -13,13 +13,6 @@ Besides its own options, every effect takes these.
 | `amp` | a number, 0 to 16 | 1 | The level the blend is scaled by. |
 
 ### `level`
-
-### `reverb`
-
-| Option | Takes | Default | What it does |
-|---|---|---|---|
-| `room` | a number, 0 to 1 | 0.6 | How big the room is. |
-| `damp` | a number, 0 to 1 | 0.5 | How much the room dulls the high frequencies. |
 
 ### `echo`
 
@@ -178,7 +171,7 @@ Besides its own options, every effect takes these.
 | `ceiling` | a number, -60 to 0 | -1 | The level no peak passes, in dB below full scale. |
 | `relax_ms` | milliseconds, 1 to 10000 | 100 | How many milliseconds it takes to let the sound back up. |
 
-### `hall`
+### `reverb`
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|

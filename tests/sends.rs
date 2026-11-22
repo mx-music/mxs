@@ -58,7 +58,7 @@ fn db(ratio: f32) -> f32 {
     20.0 * ratio.log10()
 }
 
-const REVERB: &[(&str, f64)] = &[("mix", 1.0), ("room", 0.3)];
+const REVERB: &[(&str, f64)] = &[("mix", 1.0), ("decay_seconds", 0.8)];
 
 /// Two tones a fifth apart for a second, each in a chain of its own made by `chain`, as the left channel of 2 seconds.
 fn two_tones(chain: impl Fn(&mut Engine) -> u64) -> Vec<f32> {

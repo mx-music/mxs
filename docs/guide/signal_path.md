@@ -43,7 +43,7 @@ fn main() -> Result<(), mxs::Error> {
     effects::all().into_iter().for_each(|e| engine.register_effect(e));
 
     let echo = ("echo".to_string(), vec![("phase".to_string(), Value::Number(0.25))]);
-    let reverb = ("reverb".to_string(), vec![("room".to_string(), Value::Number(0.6))]);
+    let reverb = ("reverb".to_string(), vec![("decay_seconds".to_string(), Value::Number(2.0))]);
     let chain = engine.start_effects(&[echo, reverb])?;
 
     let note = Event::Note {

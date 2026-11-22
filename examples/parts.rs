@@ -31,7 +31,7 @@ fn main() -> Result<(), Error> {
 
     let chords = engine.start_part("chords", &[effect("lpf", &[("cutoff", 60.0)])])?;
     let echo = effect("echo", &[("phase", BAR / 8.0 * 3.0), ("mix", 0.4)]);
-    let reverb = effect("reverb", &[("room", 0.8), ("mix", 0.5)]);
+    let reverb = effect("reverb", &[("decay_seconds", 3.0), ("mix", 0.5)]);
     let lead = engine.start_part("lead", &[echo, reverb])?;
 
     let start = engine.now() + 0.1;

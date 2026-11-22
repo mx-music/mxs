@@ -11,7 +11,7 @@
 //!     synths::all().into_iter().for_each(|s| engine.register(s));
 //!     effects::all().into_iter().for_each(|e| engine.register_effect(e));
 //!
-//!     let reverb = ("reverb".to_string(), vec![("room".to_string(), Value::Number(0.6))]);
+//!     let reverb = ("reverb".to_string(), vec![("decay_seconds".to_string(), Value::Number(3.0))]);
 //!     let chain = engine.start_effects(&[reverb])?;
 //!
 //!     let note = Event::Note {
@@ -40,7 +40,6 @@ use std::f32::consts::{FRAC_PI_4, TAU};
 pub fn all() -> Vec<Effect> {
     vec![
         level(),
-        reverb(),
         echo(),
         lpf(),
         hpf(),
@@ -59,7 +58,7 @@ pub fn all() -> Vec<Effect> {
         pitch_shift(),
         eq(),
         limiter(),
-        hall(),
+        reverb(),
         phaser(),
     ]
 }
@@ -97,27 +96,6 @@ fn level() -> Effect {
 
 fn reverb() -> Effect {
     Effect::new("reverb")
-        .option(
-            Spec::float("room")
-                .default(0.6)
-                .range(0.0, 1.0)
-                .doc("How big the room is."),
-        )
-        .option(
-            Spec::float("damp")
-                .default(0.5)
-                .range(0.0, 1.0)
-                .doc("How much the room dulls the high frequencies."),
-        )
-        .tail_from(|o| (o.number("room") * 10.0 + 1.0).min(11.0))
-        .build(|o, _| {
-            (net(multipass::<U2>()) | o.follow("room") | o.follow("damp"))
-                >> net(An(Freeverb::new()))
-        })
-}
-
-fn hall() -> Effect {
-    Effect::new("hall")
         .option(
             Spec::float("size")
                 .default(20.0)
@@ -158,7 +136,7 @@ fn hall() -> Effect {
                 }
             });
             let room = (late | o.follow("decay_seconds") | o.follow("damp"))
-                >> net(An(Hall::new(o.number("size") as f32)));
+                >> net(An(Reverb::new(o.number("size") as f32)));
             room >> per_channel(|| {
                 (net(pass()) | cutoff(o, "low_cut") | net(dc(FRAC_1_SQRT_2)))
                     >> net(highpass::<f32>())
@@ -1151,60 +1129,60 @@ impl AudioNode for Comb {
 /// Three all-passes a side smear what comes in, and the longest lines are read at a slowly moving point, which keeps a long tail from ringing at fixed pitches.
 /// Inputs: left, right, the decay in seconds, damp; it gives the wet sound only.
 #[derive(Clone)]
-struct Hall {
+struct Reverb {
     size: f32,
     smear: f32,
     moving: f32,
     rate: f32,
     lines: Vec<Vec<f32>>,
-    at: [usize; HALL_LINES],
-    dulled: [f32; HALL_LINES],
-    gains: [f32; HALL_LINES],
+    at: [usize; REVERB_LINES],
+    dulled: [f32; REVERB_LINES],
+    gains: [f32; REVERB_LINES],
     smears: Vec<Vec<f32>>,
     smear_at: [usize; 6],
     /// The decay and damp the gains and the low-pass were last worked out for.
     set: (f32, f32),
     /// How much of its last value each line's low-pass keeps.
-    keeps: [f32; HALL_LINES],
+    keeps: [f32; REVERB_LINES],
     turns: [f32; 8],
 }
 
-const HALL_LINES: usize = 16;
+const REVERB_LINES: usize = 16;
 /// The length of each line as a share of the time sound takes to cross the room, left and right in turn.
-const HALL_LENGTHS: [f32; HALL_LINES] = [
+const REVERB_LENGTHS: [f32; REVERB_LINES] = [
     0.350, 0.375, 0.403, 0.432, 0.463, 0.497, 0.533, 0.571, 0.613, 0.657, 0.705, 0.756, 0.811,
     0.870, 0.933, 1.000,
 ];
 /// The length of each all-pass on the way in as a share of that time, three for the left and three for the right.
-const HALL_SMEARS: [f32; 6] = [0.079, 0.083, 0.121, 0.127, 0.167, 0.173];
+const REVERB_SMEARS: [f32; 6] = [0.079, 0.083, 0.121, 0.127, 0.167, 0.173];
 /// The share of each side's sound that crosses to the other each time round, as the sine and cosine of the rotation.
-const HALL_CROSS: (f32, f32) = (0.3873, 0.9220);
+const REVERB_CROSS: (f32, f32) = (0.3873, 0.9220);
 const SPEED_OF_SOUND: f32 = 343.0;
 
-impl Hall {
+impl Reverb {
     fn new(size: f32) -> Self {
-        Hall::shaped(size, 0.6, 6.0)
+        Reverb::shaped(size, 0.6, 6.0)
     }
 
-    /// A hall whose all-passes feed back by `smear` and whose long lines' read points move by `moving` frames either way.
+    /// A room whose all-passes feed back by `smear` and whose long lines' read points move by `moving` frames either way.
     fn shaped(size: f32, smear: f32, moving: f32) -> Self {
-        let mut hall = Hall {
+        let mut reverb = Reverb {
             size,
             smear,
             moving,
             rate: DEFAULT_SR as f32,
             lines: Vec::new(),
-            at: [0; HALL_LINES],
-            dulled: [0.0; HALL_LINES],
-            gains: [0.0; HALL_LINES],
+            at: [0; REVERB_LINES],
+            dulled: [0.0; REVERB_LINES],
+            gains: [0.0; REVERB_LINES],
             smears: Vec::new(),
             smear_at: [0; 6],
             set: (f32::NAN, f32::NAN),
-            keeps: [0.0; HALL_LINES],
+            keeps: [0.0; REVERB_LINES],
             turns: [0.0; 8],
         };
-        hall.set_sample_rate(DEFAULT_SR);
-        hall
+        reverb.set_sample_rate(DEFAULT_SR);
+        reverb
     }
 
     /// The frames of a share of the room's crossing time, moved up to a prime so no two lines repeat together.
@@ -1239,18 +1217,18 @@ fn hadamard(values: &mut [f32; 8]) {
     }
 }
 
-impl AudioNode for Hall {
+impl AudioNode for Reverb {
     const ID: u64 = 0x6d78_007c;
     type Inputs = U4;
     type Outputs = U2;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
         self.rate = sample_rate as f32;
-        self.lines = HALL_LENGTHS
+        self.lines = REVERB_LENGTHS
             .iter()
             .map(|share| vec![0.0; self.frames(*share)])
             .collect();
-        self.smears = HALL_SMEARS
+        self.smears = REVERB_SMEARS
             .iter()
             .map(|share| vec![0.0; self.frames(*share)])
             .collect();
@@ -1260,8 +1238,8 @@ impl AudioNode for Hall {
     fn reset(&mut self) {
         self.lines.iter_mut().for_each(|line| line.fill(0.0));
         self.smears.iter_mut().for_each(|line| line.fill(0.0));
-        (self.at, self.smear_at) = ([0; HALL_LINES], [0; 6]);
-        self.dulled = [0.0; HALL_LINES];
+        (self.at, self.smear_at) = ([0; REVERB_LINES], [0; 6]);
+        self.dulled = [0.0; REVERB_LINES];
         self.set = (f32::NAN, f32::NAN);
         self.turns = std::array::from_fn(|i| i as f32 / 8.0);
     }
@@ -1272,7 +1250,7 @@ impl AudioNode for Hall {
             self.set = (decay, damp);
             // The highest frequencies fade in this share of the decay time: all of it with no damping, a twentieth with all.
             let share = (1.0 - damp).powf(1.5).max(0.05);
-            for i in 0..HALL_LINES {
+            for i in 0..REVERB_LINES {
                 let gain = 0.001f32.powf(self.lines[i].len() as f32 / (self.rate * decay));
                 self.gains[i] = gain;
                 self.keeps[i] = 1.0 - 2.0 / (1.0 + gain.powf(1.0 - 1.0 / share));
@@ -1292,7 +1270,7 @@ impl AudioNode for Hall {
         // The four longest lines of each side are read up to 12 frames short of their length, each moving at its own slow rate.
         let mut heard = [[0.0f32; 8]; 2];
         let mut out = [0.0f32; 2];
-        for i in 0..HALL_LINES {
+        for i in 0..REVERB_LINES {
             let line = &self.lines[i];
             let read = if i >= 8 {
                 let turn = &mut self.turns[i - 8];
@@ -1314,8 +1292,8 @@ impl AudioNode for Hall {
 
         hadamard(&mut heard[0]);
         hadamard(&mut heard[1]);
-        let (cross, keep) = HALL_CROSS;
-        for i in 0..HALL_LINES {
+        let (cross, keep) = REVERB_CROSS;
+        for i in 0..REVERB_LINES {
             let (own, other) = (heard[i % 2][i / 2], heard[1 - i % 2][i / 2]);
             let turned = if i % 2 == 0 {
                 own * keep + other * cross
@@ -1327,92 +1305,6 @@ impl AudioNode for Hall {
             self.at[i] = (at + 1) % self.lines[i].len();
         }
         [out[0] * 0.2, out[1] * 0.2].into()
-    }
-}
-
-/// Jezar's Freeverb, in the public domain: eight damped combs and four all-passes per channel, the right channel's tuned 23 samples longer.
-/// Inputs: left, right, room, damp; it gives the wet sound only.
-#[derive(Clone)]
-struct Freeverb {
-    combs: [Vec<Vec<f32>>; 2],
-    comb_at: [[usize; 8]; 2],
-    stores: [[f32; 8]; 2],
-    allpasses: [Vec<Vec<f32>>; 2],
-    allpass_at: [[usize; 4]; 2],
-}
-
-const COMBS: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
-const ALLPASSES: [usize; 4] = [556, 441, 341, 225];
-const SPREAD: usize = 23;
-
-impl Freeverb {
-    fn new() -> Self {
-        let mut verb = Freeverb {
-            combs: [Vec::new(), Vec::new()],
-            comb_at: [[0; 8]; 2],
-            stores: [[0.0; 8]; 2],
-            allpasses: [Vec::new(), Vec::new()],
-            allpass_at: [[0; 4]; 2],
-        };
-        verb.set_sample_rate(DEFAULT_SR);
-        verb
-    }
-}
-
-impl AudioNode for Freeverb {
-    const ID: u64 = 0x6d78_0011;
-    type Inputs = U4;
-    type Outputs = U2;
-
-    fn set_sample_rate(&mut self, sample_rate: f64) {
-        let scale = sample_rate / 44_100.0;
-        let length = |n: usize| Ord::max((n as f64 * scale).round() as usize, 1);
-        for side in 0..2 {
-            self.combs[side] = COMBS
-                .iter()
-                .map(|&n| vec![0.0; length(n + side * SPREAD)])
-                .collect();
-            self.allpasses[side] = ALLPASSES
-                .iter()
-                .map(|&n| vec![0.0; length(n + side * SPREAD)])
-                .collect();
-        }
-        self.comb_at = [[0; 8]; 2];
-        self.allpass_at = [[0; 4]; 2];
-        self.stores = [[0.0; 8]; 2];
-    }
-
-    fn reset(&mut self) {
-        self.set_sample_rate(DEFAULT_SR);
-    }
-
-    fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U2> {
-        let feedback = input[2].clamp(0.0, 1.0) * 0.28 + 0.7;
-        let damp = input[3].clamp(0.0, 1.0) * 0.4;
-        let sound = (input[0] + input[1]) * 0.015;
-        let mut out = [0.0f32; 2];
-        for (side, out) in out.iter_mut().enumerate() {
-            let mut sum = 0.0;
-            for k in 0..8 {
-                let buffer = &mut self.combs[side][k];
-                let at = self.comb_at[side][k];
-                let y = buffer[at];
-                self.stores[side][k] = y * (1.0 - damp) + self.stores[side][k] * damp;
-                buffer[at] = sound + self.stores[side][k] * feedback;
-                self.comb_at[side][k] = (at + 1) % buffer.len();
-                sum += y;
-            }
-            for k in 0..4 {
-                let buffer = &mut self.allpasses[side][k];
-                let at = self.allpass_at[side][k];
-                let held = buffer[at];
-                buffer[at] = sum + held * 0.5;
-                sum = held - sum;
-                self.allpass_at[side][k] = (at + 1) % buffer.len();
-            }
-            *out = sum;
-        }
-        out.into()
     }
 }
 

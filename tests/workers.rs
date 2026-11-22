@@ -17,7 +17,7 @@ fn engine(workers: usize) -> Engine {
 fn song(engine: &mut Engine) -> (Vec<f32>, Vec<f32>) {
     let reverb = (
         "reverb".to_string(),
-        vec![("room".to_string(), Value::Number(0.7))],
+        vec![("decay_seconds".to_string(), Value::Number(2.0))],
     );
     let chain = engine.start_effects(&[reverb]).unwrap();
     let mut events = Vec::new();

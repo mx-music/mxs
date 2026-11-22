@@ -73,7 +73,7 @@ fn main() -> Result<(), mxs::Error> {
     let mut engine = Engine::live_with_input()?;
     effects::all().into_iter().for_each(|e| engine.register_effect(e));
 
-    let reverb = ("reverb".to_string(), vec![("room".to_string(), Value::Number(0.8))]);
+    let reverb = ("reverb".to_string(), vec![("decay_seconds".to_string(), Value::Number(3.0))]);
     let chain = engine.start_effects(&[reverb])?;
     let microphone = Event::Input {
         id: Some(1),

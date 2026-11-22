@@ -64,7 +64,7 @@ fn rendered() -> Vec<(Vec<f32>, Vec<f32>)> {
         .for_each(|e| engine.register_effect(e));
     let reverb = (
         "reverb".to_string(),
-        vec![("room".to_string(), Value::Number(0.6))],
+        vec![("decay_seconds".to_string(), Value::Number(2.0))],
     );
     let chain = engine.start_effects(&[reverb]).unwrap();
     let sample = engine.load_sample_bytes("tone.wav", &tone()).unwrap();
