@@ -17,6 +17,7 @@
   * [graph] Add `clicks`, clicks at random times at a `rate` a second, and `struck`, which rises over `attack` and falls over `fall` at each click of its sound, as mxs's shakers, cabasa and guiro use
   * [graph] `mode` given a sound in `hz`, or in its list, rings at the frequency the sound gives at each sample, gliding as mxs's sitar does
   * [graph] `impulse` takes `at`, `period` and `until`: one at `at` seconds and again every `period` before `until`, as the tanpura plucks its strings
+  * [graph] Add `draw`, the note's numbers from 0 up to 1 from a seed that mixes in how many notes of the synth came before, and `noise` takes `drawn`, seeded from the same, as mxs's caxixi and cuíca draw theirs; a synth whose draws take different mixes is refused when registered
 
 ## v0.5.0 (2026-11-22)
 

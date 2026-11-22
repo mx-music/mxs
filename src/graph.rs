@@ -18,7 +18,7 @@
 //! | `sine(hz:, phase:)` | A sine wave; `phase` is in radians, and 0 unless given. |
 //! | `saw(hz:)`, `square(hz:)`, `triangle(hz:)` | The wave named. |
 //! | `pulse(hz:, width:)` | A pulse wave; `width` is the part of each cycle that is up, and a half unless given. |
-//! | `noise(colour, seed:)` | Noise; `colour` is the name `white` or `pink`, and `seed`, if given, fixes its numbers instead of drawing a seed from the note. |
+//! | `noise(colour, seed:, drawn:, mix:)` | Noise; `colour` is the name `white` or `pink`, and `seed`, if given, fixes its numbers instead of drawing a seed from the note; `drawn` seeds it with the note's seed from `draw`, taken with `mix`, plus `drawn`. |
 //! | `clicks(rate:, seed:)` | Clicks at random times, `rate` a second on average, which may change as the note sounds, each of a random level from 0 to 1; `seed`, if given, fixes them instead of drawing a seed from the note. |
 //! | `time(every:)` | The seconds since the note started, starting over every `every` seconds if given, worked out before the sound is rounded to a sample's precision. |
 //! | `follow(option)` | An option as a signal, which glides to each new value it is given while the note sounds. |
@@ -91,6 +91,7 @@
 //! | `neg`, `abs`, `log2`, `exp`, `sin`, `cos` | Of one value. |
 //! | `hz`, `db` | The frequency of a MIDI note, and the gain of a level in decibels. |
 //! | `clamp(x, low, high)` | `x` held from `low` to `high`. |
+//! | `draw(index, mix:)` | The note's `index`th number from 0 up to 1, from 0, drawn from the note's seed: the next seed the note draws, mixed with how many notes of the synth came before times `mix`, 0 unless given; `mix` is a whole number, or one too large for a float given as the name of its digits, and every draw and drawn noise of a note takes the same. |
 //! | `lt`, `gt`, `le`, `ge`, `eq`, `ne` | 1 when the comparison of two values holds, and 0 otherwise; `eq` and `ne` also compare an option that takes names with one of its names, and an option that takes names goes nowhere else. |
 //! | `select(condition, then, otherwise)` | `then` when `condition` is not 0, and `otherwise` when it is. |
 //! | `or_else(option, fallback)` | An option's value when the note gave one, and `fallback` otherwise. |
@@ -180,7 +181,7 @@ impl Graph {
 
 const ARITHMETIC: &[&str] = &[
     "add", "sub", "mul", "div", "mod", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs",
-    "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
+    "sin", "cos", "hz", "db", "draw", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
 ];
 const NODES: &[&str] = &[
     "impulse",
@@ -269,6 +270,8 @@ const NEEDS: &[(&str, &[&str])] = &[
 const TAKES: &[(&str, &[&str])] = &[
     ("time", &["every"]),
     ("impulse", &["at", "period", "until"]),
+    ("noise", &["seed", "drawn", "mix"]),
+    ("draw", &["mix"]),
     ("sweep", &["length", "wave", "invert", "offset", "width"]),
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz", "q"]),
@@ -299,6 +302,13 @@ impl Synth {
         for clause in &clauses {
             known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
             named_options(&clause.graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
+            let mut mixes = Vec::new();
+            mixes_in(&clause.graph, &mut mixes);
+            if mixes.windows(2).any(|pair| pair[0] != pair[1]) {
+                return Err(format!(
+                    "{name}: each draw and drawn noise of a note takes the same mix"
+                ));
+            }
             if ["input", "left", "right", "sides", "tail"]
                 .iter()
                 .any(|node| calls(&clause.graph, node))
@@ -307,7 +317,9 @@ impl Synth {
             }
         }
         let owner = name.to_string();
+        let notes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
         Ok(Synth::new(name).options(specs).build(move |options, ctx| {
+            let count = notes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let Some(clause) = clauses
                 .iter()
                 .find(|c| c.matches.iter().all(|(k, v)| options.value(k) == v))
@@ -317,6 +329,8 @@ impl Synth {
             match (Build {
                 options,
                 ctx,
+                count,
+                drawn: None,
                 inputs: None,
                 sides: 0,
             })
@@ -406,6 +420,8 @@ impl Effect {
                 let mut build = Build {
                     options,
                     ctx,
+                    count: 0,
+                    drawn: None,
                     inputs: Some(Vec::new()),
                     sides: width,
                 };
@@ -536,6 +552,22 @@ fn compared<'g>(a: &'g Graph, b: &'g Graph) -> Option<(&'g str, &'g str)> {
     }
 }
 
+/// The mixes given to `draw` and to a drawn `noise` in `graph`, in order.
+fn mixes_in<'a>(graph: &'a Graph, mixes: &mut Vec<&'a Graph>) {
+    stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
+        Graph::List(items) => items.iter().for_each(|item| mixes_in(item, mixes)),
+        Graph::Call { name, args, named } => {
+            if matches!(name.as_str(), "draw" | "noise") {
+                mixes.extend(named.iter().filter(|(k, _)| k == "mix").map(|(_, v)| v));
+            }
+            args.iter()
+                .chain(named.iter().map(|(_, v)| v))
+                .for_each(|g| mixes_in(g, mixes));
+        }
+        _ => {}
+    })
+}
+
 fn known(graph: &Graph) -> Result<(), String> {
     stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
         Graph::List(items) => items.iter().try_for_each(known),
@@ -660,6 +692,10 @@ fn mul(a: V, b: V) -> Result<V, String> {
 struct Build<'a> {
     options: &'a Options,
     ctx: &'a mut Context,
+    /// How many notes the synth started before this one, which `draw` mixes into the note's seed.
+    count: u64,
+    /// The mix and the seed `draw` and a drawn noise take from, once the first of them asks.
+    drawn: Option<(u64, u64)>,
     /// The channel an effect's graph takes each time it takes its input so far, in order; None in a synth, which has none.
     inputs: Option<Vec<usize>>,
     /// How many channels an effect's graph is built over: 1 for each channel on its own, 2 for both sides, and 0 in a synth.
@@ -909,6 +945,13 @@ impl Build<'_> {
                 let fall = number(take("fall").ok_or("struck needs fall:")?, "a strike's fall")?;
                 Ok(V::Sig(sound >> nodes::decay2(attack, fall)))
             }
+            "draw" => {
+                let index = number(arg(0)?, "a draw's index")? as usize;
+                let mut draws = nodes::Draws::new(self.note_seed(take("mix"))?);
+                Ok(V::Num(
+                    (0..=index).map(|_| draws.draw()).last().unwrap_or(0.0),
+                ))
+            }
             "time" => match take("every") {
                 Some(every) => {
                     let every = number(every, "a time's every")?;
@@ -1014,9 +1057,13 @@ impl Build<'_> {
             }
             "noise" => {
                 let colour = arg(0)?;
-                let seed = match take("seed") {
-                    Some(seed) => number(seed, "a noise's seed")? as u64,
-                    None => self.ctx.seed(),
+                let seed = match (take("seed"), take("drawn")) {
+                    (Some(seed), _) => number(seed, "a noise's seed")? as u64,
+                    (None, Some(offset)) => {
+                        let offset = number(offset, "a noise's drawn")? as u64;
+                        self.note_seed(take("mix"))?.wrapping_add(offset)
+                    }
+                    (None, None) => self.ctx.seed(),
                 };
                 match colour {
                     V::Name(colour) if colour == "white" => Ok(V::Sig(nodes::white_noise(seed))),
@@ -1254,6 +1301,29 @@ impl Build<'_> {
     }
 
     /// The sound a share's `through` makes of its one sound, built once and fed to each of its uses.
+    /// The note's seed for `draw` and a drawn noise: the context's next seed mixed with how many notes came before, `mix` times; drawn once, at the first that asks.
+    fn note_seed(&mut self, mix: Option<V>) -> Result<u64, String> {
+        let mix = match mix {
+            None => 0,
+            Some(V::Num(x)) if x >= 0.0 && x.fract() == 0.0 && x < 2f64.powi(53) => x as u64,
+            Some(V::Name(digits)) => digits
+                .parse::<u64>()
+                .map_err(|_| format!("a draw's mix is a whole number, not {digits}"))?,
+            Some(_) => {
+                return Err("a draw's mix is a whole number known when the note starts".to_string());
+            }
+        };
+        match self.drawn {
+            Some((taken, seed)) if taken == mix => Ok(seed),
+            Some(_) => Err("each draw and drawn noise of a note takes the same mix".to_string()),
+            None => {
+                let seed = self.ctx.seed() ^ self.count.wrapping_mul(mix);
+                self.drawn = Some((mix, seed));
+                Ok(seed)
+            }
+        }
+    }
+
     fn share(&mut self, args: &[Graph], named: &[(String, Graph)]) -> Result<V, String> {
         let [sound] = args else {
             return Err("share takes the sound it shares".to_string());

@@ -1,6 +1,8 @@
 use fundsp::prelude::*;
 use mxs::graph::{Clause, Graph};
-use mxs::nodes::{decay2, dust, hz, modes, pulses, shape, struck, struck_gliding, white_noise};
+use mxs::nodes::{
+    Draws, decay2, dust, hz, modes, pulses, shape, struck, struck_gliding, white_noise,
+};
 use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
 
 fn n(x: f64) -> Graph {
@@ -1022,7 +1024,7 @@ fn mode_given_a_sound_in_hz_glides_as_struck_gliding_does_in_rust() {
     let rust = Synth::new("gliding").build(|_, _| {
         let pitch = || shape(|t| t) * 100.0 + 220.0;
         let one =
-            |k: f32, level: f64, fade: f64| (pass() | pitch() * k) >> struck_gliding(level, fade);
+            |k: f32, level: f64, fade: f64| (pass() | (pitch() * k)) >> struck_gliding(level, fade);
         Note::rings(
             impulse::<U1>() >> (one(1.0, 1.0, 0.4) & one(3.0, 0.3, 0.2)),
             0.5,
@@ -1040,7 +1042,7 @@ fn mode_given_a_sound_in_hz_glides_as_struck_gliding_does_in_rust() {
     let rust = Synth::new("alone").build(|_, _| {
         Note::rings(
             impulse::<U1>()
-                >> ((pass() | shape(|t| t) * 100.0 + 220.0) >> struck_gliding(1.0, 0.4)),
+                >> ((pass() | (shape(|t| t) * 100.0 + 220.0)) >> struck_gliding(1.0, 0.4)),
             0.5,
         )
     });
@@ -1063,4 +1065,83 @@ fn impulse_given_at_period_and_until_plucks_as_the_tanpuras_pulses_do() {
     assert_eq!(fired[0], (0.1 * RATE) as usize);
     let rust = Synth::new("train").build(|_, _| Note::rings(pulses(0.1, 0.15, 0.45), 0.5));
     assert_eq!(traced, render(rust, &[]));
+}
+
+/// Two notes of `synth`, half a second apart, in one engine.
+fn two_notes(synth: Synth) -> Vec<f32> {
+    let mut engine = Engine::offline(RATE);
+    let name = synth.name().to_string();
+    engine.register(synth);
+    let note = |at: f64| {
+        (
+            at,
+            Event::Note {
+                id: None,
+                synth: name.clone(),
+                options: Default::default(),
+                chain: None,
+                held: false,
+            },
+        )
+    };
+    engine.play(&[note(0.0), note(0.5)]).unwrap();
+    engine.render(1.0).unwrap().0
+}
+
+#[test]
+fn draw_and_a_drawn_noise_take_the_notes_seed_mixed_with_how_many_notes_came_before() {
+    const MIX: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mix = || ("mix", Graph::Name(MIX.to_string()));
+    let drawn = Graph::call(
+        "mul",
+        vec![
+            Graph::call(
+                "noise",
+                vec![Graph::Name("white".into())],
+                vec![("drawn", n(3.0)), mix()],
+            ),
+            Graph::call("draw", vec![n(1.0)], vec![mix()]),
+        ],
+        vec![],
+    );
+    let traced = Synth::graph(
+        "drawn",
+        note_specs(),
+        vec![Clause {
+            matches: vec![],
+            graph: rings(drawn, 0.3),
+        }],
+    )
+    .unwrap();
+    let notes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let rust = Synth::new("drawn")
+        .options(note_specs())
+        .build(move |_, ctx| {
+            let count = notes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let seed = ctx.seed() ^ count.wrapping_mul(MIX);
+            let mut draws = Draws::new(seed);
+            draws.draw();
+            let level = draws.draw();
+            Note::rings(white_noise(seed.wrapping_add(3)) * level as f32, 0.3)
+        });
+    let traced = two_notes(traced);
+    let half = (0.5 * RATE) as usize;
+    assert!(traced[..half] != traced[half..2 * half]);
+    assert_eq!(traced, two_notes(rust));
+
+    let refused = plain(
+        "mixed",
+        Graph::call(
+            "mul",
+            vec![
+                Graph::call("draw", vec![n(0.0)], vec![("mix", n(1.0))]),
+                Graph::call("draw", vec![n(0.0)], vec![("mix", n(2.0))]),
+            ],
+            vec![],
+        ),
+    );
+    assert_eq!(
+        refused.err().unwrap(),
+        "mixed: each draw and drawn noise of a note takes the same mix"
+    );
 }
