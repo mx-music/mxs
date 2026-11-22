@@ -3717,6 +3717,35 @@ mod tests {
     }
 
     #[test]
+    fn live_input_plays_through_the_main_effects() {
+        let played = |main: Option<f64>| {
+            let (mut engine, mut feed) = Engine::offline_with_input(48_000.0, 1);
+            crate::effects::all()
+                .into_iter()
+                .for_each(|e| engine.register_effect(e));
+            if let Some(amp) = main {
+                let level = (
+                    "level".to_string(),
+                    vec![("amp".to_string(), Value::Number(amp))],
+                );
+                engine.start_main_effects(&[level], false).unwrap();
+            }
+            let input = Event::Input {
+                id: Some(1),
+                input: 0,
+                channels: 1,
+                options: vec![],
+                chain: None,
+            };
+            engine.play(&[(0.0, input)]).unwrap();
+            render_fed(&mut engine, &mut feed, 0.2, &[0.5]).0
+        };
+        let (straight, halved) = (played(None), played(Some(0.5)));
+        assert!(straight[4000] > 0.0);
+        assert!((straight[4000] * 0.5 - halved[4000]).abs() < 1e-6);
+    }
+
+    #[test]
     fn a_recording_of_an_input_writes_it_centred() {
         let dir = std::env::temp_dir().join(format!("mxs-input-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
