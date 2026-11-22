@@ -19,6 +19,7 @@
 //! | `saw(hz:)`, `square(hz:)`, `triangle(hz:)` | The wave named. |
 //! | `pulse(hz:, width:)` | A pulse wave; `width` is the part of each cycle that is up, and a half unless given. |
 //! | `noise(colour, seed:)` | Noise; `colour` is the name `white` or `pink`, and `seed`, if given, fixes its numbers instead of drawing a seed from the note. |
+//! | `clicks(rate:, seed:)` | Clicks at random times, `rate` a second on average, which may change as the note sounds, each of a random level from 0 to 1; `seed`, if given, fixes them instead of drawing a seed from the note. |
 //! | `time(every:)` | The seconds since the note started, starting over every `every` seconds if given, worked out before the sound is rounded to a sample's precision. |
 //! | `follow(option)` | An option as a signal, which glides to each new value it is given while the note sounds. |
 //! | `input()` | In an effect, the channel coming in. |
@@ -37,6 +38,7 @@
 //! | `dc_block(sound, hz:)` | Takes its constant offset away, below `hz`, 10 unless given. |
 //! | `allpass(sound, hz:, q:)` | Passes every frequency at the same level and shifts its phase around `hz`; `q` is 0.707 unless given, and both may change while it sounds. |
 //! | `lag(sound, seconds:)` | Glides to it, falling 60 dB short of each step over `seconds`, known when the note starts. |
+//! | `struck(sound, attack:, fall:)` | Rises over `attack` and falls over `fall` seconds, both 60 dB times known when the note starts, at each click or impulse of the sound, starting again at the next. |
 //!
 //! ## Distortion
 //!
@@ -222,6 +224,8 @@ const NODES: &[&str] = &[
     "follower",
     "allpass",
     "lag",
+    "clicks",
+    "struck",
     "sides",
     "tail",
 ];
@@ -257,6 +261,8 @@ const NEEDS: &[(&str, &[&str])] = &[
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz"]),
     ("lag", &["seconds"]),
+    ("clicks", &["rate"]),
+    ("struck", &["attack", "fall"]),
 ];
 
 /// The arguments by name each of these calls takes, any other being refused when the graph is checked.
@@ -266,6 +272,8 @@ const TAKES: &[(&str, &[&str])] = &[
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz", "q"]),
     ("lag", &["seconds"]),
+    ("clicks", &["rate", "seed"]),
+    ("struck", &["attack", "fall"]),
     ("share", &["through"]),
     ("tail", &["seconds", "option"]),
     ("sides", &[]),
@@ -864,6 +872,23 @@ impl Build<'_> {
                     "a lag's seconds",
                 )?;
                 Ok(V::Sig(sound >> net(An(crate::effects::Lag::new(seconds)))))
+            }
+            "clicks" => {
+                let rate = signal(take("rate").ok_or("clicks needs rate:")?)?;
+                let seed = match take("seed") {
+                    Some(seed) => number(seed, "a click's seed")? as u64,
+                    None => self.ctx.seed(),
+                };
+                Ok(V::Sig(rate >> nodes::dust(seed)))
+            }
+            "struck" => {
+                let sound = signal(arg(0)?)?;
+                let attack = number(
+                    take("attack").ok_or("struck needs attack:")?,
+                    "a strike's attack",
+                )?;
+                let fall = number(take("fall").ok_or("struck needs fall:")?, "a strike's fall")?;
+                Ok(V::Sig(sound >> nodes::decay2(attack, fall)))
             }
             "time" => match take("every") {
                 Some(every) => {

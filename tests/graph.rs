@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
 use mxs::graph::{Clause, Graph};
-use mxs::nodes::{hz, modes, shape, struck, white_noise};
+use mxs::nodes::{decay2, dust, hz, modes, shape, struck, white_noise};
 use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
 
 fn n(x: f64) -> Graph {
@@ -954,4 +954,42 @@ fn time_given_every_starts_over_at_that_period_on_the_same_sample_as_a_voice_in_
         }],
     );
     assert_eq!(refused.err().unwrap(), "often: time does not take often:");
+}
+
+fn plain(name: &str, graph: Graph) -> Result<Synth, String> {
+    Synth::graph(
+        name,
+        note_specs(),
+        vec![Clause {
+            matches: vec![],
+            graph: rings(graph, 0.5),
+        }],
+    )
+}
+
+#[test]
+fn clicks_and_struck_play_as_dust_and_decay2_do_in_rust() {
+    let clicks = || Graph::call("clicks", vec![], vec![("rate", n(400.0)), ("seed", n(7.0))]);
+    let rust = Synth::new("clicks").build(|_, _| Note::rings(dc(400.0) >> dust(7), 0.5));
+    let traced = render(plain("clicks", clicks()).unwrap(), &[]);
+    assert!(traced.iter().filter(|x| **x != 0.0).count() > 100);
+    assert_eq!(traced, render(rust, &[]));
+
+    let struck_clicks = Graph::call(
+        "struck",
+        vec![clicks()],
+        vec![("attack", n(0.0001)), ("fall", n(0.0008))],
+    );
+    let rust = Synth::new("struck")
+        .build(|_, _| Note::rings((dc(400.0) >> dust(7)) >> decay2(0.0001, 0.0008), 0.5));
+    assert_eq!(
+        render(plain("struck", struck_clicks).unwrap(), &[]),
+        render(rust, &[])
+    );
+
+    let refused = plain(
+        "unfallen",
+        Graph::call("struck", vec![clicks()], vec![("attack", n(0.001))]),
+    );
+    assert_eq!(refused.err().unwrap(), "unfallen: struck needs fall:");
 }

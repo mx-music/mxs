@@ -13,6 +13,7 @@
   * [graph] `lowpass` and `highpass` given `poles: 1` are filters of one pole, falling 6 dB an octave, as mxs's snare, toms, congas and cuíca use; one given `q` beside it is refused when registered
   * [graph] Add `mod`, the remainder of its first argument after its second, from 0 up to the second for any first, so an envelope can start over at a period
   * [graph] `time` takes `every`, the seconds after which it starts over, worked out as a Rust voice does, so it starts over on the same sample, where `mod` of `time` can start over one sample early
+  * [graph] Add `clicks`, clicks at random times at a `rate` a second, and `struck`, which rises over `attack` and falls over `fall` at each click of its sound, as mxs's shakers, cabasa and guiro use
 
 ## v0.5.0 (2026-11-22)
 
