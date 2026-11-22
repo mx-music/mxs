@@ -260,6 +260,13 @@ pub enum Error {
         /// How many channels the sound had.
         outputs: usize,
     },
+    /// An effect could not be built from the options it was given.
+    CannotBuild {
+        /// The effect.
+        owner: String,
+        /// Why it could not be built.
+        reason: String,
+    },
     /// A sample could not be loaded or is not usable; the reason.
     Sample(String),
     /// A device could not be used; the reason.
@@ -325,6 +332,9 @@ impl std::fmt::Display for Error {
             }
             Error::BadSound { owner, outputs } => {
                 write!(f, "{owner} made a sound of {outputs} channels, not 1 or 2")
+            }
+            Error::CannotBuild { owner, reason } => {
+                write!(f, "effect {owner} could not be built: {reason}")
             }
             Error::Sample(reason) => write!(f, "{reason}"),
             Error::Device(reason) => write!(f, "{reason}"),
@@ -1037,7 +1047,22 @@ impl Engine {
                 }
                 options.in_beats(60.0 / bpm);
             }
-            let wet = build(&options, &mut Context::new(owner.clone()));
+            let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                build(&options, &mut Context::new(owner.clone()))
+            }));
+            let wet = built.map_err(|panic| {
+                let said = panic.downcast_ref::<String>().cloned();
+                let said = said.or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()));
+                let reason = said.unwrap_or_else(|| "it panicked".to_string());
+                let reason = reason
+                    .strip_prefix(&format!("{name}: "))
+                    .unwrap_or(&reason)
+                    .to_string();
+                Error::CannotBuild {
+                    owner: owner.to_string(),
+                    reason,
+                }
+            })?;
             if wet.inputs() != 2 || wet.outputs() != 2 {
                 return Err(Error::BadSound {
                     owner: owner.to_string(),

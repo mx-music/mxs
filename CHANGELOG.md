@@ -10,6 +10,7 @@
 ### 2. Bug fixes
 
   * [graph] An effect whose graph takes its input in a sound that is multiplied by 0, or in the side a `select` leaves out when its condition is known as the effect starts, is built and plays the rest, where it panicked
+  * [engine] An effect that cannot be built when its chain starts is the error `CannotBuild`, naming the effect and why, where `start_effects` and `start_part` panicked
 
 ## v0.4.1 (2026-11-22)
 

@@ -806,3 +806,24 @@ fn an_effect_over_both_sides_whose_side_is_multiplied_by_0_plays_the_other() {
     assert!(peak(&right) > 0.01);
     assert_eq!(left, right);
 }
+
+#[test]
+fn an_effect_that_cannot_be_built_is_an_error_naming_it_when_its_chain_starts() {
+    let broken = named(
+        "delay",
+        vec![call("input", vec![])],
+        vec![("seconds", n(0.1)), ("max", call("input", vec![]))],
+    );
+    let effect = Effect::graph("broken", vec![], broken).unwrap();
+    let mut engine = Engine::offline(RATE);
+    engine.register_effect(effect);
+    let error = engine
+        .start_effects(&[("broken".to_string(), vec![])])
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        error,
+        "effect broken could not be built: a delay's max must be known when the note starts"
+    );
+    assert!(engine.start_effects(&[]).is_ok());
+}
