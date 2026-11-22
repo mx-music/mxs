@@ -654,7 +654,15 @@ impl Build<'_> {
                     .map(|g| self.eval(g))
                     .collect::<Result<_, _>>()?,
             )),
-            Graph::Call { name, args, named } => self.call(name, args, named),
+            Graph::Call { name, args, named } => {
+                let before = self.inputs.as_ref().map_or(0, Vec::len);
+                let value = self.call(name, args, named)?;
+                // A sound worked out to a number, as one multiplied by 0, takes no input any more.
+                if let (false, Some(uses)) = (matches!(value, V::Sig(_)), self.inputs.as_mut()) {
+                    uses.truncate(before);
+                }
+                Ok(value)
+            }
         })
     }
 
@@ -680,12 +688,17 @@ impl Build<'_> {
         if name == "air_jet" {
             return self.air_jet(named);
         }
+        let before = self.inputs.as_ref().map_or(0, Vec::len);
+        let mut ends = Vec::new();
         let mut args: Vec<V> = args
             .iter()
-            .map(|g| self.eval(g))
+            .map(|g| {
+                let v = self.eval(g);
+                ends.push(self.inputs.as_ref().map_or(0, Vec::len));
+                v
+            })
             .collect::<Result<_, _>>()?;
         let count = args.len();
-        let before = self.inputs.as_ref().map_or(0, Vec::len);
         let mut taking = 0;
         let mut named: Vec<(String, V)> = named
             .iter()
@@ -748,6 +761,15 @@ impl Build<'_> {
             "select" => match arg(0)? {
                 V::Num(c) => {
                     let (then, otherwise) = (arg(1)?, arg(2)?);
+                    // The side left out no longer takes the input it took.
+                    if let Some(uses) = self.inputs.as_mut() {
+                        let left_out = if c != 0.0 {
+                            ends[1]..ends[2]
+                        } else {
+                            ends[0]..ends[1]
+                        };
+                        uses.drain(left_out);
+                    }
                     Ok(if c != 0.0 { then } else { otherwise })
                 }
                 c => {

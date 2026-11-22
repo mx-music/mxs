@@ -738,3 +738,71 @@ fn a_noise_given_a_seed_plays_that_seed_and_leaves_the_note_s_seeds_to_the_rest(
     assert!(a.iter().any(|x| x.abs() > 0.01));
     assert_eq!(a, b);
 }
+
+/// One side of the saw through an effect of `graph`, with its options given.
+fn through_graph(specs: Vec<Spec>, graph: Graph, given: Vec<(&str, f64)>) -> (Vec<f32>, Vec<f32>) {
+    let effect = Effect::graph("probe", specs, graph).unwrap();
+    through_chain(vec![effect], &[("probe", given)])
+}
+
+#[test]
+fn an_effect_whose_input_is_multiplied_by_0_or_left_out_of_a_select_still_plays_the_rest() {
+    let input = || call("input", vec![]);
+    let (dry, _) = through_graph(vec![], input(), vec![]);
+    assert!(peak(&dry) > 0.01);
+
+    let silenced = call("add", vec![call("mul", vec![input(), n(0.0)]), input()]);
+    assert_eq!(through_graph(vec![], silenced, vec![]).0, dry);
+
+    let wet = || vec![Spec::float("wet").default(0.0)];
+    let mixed = || call("add", vec![call("mul", vec![input(), opt("wet")]), input()]);
+    assert_eq!(through_graph(wet(), mixed(), vec![]).0, dry);
+    let doubled = through_graph(wet(), mixed(), vec![("wet", 1.0)]).0;
+    assert!((peak(&doubled) - 2.0 * peak(&dry)).abs() < 1e-5);
+
+    let on = || vec![Spec::float("on").default(1.0)];
+    let picked = || {
+        call(
+            "add",
+            vec![
+                call(
+                    "select",
+                    vec![
+                        opt("on"),
+                        input(),
+                        call("mul", vec![call("add", vec![input(), input()]), n(0.25)]),
+                    ],
+                ),
+                input(),
+            ],
+        )
+    };
+    let whole = through_graph(on(), picked(), vec![]).0;
+    assert!((peak(&whole) - 2.0 * peak(&dry)).abs() < 1e-5);
+    let half = through_graph(on(), picked(), vec![("on", 0.0)]).0;
+    assert!((peak(&half) - 1.5 * peak(&dry)).abs() < 1e-5);
+}
+
+#[test]
+fn an_effect_over_both_sides_whose_side_is_multiplied_by_0_plays_the_other() {
+    let crossed = call(
+        "sides",
+        vec![
+            call(
+                "add",
+                vec![
+                    call("mul", vec![call("left", vec![]), n(0.0)]),
+                    call("right", vec![]),
+                ],
+            ),
+            call("right", vec![]),
+        ],
+    );
+    let swap = call("sides", vec![call("right", vec![]), call("left", vec![])]);
+    let swap = Effect::graph("swap", vec![], swap).unwrap();
+    let crossed = Effect::graph("crossed", vec![], crossed).unwrap();
+    let chain = [("lefty", vec![]), ("swap", vec![]), ("crossed", vec![])];
+    let (left, right) = through_chain(vec![lefty(), swap, crossed], &chain);
+    assert!(peak(&right) > 0.01);
+    assert_eq!(left, right);
+}
