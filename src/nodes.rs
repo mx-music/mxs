@@ -793,3 +793,104 @@ impl AudioNode for Ladder {
         self.moog.tick(&[input[0], cutoff, input[2]].into())
     }
 }
+
+/// A delay of `seconds` fed back into itself `feedback` times, through a one-pole low-pass at `lowpass` Hz and a one-pole high-pass at `highpass` Hz inside its loop, either left out at 0; its input is let in for the first `let_in` seconds only.
+/// It sounds only what comes back from the delay, the first time `seconds` after its input.
+pub fn fed_back(seconds: f64, feedback: f64, lowpass: f64, highpass: f64, let_in: f64) -> Net {
+    let mut node = FedBack {
+        seconds,
+        lowpass,
+        highpass,
+        let_in,
+        feedback: feedback as f32,
+        smooth: 0.0,
+        open: 0.0,
+        buffer: Vec::new(),
+        period: 0.0,
+        letting: 0.0,
+        at: 0,
+        written: 0,
+        smoothed: 0.0,
+        passed: 0.0,
+        before: 0.0,
+    };
+    node.set_sample_rate(DEFAULT_SR);
+    Net::wrap(Box::new(An(node)))
+}
+
+#[derive(Clone)]
+struct FedBack {
+    seconds: f64,
+    lowpass: f64,
+    highpass: f64,
+    let_in: f64,
+    feedback: f32,
+    smooth: f32,
+    open: f32,
+    buffer: Vec<f32>,
+    period: f32,
+    letting: f32,
+    at: usize,
+    written: usize,
+    smoothed: f32,
+    passed: f32,
+    before: f32,
+}
+
+impl AudioNode for FedBack {
+    const ID: u64 = 0x6d78_0031;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        let period = (sample_rate * self.seconds).max(1.0);
+        self.period = period as f32;
+        self.letting = (sample_rate * self.let_in) as f32;
+        self.buffer = vec![0.0; period.ceil() as usize + 4];
+        let pole = |hz: f64| {
+            if hz > 0.0 {
+                (-std::f64::consts::TAU * hz / sample_rate).exp() as f32
+            } else {
+                0.0
+            }
+        };
+        (self.smooth, self.open) = (pole(self.lowpass), pole(self.highpass));
+        (
+            self.at,
+            self.written,
+            self.smoothed,
+            self.passed,
+            self.before,
+        ) = (0, 0, 0.0, 0.0, 0.0);
+    }
+
+    fn reset(&mut self) {
+        self.set_sample_rate(DEFAULT_SR);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let n = self.buffer.len();
+        self.at = (self.at + 1) % n;
+        let whole = self.period.floor() as usize;
+        let fraction = self.period - self.period.floor();
+        let a = self.buffer[(self.at + n - whole) % n];
+        let b = self.buffer[(self.at + n - whole - 1) % n];
+        let delayed = a + (b - a) * fraction;
+        self.smoothed = (1.0 - self.smooth) * delayed + self.smooth * self.smoothed;
+        let looped = if self.highpass > 0.0 {
+            self.passed = self.open * (self.passed + self.smoothed - self.before);
+            self.before = self.smoothed;
+            self.passed
+        } else {
+            self.smoothed
+        };
+        let excite = if (self.written as f32) < self.letting {
+            input[0]
+        } else {
+            0.0
+        };
+        self.written += 1;
+        self.buffer[self.at] = excite + self.feedback * looped;
+        [delayed].into()
+    }
+}

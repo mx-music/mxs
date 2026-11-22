@@ -35,6 +35,7 @@
 //! | `lowshelf(sound, hz:, q:, db:)`, `highshelf`, `peak` | Raises or lowers it by `db` below, above or around `hz`. |
 //! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; `level` and `fade` are known when the note starts. Given lists of the same length, it sets a resonator ringing for each, all struck by the one sound. A sound in `hz`, or in its list, glides the resonator's frequency as it changes. |
 //! | `delay(sound, seconds:, max:)` | Delays it by `seconds`, which may change up to `max`. |
+//! | `fed_back(sound, seconds:, feedback:, lowpass:, highpass:, let_in:)` | Delays it by `seconds` and feeds what comes back in again, `feedback` times, through a one-pole low-pass at `lowpass` Hz and high-pass at `highpass` Hz inside the loop, each left out unless given; it lets its input in for the first `let_in` seconds only, or always unless given, and sounds only what comes back, as a plucked string's period or an echo's repeats do. All are numbers known when the note starts. |
 //! | `dc_block(sound, hz:)` | Takes its constant offset away, below `hz`, 10 unless given. |
 //! | `allpass(sound, hz:, q:)` | Passes every frequency at the same level and shifts its phase around `hz`; `q` is 0.707 unless given, and both may change while it sounds. |
 //! | `lag(sound, seconds:)` | Glides to it, falling 60 dB short of each step over `seconds`, known when the note starts. |
@@ -207,6 +208,7 @@ const NODES: &[&str] = &[
     "peak",
     "mode",
     "delay",
+    "fed_back",
     "dc_block",
     "saturate",
     "clip",
@@ -247,6 +249,7 @@ const NEEDS: &[(&str, &[&str])] = &[
     ("ladder", &["hz"]),
     ("mode", &["hz", "level", "fade"]),
     ("delay", &["seconds", "max"]),
+    ("fed_back", &["seconds", "feedback"]),
     ("perc", &["attack", "release"]),
     ("rings", &["seconds"]),
     ("partials", &["ratios", "levels"]),
@@ -272,6 +275,10 @@ const TAKES: &[(&str, &[&str])] = &[
     ("impulse", &["at", "period", "until"]),
     ("noise", &["seed", "drawn", "mix"]),
     ("draw", &["mix"]),
+    (
+        "fed_back",
+        &["seconds", "feedback", "lowpass", "highpass", "let_in"],
+    ),
     ("sweep", &["length", "wave", "invert", "offset", "width"]),
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz", "q"]),
@@ -1167,6 +1174,24 @@ impl Build<'_> {
                 let seconds = signal(take("seconds").ok_or("delay needs seconds:")?)?;
                 let longest = number(take("max").ok_or("delay needs max:")?, "a delay's max")?;
                 Ok(V::Sig((sound | seconds) >> net(tap(0.0, longest as f32))))
+            }
+            "fed_back" => {
+                let sound = signal(arg(0)?)?;
+                let mut known = |key: &str, default: Option<f64>| -> Result<f64, String> {
+                    match (take(key), default) {
+                        (Some(value), _) => number(value, &format!("a fed_back's {key}")),
+                        (None, Some(default)) => Ok(default),
+                        (None, None) => Err(format!("fed_back needs {key}:")),
+                    }
+                };
+                let seconds = known("seconds", None)?;
+                let feedback = known("feedback", None)?;
+                let lowpass = known("lowpass", Some(0.0))?;
+                let highpass = known("highpass", Some(0.0))?;
+                let let_in = known("let_in", Some(f64::INFINITY))?;
+                Ok(V::Sig(
+                    sound >> nodes::fed_back(seconds, feedback, lowpass, highpass, let_in),
+                ))
             }
             "dc_block" => {
                 let sound = signal(arg(0)?)?;

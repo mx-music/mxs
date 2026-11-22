@@ -18,6 +18,7 @@
   * [graph] `mode` given a sound in `hz`, or in its list, rings at the frequency the sound gives at each sample, gliding as mxs's sitar does
   * [graph] `impulse` takes `at`, `period` and `until`: one at `at` seconds and again every `period` before `until`, as the tanpura plucks its strings
   * [graph] Add `draw`, the note's numbers from 0 up to 1 from a seed that mixes in how many notes of the synth came before, and `noise` takes `drawn`, seeded from the same, as mxs's caxixi and cuíca draw theirs; a synth whose draws take different mixes is refused when registered
+  * [graph] Add `fed_back`, a delay fed back into itself through a one-pole low-pass and high-pass inside its loop, letting its input in for the first `let_in` seconds only, as mxs's pluck plays its string and an echo its repeats
 
 ## v0.5.0 (2026-11-22)
 

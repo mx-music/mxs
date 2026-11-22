@@ -1145,3 +1145,125 @@ fn draw_and_a_drawn_noise_take_the_notes_seed_mixed_with_how_many_notes_came_bef
         "mixed: each draw and drawn noise of a note takes the same mix"
     );
 }
+
+#[test]
+fn fed_back_sounds_its_input_after_seconds_and_again_feedback_times_each_period() {
+    let echoed = Synth::graph(
+        "echoed",
+        note_specs(),
+        vec![Clause {
+            matches: vec![],
+            graph: rings(
+                Graph::call(
+                    "fed_back",
+                    vec![Graph::call("impulse", vec![], vec![])],
+                    vec![("seconds", n(0.25)), ("feedback", n(0.5))],
+                ),
+                1.0,
+            ),
+        }],
+    )
+    .unwrap();
+    // A note sounds in the middle, at 1 / sqrt(2) on each side.
+    let out: Vec<f32> = render(echoed, &[])
+        .iter()
+        .map(|x| x * std::f32::consts::SQRT_2)
+        .collect();
+    let period = (0.25 * RATE) as usize;
+    for (repeat, level) in [(1, 1.0), (2, 0.5), (3, 0.25)] {
+        assert!((out[repeat * period] - level).abs() < 1.0e-6);
+    }
+    assert_eq!(out.iter().filter(|x| **x != 0.0).count(), 3);
+}
+
+#[test]
+fn fed_back_at_a_period_of_the_note_with_its_burst_let_in_once_is_mxs_pluck() {
+    let c =
+        |name: &str, args: Vec<Graph>, named: Vec<(&str, Graph)>| Graph::call(name, args, named);
+    let option = |name: &str| Graph::Option(name.into());
+    let freq = || c("hz", vec![option("note")], vec![]);
+    let period = || c("div", vec![n(1.0), freq()], vec![]);
+    let burst = c(
+        "lowpass",
+        vec![c("noise", vec![Graph::Name("white".into())], vec![])],
+        vec![(
+            "hz",
+            c(
+                "min",
+                vec![c("mul", vec![freq(), n(12.0)], vec![]), n(20_000.0)],
+                vec![],
+            ),
+        )],
+    );
+    let feedback = c(
+        "pow",
+        vec![
+            n(0.001),
+            c(
+                "div",
+                vec![n(1.0), c("mul", vec![freq(), option("ring")], vec![])],
+                vec![],
+            ),
+        ],
+        vec![],
+    );
+    let lowpass = c(
+        "div",
+        vec![
+            c(
+                "mul",
+                vec![
+                    c("neg", vec![c("log2", vec![option("coef")], vec![])], vec![]),
+                    n(RATE * std::f64::consts::LN_2),
+                ],
+                vec![],
+            ),
+            n(std::f64::consts::TAU),
+        ],
+        vec![],
+    );
+    let string = c(
+        "fed_back",
+        vec![burst],
+        vec![
+            ("seconds", period()),
+            ("feedback", feedback),
+            ("lowpass", lowpass),
+            ("let_in", period()),
+        ],
+    );
+    let sound = c(
+        "mul",
+        vec![c("dc_block", vec![string], vec![("hz", n(30.0))]), n(0.8)],
+        vec![],
+    );
+    let mut specs = vec![
+        Spec::note("note").default(52.0),
+        Spec::seconds("ring").default(3.0),
+        Spec::float("coef").default(0.3),
+    ];
+    specs.extend(Spec::envelope(0.0, 2.0));
+    let graph = c("note_envelope", vec![sound], vec![]);
+    let traced = Synth::graph(
+        "pluck",
+        specs,
+        vec![Clause {
+            matches: vec![],
+            graph,
+        }],
+    )
+    .unwrap();
+    let rust = mxs::synths::all()
+        .into_iter()
+        .find(|s| s.name() == "pluck")
+        .unwrap();
+    let (traced, rust) = (render(traced, &[]), render(rust, &[]));
+    let difference: f64 = traced
+        .iter()
+        .zip(&rust)
+        .map(|(a, b)| ((a - b) as f64).powi(2))
+        .sum();
+    let level: f64 = rust.iter().map(|x| (*x as f64).powi(2)).sum();
+    let apart = 10.0 * (difference / level).log10();
+    assert!(apart < -60.0, "{apart} dB apart");
+}
