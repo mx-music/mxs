@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter).
+[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`hall`](#hall).
 
 ## What every effect takes
 
@@ -177,4 +177,14 @@ Besides its own options, every effect takes these.
 |---|---|---|---|
 | `ceiling` | a number, -60 to 0 | -1 | The level no peak passes, in dB below full scale. |
 | `relax_ms` | milliseconds, 1 to 10000 | 100 | How many milliseconds it takes to let the sound back up. |
+
+### `hall`
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `size` | a number, 5 to 60 | 20 | The size of the room in metres, read as the effect starts. |
+| `decay_seconds` | seconds, 0.1 to 60 | 2 | How many seconds its sound takes to fade 60 dB. |
+| `predelay_ms` | milliseconds, 0 to 500 | 0 | The gap in milliseconds before the room starts, read as the effect starts. |
+| `low_cut` | a MIDI note | 0 | The MIDI note below which the room is cut, 0 for none. |
+| `damp` | a number, 0 to 1 | 0.5 | How much the room dulls the high frequencies. |
 

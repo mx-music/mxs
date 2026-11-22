@@ -187,9 +187,9 @@ fn each_effect_says_how_long_it_rings_after_its_input_stops_from_its_options_and
     );
     assert_eq!(engine.effect_tails(&[room(1.0)], None).unwrap(), vec![11.0]);
     let unknown = engine
-        .effect_tails(&[("hall".to_string(), vec![])], None)
+        .effect_tails(&[("no_such".to_string(), vec![])], None)
         .unwrap_err();
-    assert_eq!(unknown.to_string(), "no effect named hall");
+    assert_eq!(unknown.to_string(), "no effect named no_such");
 }
 
 /// How far, in dB, a tone at `hz` comes out of eq above the same tone dry.
@@ -678,4 +678,122 @@ fn the_compressor_turns_both_sides_down_by_what_the_louder_side_asks() {
         (left_down - right_down).abs() < 0.2,
         "{left_down} {right_down}"
     );
+}
+
+/// Both sides of a click at 0.1 seconds through hall with the options given, wet only.
+fn hall_click(given: &[(&str, f64)], seconds: f64) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    let mut given = given.to_vec();
+    given.push(("mix", 1.0));
+    let chain = engine
+        .start_effects(&[("hall".to_string(), options(&given))])
+        .unwrap();
+    let click = Event::Note {
+        id: None,
+        synth: "click".to_string(),
+        options: vec![],
+        chain: Some(chain),
+        held: false,
+    };
+    engine.play(&[(0.1, click)]).unwrap();
+    engine.render(seconds).unwrap()
+}
+
+/// The first frame louder than a thousandth of the loudest.
+fn first_sound(samples: &[f32]) -> usize {
+    let floor = loudest(samples) / 1000.0;
+    samples.iter().position(|x| x.abs() > floor).unwrap()
+}
+
+#[test]
+fn the_hall_keeps_a_sound_louder_on_its_own_side() {
+    let (left, right) = through_both("hall", &[("tone", 0.0, -1.0, 1.0)], 2.0);
+    let (wet_left, wet_right) = {
+        let mut engine = engine();
+        let chain = engine
+            .start_effects(&[("hall".to_string(), options(&[("mix", 1.0)]))])
+            .unwrap();
+        let note = Event::Note {
+            id: None,
+            synth: "hiss".to_string(),
+            options: options(&[("pan", -1.0)]),
+            chain: Some(chain),
+            held: false,
+        };
+        engine.play(&[(0.0, note)]).unwrap();
+        engine.render(3.0).unwrap()
+    };
+    assert!(rms(&left) > 0.0 && rms(&right) > 0.0);
+    let apart = 20.0 * (rms(&wet_left) / rms(&wet_right)).log10();
+    assert!(apart >= 3.0, "{apart}");
+    assert!(rms(&wet_right) > rms(&wet_left) / 10.0);
+}
+
+#[test]
+fn the_hall_fades_60_db_in_its_decay_seconds_after_its_predelay_and_starts_later_in_a_larger_room()
+{
+    let (left, _) = hall_click(&[("decay_seconds", 2.0)], 3.2);
+    let level = |at: f64| rms(&left[frame(0.1 + at)..frame(0.1 + at + 0.05)]);
+    let start = level(0.05);
+    let down = |at: f64| 20.0 * (level(at) / start).log10();
+    assert!(down(1.6) > -60.0, "{}", down(1.6));
+    assert!(down(2.4) < -60.0, "{}", down(2.4));
+
+    let (long, _) = hall_click(&[("decay_seconds", 6.0)], 3.2);
+    let long_level = |at: f64| rms(&long[frame(0.1 + at)..frame(0.1 + at + 0.05)]);
+    assert!(20.0 * (long_level(2.4) / long_level(0.05)).log10() > -40.0);
+
+    let (plain, _) = hall_click(&[], 0.5);
+    let (late, _) = hall_click(&[("predelay_ms", 50.0)], 0.5);
+    assert!(first_sound(&plain) >= frame(0.1));
+    assert_eq!(first_sound(&late), first_sound(&plain) + frame(0.05));
+    assert!(late[..frame(0.15)].iter().all(|x| *x == 0.0));
+
+    let (small, _) = hall_click(&[("size", 15.0)], 0.5);
+    let (large, _) = hall_click(&[("size", 40.0)], 0.5);
+    assert!(first_sound(&large) > first_sound(&small) + frame(0.01));
+}
+
+#[test]
+fn the_halls_low_cut_cuts_the_room_below_its_note_and_its_damp_dulls_it() {
+    let hiss = |given: &[(&str, f64)]| {
+        let mut given = given.to_vec();
+        given.push(("mix", 1.0));
+        through("hall", &given, "hiss", 2.0)
+    };
+    let (open, cut) = (hiss(&[]), hiss(&[("low_cut", 60.0)]));
+    let lows = |samples: &[f32]| partial_db(samples, 65.0, 0.5);
+    // One bin of noise wanders, so the level at 65 Hz is the mean over neighbouring frequencies.
+    let around = |samples: &[f32]| {
+        let hz = [59.0, 61.0, 63.0, 65.0, 67.0, 69.0, 71.0];
+        hz.iter()
+            .map(|hz| partial_db(samples, *hz, 0.5))
+            .sum::<f64>()
+            / hz.len() as f64
+    };
+    assert!(lows(&open).is_finite());
+    assert!(
+        around(&cut) <= around(&open) - 12.0,
+        "{} {}",
+        around(&cut),
+        around(&open)
+    );
+    let highs = |samples: &[f32]| {
+        let hz = [8000.0, 8100.0, 8200.0, 8300.0, 8400.0];
+        hz.iter()
+            .map(|hz| partial_db(samples, *hz, 0.5))
+            .sum::<f64>()
+            / hz.len() as f64
+    };
+    let (bright, dull) = (hiss(&[("damp", 0.0)]), hiss(&[("damp", 1.0)]));
+    assert!(highs(&dull) < highs(&bright) - 12.0);
+
+    let mut engine = engine();
+    let tails = engine
+        .effect_tails(
+            &[("hall".to_string(), options(&[("decay_seconds", 3.0)]))],
+            None,
+        )
+        .unwrap();
+    assert_eq!(tails, vec![3.0]);
 }

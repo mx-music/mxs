@@ -4,6 +4,7 @@
 
 ### 1. Enhancements
 
+  * [effects] Add `hall`, a reverb that is to replace `reverb`: a room of `size` metres whose sound fades 60 dB in `decay_seconds`, starts after `predelay_ms`, is cut below the note `low_cut` and dulled by `damp`; a sound's room is louder on the sound's own side, and `decay_seconds`, `low_cut` and `damp` change while it plays
   * [effects] `compressor` is set as a compressor usually is: `threshold` in dB, -18 unless given, `ratio`, 4 unless given, and `makeup` in dB after it, in place of a threshold as a plain level, `slope_above` and `slope_below`; it follows the louder side and turns both down alike, and `relax_ms` is 150 unless given, so it no longer bends each cycle of a bass note
   * [engine] Add `Engine::send`, which sends a share of a chain's sound into another chain at a level that `Target::Send` changes while it plays, `Engine::route`, which sends all of it there in place of the main output, and `Engine::key`, which has a chain's compressor follow another chain's level; the sound arrives at the same sample, a chain that would feed itself is refused, and a chain that others feed plays until they have ended
   * [effects] An effect reads the chain that keys its own with `Options::key`
