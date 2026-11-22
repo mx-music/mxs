@@ -60,6 +60,7 @@ pub fn all() -> Vec<Effect> {
         eq(),
         limiter(),
         hall(),
+        phaser(),
     ]
 }
 
@@ -714,6 +715,113 @@ fn flanger() -> Effect {
             };
             side(switched(o, "stereo_invert_wave")) | side(net(dc(0.0)))
         })
+}
+
+fn phaser() -> Effect {
+    wave_options(Effect::new("phaser"), 3.0, 4.0)
+        .option(
+            Spec::float("stereo_invert_wave")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("1 sweeps the left channel the other way."),
+        )
+        .option(
+            Spec::integer("stages")
+                .default(4.0)
+                .range(2.0, 8.0)
+                .doc("How many stages it has, 2, 4, 6 or 8, one notch for every two, read as the effect starts."),
+        )
+        .option(
+            Spec::note("low")
+                .default(60.0)
+                .doc("The MIDI note its sweep starts from."),
+        )
+        .option(
+            Spec::note("high")
+                .default(108.0)
+                .doc("The MIDI note its sweep reaches."),
+        )
+        .option(
+            Spec::float("feedback")
+                .default(0.0)
+                .range(0.0, 0.95)
+                .doc("How much of its sound feeds back, which raises the sound between the notches."),
+        )
+        .tail(0.1)
+        .build(|o, _| {
+            let stages = o.number("stages");
+            if ![2.0, 4.0, 6.0, 8.0].contains(&stages) {
+                panic!("phaser: stages is 2, 4, 6 or 8, not {stages}");
+            }
+            let side = |flipped: Net| {
+                let level = (sweep(o, net(dc(0.5))) | flipped)
+                    >> net(map(|x: &Frame<f32, U2>| between(x[0], 1.0 - x[0], x[1])));
+                let corner = (level | o.follow("low") | o.follow("high"))
+                    >> net(map(|x: &Frame<f32, U3>| {
+                        hz((x[1] + x[0] * (x[2] - x[1])) as f64).clamp(20.0, 20_000.0) as f32
+                    }));
+                (net(pass()) | corner | o.follow("feedback"))
+                    >> net(An(Phaser::new(stages as usize)))
+            };
+            side(switched(o, "stereo_invert_wave")) | side(net(dc(0.0)))
+        })
+}
+
+/// A chain of first-order all-passes that share a corner, with the chain's output fed back to its input.
+/// Each stage turns the sound from nothing at the lowest frequencies to half a cycle at the highest, a quarter at the corner, so mixed half and half with the dry sound the chain cuts a notch wherever it has turned the sound an odd number of half cycles, one for every two stages.
+/// The feedback is solved within the sample, and the output is raised by it, so the notches stay where they are and as deep, and the sound between them rises.
+/// Inputs: the sound, the corner in Hz, the feedback; it gives the wet sound only.
+#[derive(Clone)]
+struct Phaser {
+    stages: usize,
+    rate: f32,
+    /// Each stage's last input less its coefficient times its last output.
+    held: [f32; 8],
+}
+
+impl Phaser {
+    fn new(stages: usize) -> Self {
+        Phaser {
+            stages,
+            rate: DEFAULT_SR as f32,
+            held: [0.0; 8],
+        }
+    }
+}
+
+impl AudioNode for Phaser {
+    const ID: u64 = 0x6d78_007d;
+    type Inputs = U3;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+    }
+
+    fn reset(&mut self) {
+        self.held = [0.0; 8];
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U1> {
+        let turn =
+            (std::f32::consts::PI * input[1].clamp(20.0, self.rate * 0.45) / self.rate).tan();
+        let a = (turn - 1.0) / (turn + 1.0);
+        let feedback = input[2].clamp(0.0, 0.95);
+        // Each stage gives a * its input + what it holds, so the chain gives gain * its input + rest.
+        let (mut gain, mut rest) = (1.0f32, 0.0f32);
+        for held in &self.held[..self.stages] {
+            gain *= a;
+            rest = rest * a + held;
+        }
+        let out = (gain * input[0] + rest) / (1.0 - feedback * gain);
+        let mut through = input[0] + feedback * out;
+        for held in &mut self.held[..self.stages] {
+            let passed = a * through + *held;
+            *held = through - a * passed;
+            through = passed;
+        }
+        [out * (1.0 + feedback)].into()
+    }
 }
 
 fn wobble() -> Effect {

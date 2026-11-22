@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`hall`](#hall).
+[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`hall`](#hall), [`phaser`](#phaser).
 
 ## What every effect takes
 
@@ -187,4 +187,18 @@ Besides its own options, every effect takes these.
 | `predelay_ms` | milliseconds, 0 to 500 | 0 | The gap in milliseconds before the room starts, read as the effect starts. |
 | `low_cut` | a MIDI note | 0 | The MIDI note below which the room is cut, 0 for none. |
 | `damp` | a number, 0 to 1 | 0.5 | How much the room dulls the high frequencies. |
+
+### `phaser`
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `phase` | seconds, 0 or more | 4 | How long one sweep takes. |
+| `wave` | a number, 0 to 4 | 3 | The sweep's shape: 0 saw, 1 pulse, 2 triangle, 3 sine and 4 cubic. |
+| `invert_wave` | a number, 0 to 1 | 0 | 1 flips the sweep. |
+| `phase_offset` | a number, 0 to 1 | 0 | Where in the sweep it starts. |
+| `stereo_invert_wave` | a number, 0 to 1 | 0 | 1 sweeps the left channel the other way. |
+| `stages` | a whole number, 2 to 8 | 4 | How many stages it has, 2, 4, 6 or 8, one notch for every two, read as the effect starts. |
+| `low` | a MIDI note | 60 | The MIDI note its sweep starts from. |
+| `high` | a MIDI note | 108 | The MIDI note its sweep reaches. |
+| `feedback` | a number, 0 to 0.95 | 0 | How much of its sound feeds back, which raises the sound between the notches. |
 

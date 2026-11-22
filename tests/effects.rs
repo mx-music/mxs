@@ -797,3 +797,164 @@ fn the_halls_low_cut_cuts_the_room_below_its_note_and_its_damp_dulls_it() {
         .unwrap();
     assert_eq!(tails, vec![3.0]);
 }
+
+/// Both sides of a tone at `hz` through an effect with the options given, for the seconds given.
+fn tone_through(
+    effect: &str,
+    given: &[(&str, f64)],
+    hz: f64,
+    seconds: f64,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[(effect.to_string(), options(given))])
+        .unwrap();
+    let note = Event::Note {
+        id: None,
+        synth: "tone".to_string(),
+        options: options(&[("hz", hz)]),
+        chain: Some(chain),
+        held: false,
+    };
+    engine.play(&[(0.0, note)]).unwrap();
+    engine.render(seconds).unwrap()
+}
+
+/// How far, in dB, the phaser with the options given passes a tone at each frequency above the same tone dry, on the left and on the right.
+fn phaser_gains(given: &[(&str, f64)], hz: &[f64], from: f64) -> Vec<(f64, f64)> {
+    // A sine is as loud dry at any frequency.
+    let (dry, _) = tone_through("level", &[], 440.0, from + 0.5);
+    hz.iter()
+        .map(|hz| {
+            let (left, right) = tone_through("phaser", given, *hz, from + 0.5);
+            let level = |samples: &[f32]| {
+                20.0 * f64::from(rms(&samples[frame(from)..frame(from + 0.5)])).log10()
+            };
+            (level(&left) - level(&dry), level(&right) - level(&dry))
+        })
+        .collect()
+}
+
+/// The notches of a phaser held at the note 72: the frequencies where its stages turn the sound half a cycle, an odd number of times.
+fn notches(stages: usize) -> Vec<f64> {
+    let corner = 440.0 * 2f64.powf((72.0 - 69.0) / 12.0);
+    (0..stages / 2)
+        .map(|k| corner * (std::f64::consts::PI * (2 * k + 1) as f64 / (2 * stages) as f64).tan())
+        .collect()
+}
+
+#[test]
+fn the_phaser_cuts_a_notch_for_every_two_stages_and_none_dry() {
+    let grid: Vec<f64> = (0..36).map(|i| 80.0 * 2f64.powf(i as f64 / 6.0)).collect();
+    let held = |stages: f64| {
+        [
+            ("stages", stages),
+            ("low", 72.0),
+            ("high", 72.0),
+            ("mix", 0.5),
+        ]
+    };
+    for stages in [2usize, 4, 6, 8] {
+        let at = notches(stages);
+        for (left, right) in phaser_gains(&held(stages as f64), &at, 0.5) {
+            assert!(left <= -12.0 && right <= -12.0, "{stages} {left} {right}");
+        }
+        let curve: Vec<f64> = phaser_gains(&held(stages as f64), &grid, 0.5)
+            .iter()
+            .map(|(left, _)| *left)
+            .collect();
+        // Each stretch of the curve under -12 dB is one notch.
+        let dips = (1..curve.len())
+            .filter(|i| curve[*i] <= -12.0 && curve[i - 1] > -12.0)
+            .count();
+        assert_eq!(dips, stages / 2, "{stages} {curve:?}");
+    }
+
+    let dry = through("level", &[], "tone", 1.0);
+    let off = through("phaser", &[("mix", 0.0)], "tone", 1.0);
+    let apart = dry
+        .iter()
+        .zip(&off)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f32::max);
+    assert!(apart <= loudest(&dry) * 1e-5, "{apart}");
+
+    let mut engine = engine();
+    let odd = engine
+        .start_effects(&[("phaser".to_string(), options(&[("stages", 3.0)]))])
+        .unwrap_err();
+    assert!(
+        odd.to_string().contains("phaser") && odd.to_string().contains("stages"),
+        "{odd}"
+    );
+}
+
+#[test]
+fn the_phasers_feedback_raises_the_sound_between_its_notches_and_keeps_them() {
+    let corner = 440.0 * 2f64.powf(3.0 / 12.0);
+    let at = [notches(4)[0], corner, notches(4)[1]];
+    let depth = |feedback: f64| {
+        let given = [
+            ("stages", 4.0),
+            ("low", 72.0),
+            ("high", 72.0),
+            ("mix", 0.5),
+            ("feedback", feedback),
+        ];
+        let gains = phaser_gains(&given, &at, 0.5);
+        (gains[1].0 - gains[0].0, gains[1].0 - gains[2].0, gains[1].0)
+    };
+    let (plain, fed) = (depth(0.0), depth(0.7));
+    assert!(plain.2.abs() < 0.5, "{plain:?}");
+    assert!(
+        fed.0 >= plain.0 + 6.0 && fed.1 >= plain.1 + 6.0,
+        "{plain:?} {fed:?}"
+    );
+}
+
+#[test]
+fn the_phaser_sweeps_its_notches_once_every_phase_and_the_left_the_other_way_when_asked() {
+    // A tone at 1000 Hz dips each time a notch passes it; the level is taken every 10 ms from 0.5 seconds.
+    let levels = |flipped: f64| {
+        let given = [
+            ("phase", 0.5),
+            ("low", 60.0),
+            ("high", 84.0),
+            ("mix", 0.5),
+            ("stereo_invert_wave", flipped),
+        ];
+        let (left, right) = tone_through("phaser", &given, 1000.0, 2.0);
+        let every = |samples: &[f32]| -> Vec<f32> {
+            (0..120)
+                .map(|i| {
+                    let from = 0.5 + 0.01 * i as f64;
+                    rms(&samples[frame(from)..frame(from + 0.01)])
+                })
+                .collect()
+        };
+        (every(&left), every(&right))
+    };
+    // How far apart two runs of levels are, as a share of how far the first moves.
+    let apart = |a: &[f32], b: &[f32]| {
+        let mean = a.iter().sum::<f32>() / a.len() as f32;
+        let moves = a.iter().map(|x| (x - mean).abs()).sum::<f32>();
+        a.iter().zip(b).map(|(x, y)| (x - y).abs()).sum::<f32>() / moves
+    };
+    let (left, right) = levels(0.0);
+    let deepest = left.iter().fold(f32::MAX, |a, b| a.min(*b));
+    let highest = left.iter().fold(0.0f32, |a, b| a.max(*b));
+    assert!(deepest < highest * 0.25, "{deepest} {highest}");
+    let (again, half) = (
+        apart(&left[..50], &left[50..100]),
+        apart(&left[..50], &left[25..75]),
+    );
+    assert!(again < 0.1 && half > 0.5, "{again} {half}");
+    assert!(apart(&left[..100], &right[..100]) < 0.05);
+
+    let (left, right) = levels(1.0);
+    let (together, half) = (
+        apart(&left[..50], &right[..50]),
+        apart(&left[..50], &right[25..75]),
+    );
+    assert!(together > 0.5 && half < 0.1, "{together} {half}");
+}
