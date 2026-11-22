@@ -1,6 +1,6 @@
-# Changelog for mxs v0.4
+# Changelog for mxs v0.5
 
-## Unreleased
+## v0.5.0 (2026-11-22)
 
 ### 1. Enhancements
 
