@@ -344,3 +344,33 @@ fn a_compressor_keyed_by_another_chain_lowers_its_sound_by_that_chains_level() {
         .unwrap();
     assert_eq!(left, plain.render(0.5).unwrap().0);
 }
+
+#[test]
+fn a_soloed_part_is_still_heard_through_the_chains_it_feeds() {
+    let rendered = |solo: bool, feed: bool| {
+        let mut engine = engine();
+        let wet = engine.start_effects(&[effect("level", &[])]).unwrap();
+        let keys = engine.start_part("keys", &[]).unwrap();
+        let bass = engine.start_part("bass", &[]).unwrap();
+        if feed {
+            engine.send(keys, wet, 1.0).unwrap();
+            engine.send(bass, wet, 1.0).unwrap();
+        }
+        if solo {
+            engine.solo("keys", true, 0.0).unwrap();
+        }
+        let tones = [
+            (0.0, note("tone", &[("hz", 440.0)], Some(keys))),
+            (0.0, note("tone", &[("hz", 660.0)], Some(bass))),
+        ];
+        engine.play(&tones).unwrap();
+        engine.render(0.5).unwrap().0
+    };
+    let keys_alone = rendered(true, false);
+    let soloed = rendered(true, true);
+    // The keys come out dry and through the chain they send into; the bass, not soloed, through neither.
+    for i in frame(0.1)..frame(0.4) {
+        assert!((soloed[i] - 2.0 * keys_alone[i]).abs() < 1e-6);
+    }
+    assert!(loudest(&rendered(false, true)) > loudest(&soloed));
+}

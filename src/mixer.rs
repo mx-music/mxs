@@ -207,6 +207,8 @@ pub(crate) struct Heard {
     pub gain: f32,
     pub muted: bool,
     pub soloed: bool,
+    /// Whether other chains play into it, which leaves it heard while another part is soloed: what is soloed is still heard through it.
+    pub shared: bool,
     glide: u64,
     level: f32,
     toward: f32,
@@ -221,6 +223,7 @@ impl Heard {
             gain: 1.0,
             muted: false,
             soloed: false,
+            shared: false,
             glide: Ord::max(glide, 1),
             level: 1.0,
             toward: 1.0,
@@ -231,7 +234,7 @@ impl Heard {
     }
 
     fn wanted(&self, solo: bool) -> f32 {
-        if self.muted || (solo && !self.soloed) {
+        if self.muted || (solo && !self.soloed && !self.shared) {
             0.0
         } else {
             self.gain
@@ -477,8 +480,14 @@ impl Mixer {
                     if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
                         chain.out = out;
                     }
+                    if let Some(chain) = self.chains.iter_mut().find(|c| Some(c.key) == out) {
+                        chain.heard.shared = true;
+                    }
                 }
                 Command::Send(send) => {
+                    if let Some(chain) = self.chains.iter_mut().find(|c| c.key == send.to) {
+                        chain.heard.shared = true;
+                    }
                     let chain = self.chains.iter_mut().find(|c| c.key == send.from);
                     match chain {
                         Some(chain) if chain.sends.len() < chain.sends.capacity() => {

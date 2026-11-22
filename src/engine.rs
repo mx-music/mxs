@@ -1041,7 +1041,7 @@ impl Engine {
         self.change_part(part, at, PartChange::Mute(muted))
     }
 
-    /// Solos a part from `at` seconds, or ends its solo: while any part is soloed, only the soloed parts are heard, and a sound that plays into no part is heard as ever.
+    /// Solos a part from `at` seconds, or ends its solo: while any part is soloed, only the soloed parts are heard, a sound that plays into no part is heard as ever, and so is a chain that others send or route into, which then plays only what the soloed parts feed it.
     pub fn solo(&mut self, part: &str, soloed: bool, at: f64) -> Result<(), Error> {
         self.change_part(part, at, PartChange::Solo(soloed))
     }
