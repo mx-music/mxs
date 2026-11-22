@@ -1,5 +1,11 @@
 # Changelog for mxs v0.4
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [effects] Add `eq`, an equaliser of three bands: a low shelf, a peak and a high shelf, each at a MIDI note, `low_at`, `mid_at` and `high_at`, and raised or lowered by `low_gain`, `mid_gain` and `high_gain` in dB, with `mid_q` for how narrow the peak is
+
 ## v0.4.1 (2026-11-22)
 
 ### 1. Enhancements

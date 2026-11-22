@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift).
+[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq).
 
 ## What every effect takes
 
@@ -158,4 +158,16 @@ Besides its own options, every effect takes these.
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `pitch` | a number, -24 to 24 | 0 | How many semitones the sound is shifted by; the effect delays the sound by up to 40 ms. |
+
+### `eq`
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `low_at` | a MIDI note | 36 | The MIDI note below which the low band acts. |
+| `low_gain` | a number | 0 | How far the low band is raised or lowered, in dB. |
+| `mid_at` | a MIDI note | 60 | The MIDI note the mid band is around. |
+| `mid_gain` | a number | 0 | How far the mid band is raised or lowered, in dB. |
+| `mid_q` | a number, 0.1 to 20 | 1 | How narrow the mid band is: the higher, the narrower. |
+| `high_at` | a MIDI note | 96 | The MIDI note above which the high band acts. |
+| `high_gain` | a number | 0 | How far the high band is raised or lowered, in dB. |
 

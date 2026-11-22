@@ -57,6 +57,7 @@ pub fn all() -> Vec<Effect> {
         wobble(),
         ping_pong(),
         pitch_shift(),
+        eq(),
     ]
 }
 
@@ -438,6 +439,63 @@ fn tremolo() -> Effect {
                 >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> {
                     [x[0] * x[2], x[1] * x[2]].into()
                 }))
+        })
+}
+
+/// An option in dB as the factor a filter raises its band by.
+fn gain_of(options: &Options, name: &str) -> Net {
+    options.follow(name) >> net(map(|x: &Frame<f32, U1>| db_amp(x[0])))
+}
+
+fn eq() -> Effect {
+    Effect::new("eq")
+        .option(
+            Spec::note("low_at")
+                .default(36.0)
+                .doc("The MIDI note below which the low band acts."),
+        )
+        .option(
+            Spec::float("low_gain")
+                .default(0.0)
+                .doc("How far the low band is raised or lowered, in dB."),
+        )
+        .option(
+            Spec::note("mid_at")
+                .default(60.0)
+                .doc("The MIDI note the mid band is around."),
+        )
+        .option(
+            Spec::float("mid_gain")
+                .default(0.0)
+                .doc("How far the mid band is raised or lowered, in dB."),
+        )
+        .option(
+            Spec::float("mid_q")
+                .default(1.0)
+                .range(0.1, 20.0)
+                .doc("How narrow the mid band is: the higher, the narrower."),
+        )
+        .option(
+            Spec::note("high_at")
+                .default(96.0)
+                .doc("The MIDI note above which the high band acts."),
+        )
+        .option(
+            Spec::float("high_gain")
+                .default(0.0)
+                .doc("How far the high band is raised or lowered, in dB."),
+        )
+        .tail(0.2)
+        .build(|o, _| {
+            per_channel(|| {
+                let shelf = || net(dc(FRAC_1_SQRT_2));
+                let low = (net(pass()) | cutoff(o, "low_at") | shelf() | gain_of(o, "low_gain"))
+                    >> net(lowshelf::<f32>());
+                let mid = (low | cutoff(o, "mid_at") | o.follow("mid_q") | gain_of(o, "mid_gain"))
+                    >> net(bell::<f32>());
+                (mid | cutoff(o, "high_at") | shelf() | gain_of(o, "high_gain"))
+                    >> net(highshelf::<f32>())
+            })
         })
 }
 
