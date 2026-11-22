@@ -33,7 +33,7 @@
 //! | `lowpass(sound, hz:, q:, poles:)`, `highpass`, `bandpass` | Filters it; `q` is 0.707 and `poles` is 2 unless given, and `hz` is held from 20 to 20000; `hz` and `q` may change while the note sounds; `poles: 1` makes a lowpass or a highpass of one pole, which takes no `q`. |
 //! | `ladder(sound, hz:, resonance:)` | Filters it through a four-pole resonant lowpass, the ladder of analog synths; `resonance` is from 0, unless given, to 1, where the filter rings on at `hz` once set ringing, and both may change while the note sounds. |
 //! | `lowshelf(sound, hz:, q:, db:)`, `highshelf`, `peak` | Raises or lowers it by `db` below, above or around `hz`. |
-//! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; all three are known when the note starts. Given lists of the same length, it sets a resonator ringing for each, all struck by the one sound. |
+//! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; `level` and `fade` are known when the note starts. Given lists of the same length, it sets a resonator ringing for each, all struck by the one sound. A sound in `hz`, or in its list, glides the resonator's frequency as it changes. |
 //! | `delay(sound, seconds:, max:)` | Delays it by `seconds`, which may change up to `max`. |
 //! | `dc_block(sound, hz:)` | Takes its constant offset away, below `hz`, 10 unless given. |
 //! | `allpass(sound, hz:, q:)` | Passes every frequency at the same level and shifts its phase around `hz`; `q` is 0.707 unless given, and both may change while it sounds. |
@@ -1066,6 +1066,16 @@ impl Build<'_> {
             "mode" => {
                 let sound = arg(0)?;
                 let freq = take("hz").ok_or("mode needs hz:")?;
+                let gliding = match &freq {
+                    V::Sig(_) => true,
+                    V::List(items) => items.iter().any(|item| matches!(item, V::Sig(_))),
+                    _ => false,
+                };
+                if gliding {
+                    let level = take("level").ok_or("mode needs level:")?;
+                    let fade = take("fade").ok_or("mode needs fade:")?;
+                    return gliding_modes(signal(sound)?, freq, level, fade);
+                }
                 if let V::List(_) = freq {
                     let freqs = numbers(freq, "a mode's hz")?;
                     let levels =
@@ -1248,6 +1258,37 @@ impl Build<'_> {
 }
 
 /// Segments from silence through each of `points`, each `[seconds, level]` straight, `[seconds, level, curve]` bent as `segments` bends them, or `[seconds, level, exp]` exponential.
+/// Resonators struck by `sound`, each at a frequency that may change as the note sounds, as mxs's sitar's strings glide; a list of `freqs` gives one for each, with its level and fade.
+fn gliding_modes(sound: Net, freqs: V, levels: V, fades: V) -> Result<V, String> {
+    let (freqs, levels, fades) = match freqs {
+        V::List(freqs) => (
+            freqs,
+            numbers(levels, "a mode's level")?,
+            numbers(fades, "a mode's fade")?,
+        ),
+        freq => (
+            vec![freq],
+            vec![number(levels, "a mode's level")?],
+            vec![number(fades, "a mode's fade")?],
+        ),
+    };
+    let mut bank: Option<Net> = None;
+    for ((freq, level), fade) in freqs.into_iter().zip(levels).zip(fades) {
+        if level == 0.0 {
+            continue;
+        }
+        let one = (net(pass()) | signal(freq)?) >> nodes::struck_gliding(level, fade);
+        bank = Some(match bank {
+            Some(bank) => bank & one,
+            None => one,
+        });
+    }
+    Ok(match bank {
+        Some(bank) => V::Sig(sound >> bank),
+        None => V::Num(0.0),
+    })
+}
+
 fn envelope(points: V) -> Result<Net, String> {
     let V::List(points) = points else {
         return Err("an envelope takes a list of points".to_string());

@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
 use mxs::graph::{Clause, Graph};
-use mxs::nodes::{decay2, dust, hz, modes, shape, struck, white_noise};
+use mxs::nodes::{decay2, dust, hz, modes, shape, struck, struck_gliding, white_noise};
 use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
 
 fn n(x: f64) -> Graph {
@@ -992,4 +992,60 @@ fn clicks_and_struck_play_as_dust_and_decay2_do_in_rust() {
         Graph::call("struck", vec![clicks()], vec![("attack", n(0.001))]),
     );
     assert_eq!(refused.err().unwrap(), "unfallen: struck needs fall:");
+}
+
+#[test]
+fn mode_given_a_sound_in_hz_glides_as_struck_gliding_does_in_rust() {
+    let pitch = || {
+        call(
+            "add",
+            vec![call("mul", vec![call("time", vec![]), n(100.0)]), n(220.0)],
+        )
+    };
+    let gliding = Graph::call(
+        "mode",
+        vec![call("impulse", vec![])],
+        vec![
+            (
+                "hz",
+                Graph::List(
+                    [1.0, 2.0, 3.0]
+                        .iter()
+                        .map(|&k| call("mul", vec![pitch(), n(k)]))
+                        .collect(),
+                ),
+            ),
+            ("level", Graph::List(vec![n(1.0), n(0.0), n(0.3)])),
+            ("fade", Graph::List(vec![n(0.4), n(0.3), n(0.2)])),
+        ],
+    );
+    let rust = Synth::new("gliding").build(|_, _| {
+        let pitch = || shape(|t| t) * 100.0 + 220.0;
+        let one =
+            |k: f32, level: f64, fade: f64| (pass() | pitch() * k) >> struck_gliding(level, fade);
+        Note::rings(
+            impulse::<U1>() >> (one(1.0, 1.0, 0.4) & one(3.0, 0.3, 0.2)),
+            0.5,
+        )
+    });
+    let traced = render(plain("gliding", gliding).unwrap(), &[]);
+    assert!(traced.iter().any(|x| x.abs() > 0.01));
+    assert_eq!(traced, render(rust, &[]));
+
+    let alone = Graph::call(
+        "mode",
+        vec![call("impulse", vec![])],
+        vec![("hz", pitch()), ("level", n(1.0)), ("fade", n(0.4))],
+    );
+    let rust = Synth::new("alone").build(|_, _| {
+        Note::rings(
+            impulse::<U1>()
+                >> ((pass() | shape(|t| t) * 100.0 + 220.0) >> struck_gliding(1.0, 0.4)),
+            0.5,
+        )
+    });
+    assert_eq!(
+        render(plain("alone", alone).unwrap(), &[]),
+        render(rust, &[])
+    );
 }
