@@ -52,6 +52,8 @@ pub enum Target {
     Part(u64),
     /// One effect of a chain, by its index.
     Effect(u64, usize),
+    /// The send from one chain into another, as [`Engine::send`] made it; its one option is `level`.
+    Send(u64, u64),
 }
 
 /// Something to play at a time.
@@ -226,6 +228,12 @@ pub enum Error {
     UnknownSample(u64),
     /// No effect chain was started under this id.
     UnknownChain(u64),
+    /// A change named a send that [`Engine::send`] has not made, from one chain into another.
+    UnknownSend(u64, u64),
+    /// A send, a route or a key would make a chain feed itself; the chains of the loop are named, the first the one that would feed itself.
+    FeedsItself(Vec<String>),
+    /// A chain was given more sends than it holds.
+    TooManySends(u64),
     /// No part was started under this name.
     UnknownPart(String),
     /// A part of this name was started and not stopped.
@@ -319,6 +327,26 @@ impl std::fmt::Display for Error {
             Error::UnknownEffect(name) => write!(f, "no effect named {name}"),
             Error::UnknownSample(id) => write!(f, "no sample loaded as {id}"),
             Error::UnknownChain(id) => write!(f, "no effect chain {id}"),
+            Error::UnknownSend(from, to) => write!(f, "no send from chain {from} into chain {to}"),
+            Error::FeedsItself(chains) => {
+                let first = &chains[0];
+                write!(f, "chain {first} would feed itself")?;
+                match &chains[1..] {
+                    [] => Ok(()),
+                    [through @ .., last] if !through.is_empty() => {
+                        let through = through.join(", ");
+                        write!(f, ", through {through} and {last}")
+                    }
+                    through => {
+                        let last = &through[0];
+                        write!(f, ", through {last}")
+                    }
+                }
+            }
+            Error::TooManySends(chain) => {
+                let most = crate::mixer::SENDS;
+                write!(f, "chain {chain} has {most} sends, the most a chain holds")
+            }
             Error::UnknownPart(name) => write!(f, "no part named {name}"),
             Error::PartExists(name) => write!(f, "a part named {name} is already started"),
             Error::UnknownOption { owner, option } => write!(f, "{owner} has no option {option}"),
@@ -430,7 +458,7 @@ type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
 /// | Make one | [`live`](Engine::live), [`live_with`](Engine::live_with), [`live_with_input`](Engine::live_with_input), [`offline`](Engine::offline) | [Playing live](crate::guide::live), [How the engine is built](crate::guide::architecture) |
 /// | Say what it can play | [`register`](Engine::register), [`register_effect`](Engine::register_effect), [`synths`](Engine::synths), [`effects`](Engine::effects), [`note_specs`](Engine::note_specs), [`sample_specs`](Engine::sample_specs), [`effect_specs`](Engine::effect_specs) | [A synth or an effect of your own](crate::guide::building) |
 /// | Play | [`play`](Engine::play), [`play_at`](Engine::play_at), [`play_at_frames`](Engine::play_at_frames), [`sounding`](Engine::sounding), [`set_voice_limit`](Engine::set_voice_limit) | [Events and the life of a note](crate::guide::events) |
-/// | Use effects and parts | [`start_effects`](Engine::start_effects), [`stop_effects`](Engine::stop_effects), [`start_part`](Engine::start_part), [`start_part_in_beats`](Engine::start_part_in_beats), [`part`](Engine::part), [`stop_part`](Engine::stop_part), [`set_gain`](Engine::set_gain), [`mute`](Engine::mute), [`solo`](Engine::solo) | [Effects, parts and the signal path](crate::guide::signal_path) |
+/// | Use effects and parts | [`start_effects`](Engine::start_effects), [`stop_effects`](Engine::stop_effects), [`start_main_effects`](Engine::start_main_effects), [`send`](Engine::send), [`route`](Engine::route), [`key`](Engine::key), [`start_part`](Engine::start_part), [`start_part_in_beats`](Engine::start_part_in_beats), [`part`](Engine::part), [`stop_part`](Engine::stop_part), [`set_gain`](Engine::set_gain), [`mute`](Engine::mute), [`solo`](Engine::solo) | [Effects, parts and the signal path](crate::guide::signal_path) |
 /// | Read the clock | [`now`](Engine::now), [`clock`](Engine::clock), [`seconds_at`](Engine::seconds_at), [`latency`](Engine::latency), [`rate`](Engine::rate) | [Frames, seconds and beats](crate::guide::time) |
 /// | Play in beats | [`place_beats`](Engine::place_beats), [`set_tempo`](Engine::set_tempo), [`pass`](Engine::pass), [`cut`](Engine::cut), [`beat`](Engine::beat), [`beat_at`](Engine::beat_at), [`beat_seconds`](Engine::beat_seconds) | [Frames, seconds and beats](crate::guide::time) |
 /// | Render offline | [`render`](Engine::render), [`fill`](Engine::fill) | [How the engine is built](crate::guide::architecture) |
@@ -660,6 +688,11 @@ impl Engine {
                 sounds: HashMap::new(),
                 ids: HashMap::new(),
                 chains: HashMap::new(),
+                sends: HashMap::new(),
+                routes: HashMap::new(),
+                keys: HashMap::new(),
+                ranks: HashMap::new(),
+                ended: std::collections::HashSet::new(),
                 parts: HashMap::new(),
                 map: TempoMap::new(),
                 score: Vec::new(),
@@ -1038,6 +1071,7 @@ impl Engine {
         };
         let mut in_beats = Vec::new();
         let mut followers = Vec::new();
+        let tap = Arc::new(crate::options::KeyTap::new());
         for (name, given) in effects {
             let registered = self
                 .effects
@@ -1048,6 +1082,7 @@ impl Engine {
                 (registered.item.build.clone(), registered.item.tail.clone());
             let values = self.check(&owner, &specs, given)?;
             let mut options = Options::new(owner.clone(), specs.clone(), values);
+            options.key = Some(tap.clone());
             let timed = |spec: &&Spec| spec.kind == Kind::Beats;
             let mut given = Vec::new();
             if beats {
@@ -1117,6 +1152,12 @@ impl Engine {
             stop: None,
             tail: self.frames(tail),
             heard: Heard::new(self.frames(END_FADE)),
+            out: None,
+            sends: Vec::with_capacity(crate::mixer::SENDS),
+            key_from: None,
+            tap,
+            rank: 0,
+            fed: 0,
             played: (0, [0.0; 2], [0.0; 2]),
         };
         let mut book = self.book();
@@ -1148,6 +1189,104 @@ impl Engine {
             return Err(Error::UnknownChain(chain));
         }
         book.send(Command::StopChain { key: chain, at })
+    }
+
+    /// Sends a share of the sound of the chain `from` into the chain `to`, at `level`, besides where that sound already goes; a send already made between the two takes the level instead.
+    /// The share is taken after the chain's effects and its part's gain, mute and solo, and reaches `to` at the same sample, with no delay.
+    /// An [`Event::Set`] to [`Target::Send`] changes its `level` while the sound plays, gliding over `level_slide` seconds.
+    /// A send that would make a chain feed itself, directly or through others, is refused with [`Error::FeedsItself`].
+    ///
+    /// ```
+    /// use mxs::{Engine, RATE, effects};
+    ///
+    /// fn main() -> Result<(), mxs::Error> {
+    ///     let mut engine = Engine::offline(RATE);
+    ///     effects::all().into_iter().for_each(|e| engine.register_effect(e));
+    ///
+    ///     let reverb = engine.start_effects(&[("reverb".to_string(), vec![])])?;
+    ///     let keys = engine.start_part("keys", &[])?;
+    ///     let bass = engine.start_part("bass", &[])?;
+    ///     engine.send(keys, reverb, 0.5)?;
+    ///     engine.send(bass, reverb, 0.1)?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn send(&mut self, from: u64, to: u64, level: f64) -> Result<(), Error> {
+        self.check_running()?;
+        self.settle();
+        let mut book = self.book();
+        book.check_chains(&[from, to])?;
+        if let Some(control) = book.sends.get(&(from, to)) {
+            control.target.set(level as f32);
+            control.slide.set(0.0);
+            return Ok(());
+        }
+        if book
+            .sends
+            .keys()
+            .filter(|(sender, _)| *sender == from)
+            .count()
+            >= crate::mixer::SENDS
+        {
+            return Err(Error::TooManySends(from));
+        }
+        book.feed(from, to)?;
+        let spec = Spec::float("level").default(level);
+        let options = Options::new("send".into(), vec![spec].into(), HashMap::new());
+        let mut unit = options.follow("level");
+        unit.set_sample_rate(self.rate);
+        unit.allocate();
+        let control = options.take_controls().remove("level").expect("followed");
+        let send = crate::mixer::Send {
+            from,
+            to,
+            level: Box::new(unit),
+        };
+        book.send(Command::Send(Box::new(send)))?;
+        book.sends.insert((from, to), control);
+        Ok(())
+    }
+
+    /// Sends the whole sound of `chain` into the chain `into` in place of the main output, or back to the main output with `None`.
+    /// It reaches `into` at the same sample, after the chain's effects and its part's gain, mute and solo, and a route that would make a chain feed itself is refused with [`Error::FeedsItself`].
+    pub fn route(&mut self, chain: u64, into: Option<u64>) -> Result<(), Error> {
+        self.check_running()?;
+        self.settle();
+        let mut book = self.book();
+        book.check_chains(&[chain])?;
+        if let Some(into) = into {
+            book.check_chains(&[into])?;
+            book.feed(chain, into)?;
+        }
+        book.send(Command::Route {
+            key: chain,
+            out: into,
+        })?;
+        match into {
+            Some(into) => book.routes.insert(chain, into),
+            None => book.routes.remove(&chain),
+        };
+        Ok(())
+    }
+
+    /// Has the effects of `chain` that read a key, such as the compressor, read the sound of the chain `by` in place of their own input, or their own input again with `None`.
+    /// A compressor keyed so lowers its own sound by the level of `by`, which sounds as it would without it.
+    /// A key that would make a chain feed itself is refused with [`Error::FeedsItself`], as the chain `by` has to play first.
+    pub fn key(&mut self, chain: u64, by: Option<u64>) -> Result<(), Error> {
+        self.check_running()?;
+        self.settle();
+        let mut book = self.book();
+        book.check_chains(&[chain])?;
+        if let Some(by) = by {
+            book.check_chains(&[by])?;
+            book.feed(by, chain)?;
+        }
+        book.send(Command::Key { key: chain, by })?;
+        match by {
+            Some(by) => book.keys.insert(chain, by),
+            None => book.keys.remove(&chain),
+        };
+        Ok(())
     }
 
     /// Starts an analysis of `sound` from `at` seconds and returns its id: the subscribers to [`Topic::Analysis`] are sent its loudness and its pitch every `interval` seconds, and each onset as it happens, until [`Engine::stop_analysis`].
@@ -1489,6 +1628,12 @@ impl Engine {
             {
                 let names = options.iter().map(|(name, _)| name.as_str());
                 fixed.extend(names.map(|name| (*chain, *index, name)));
+            }
+            if let Event::Set { target, .. } = event
+                && let Target::Send(from, to) = target
+                && !self.book().sends.contains_key(&(*from, *to))
+            {
+                return Err(Error::UnknownSend(*from, *to));
             }
             drafts.push(self.draft(*at, event, None)?);
         }
@@ -2147,6 +2292,16 @@ struct Book {
     sounds: HashMap<u64, Sound>,
     ids: HashMap<u64, u64>,
     chains: HashMap<u64, Vec<HashMap<String, Control>>>,
+    /// The level of each send, by the chain it is from and the chain it goes into.
+    sends: HashMap<(u64, u64), Control>,
+    /// The chain each routed chain plays into in place of the main output.
+    routes: HashMap<u64, u64>,
+    /// The chain that keys each keyed chain.
+    keys: HashMap<u64, u64>,
+    /// The rank of each chain that has one above 0: higher than that of every chain that feeds or keys it.
+    ranks: HashMap<u64, u32>,
+    /// The chains the mixer has ended.
+    ended: std::collections::HashSet<u64>,
     /// The chain of each part started by a name and not stopped.
     parts: HashMap<String, u64>,
     map: TempoMap,
@@ -2178,6 +2333,69 @@ struct Book {
 }
 
 impl Book {
+    fn check_chains(&self, chains: &[u64]) -> Result<(), Error> {
+        match chains
+            .iter()
+            .find(|chain| !self.chains.contains_key(chain) || self.ended.contains(chain))
+        {
+            Some(chain) => Err(Error::UnknownChain(*chain)),
+            None => Ok(()),
+        }
+    }
+
+    /// The chains `chain` plays into or keys, each of which has to play after it.
+    fn fed_by(&self, chain: u64) -> Vec<u64> {
+        let sends = self.sends.keys().filter(|(from, _)| *from == chain);
+        let mut fed: Vec<u64> = sends.map(|(_, to)| *to).collect();
+        fed.extend(self.routes.get(&chain));
+        let keyed = self.keys.iter().filter(|(_, by)| **by == chain);
+        fed.extend(keyed.map(|(keyed, _)| *keyed));
+        fed.sort_unstable();
+        fed.dedup();
+        fed
+    }
+
+    /// The chains on the way from `from` to `to` through what each feeds, both included, if there is one.
+    fn way(&self, from: u64, to: u64, seen: &mut Vec<u64>) -> Option<Vec<u64>> {
+        if from == to {
+            return Some(vec![to]);
+        }
+        if seen.contains(&from) {
+            return None;
+        }
+        seen.push(from);
+        self.fed_by(from).into_iter().find_map(|next| {
+            let mut way = self.way(next, to, seen)?;
+            way.insert(0, from);
+            Some(way)
+        })
+    }
+
+    /// Makes room for `from` to feed or key `to`: refuses a loop, naming its chains, and has `to`, and what it feeds, play after `from`.
+    fn feed(&mut self, from: u64, to: u64) -> Result<(), Error> {
+        if let Some(way) = self.way(to, from, &mut Vec::new()) {
+            let name = |chain: &u64| {
+                let part = self.parts.iter().find(|(_, key)| *key == chain);
+                part.map_or_else(|| chain.to_string(), |(name, _)| name.clone())
+            };
+            let mut chains = vec![name(&from)];
+            chains.extend(way.iter().filter(|chain| **chain != from).map(name));
+            return Err(Error::FeedsItself(chains));
+        }
+        let mut raise = vec![(to, self.ranks.get(&from).copied().unwrap_or(0) + 1)];
+        while let Some((chain, least)) = raise.pop() {
+            if self.ranks.get(&chain).copied().unwrap_or(0) < least {
+                self.ranks.insert(chain, least);
+                self.send(Command::Rank {
+                    key: chain,
+                    rank: least,
+                })?;
+                raise.extend(self.fed_by(chain).into_iter().map(|next| (next, least + 1)));
+            }
+        }
+        Ok(())
+    }
+
     /// Adds voices built ready to those kept for their synths.
     fn keep(&mut self, kept: Vec<(Arc<str>, Built)>) {
         for (synth, built) in kept {
@@ -2261,6 +2479,12 @@ impl Book {
         while let Ok(garbage) = self.garbage.pop() {
             if let Garbage::Chain(chain) = &garbage {
                 let key = chain.key;
+                self.ended.insert(key);
+                self.sends
+                    .retain(|(from, to), _| *from != key && *to != key);
+                self.routes.retain(|from, to| *from != key && *to != key);
+                self.keys.retain(|chain, by| *chain != key && *by != key);
+                self.ranks.remove(&key);
                 self.hub.forget_part(key);
                 self.followers.retain(|follower| follower.0 != key);
                 self.score.retain(|scored| scored.part != key);
@@ -2600,6 +2824,22 @@ impl Book {
         Ok(())
     }
 
+    fn send_changes(&self, at: f64, from: u64, to: u64, options: &[(String, f64)]) -> Vec<Change> {
+        let value = |name: &str| options.iter().find(|(option, _)| option == name);
+        let (level, slide) = (value("level"), value("level_slide"));
+        let control = self
+            .sends
+            .get(&(from, to))
+            .filter(|_| level.or(slide).is_some());
+        let change = control.map(|control| Change {
+            at: self.frames(at),
+            control: control.clone(),
+            value: level.map(|(_, level)| *level as f32),
+            slide: slide.map(|(_, slide)| *slide as f32),
+        });
+        change.into_iter().collect()
+    }
+
     fn changes(&self, at: f64, target: &Target, options: &[(String, f64)]) -> Vec<Change> {
         let controls: Vec<&HashMap<String, Control>> = match target {
             Target::Sounds(ids) => ids
@@ -2620,6 +2860,9 @@ impl Book {
                 .and_then(|c| c.get(*index))
                 .into_iter()
                 .collect(),
+            Target::Send(from, to) => {
+                return self.send_changes(at, *from, *to, options);
+            }
         };
         let mut changes = Vec::new();
         let mut by_option: HashMap<&str, (Option<f32>, Option<f32>)> = HashMap::new();

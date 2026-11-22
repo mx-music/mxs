@@ -176,9 +176,31 @@ pub(crate) struct Chain {
     pub stop: Option<u64>,
     pub tail: u64,
     pub heard: Heard,
+    /// The chain its sound goes into in place of the main output.
+    pub out: Option<u64>,
+    /// The chains a share of its sound also goes into, never more than it was made to hold.
+    #[allow(clippy::vec_box)]
+    pub sends: Vec<Box<Send>>,
+    /// The chain whose sound its effects read as their key, and where they read it.
+    pub key_from: Option<u64>,
+    pub tap: std::sync::Arc<crate::options::KeyTap>,
+    /// Its place among the chains: every chain that feeds or keys it has a lower one, and plays before it.
+    pub rank: u32,
+    /// The end of the last block another chain fed it in.
+    pub fed: u64,
     /// What it has played since the last levels report: the frames, the loudest sample and the squares summed, of each channel.
     pub played: (u32, [f32; 2], [f64; 2]),
 }
+
+/// A share of the sound of the chain `from` that also goes into the chain `to`, at the level its unit plays.
+pub(crate) struct Send {
+    pub from: u64,
+    pub to: u64,
+    pub level: Box<dyn AudioUnit>,
+}
+
+/// How many sends a chain holds.
+pub(crate) const SENDS: usize = 32;
 
 /// How loud a part is heard: its gain, unless it is muted or another part is soloed, reached over `glide` frames so that nothing clicks.
 pub(crate) struct Heard {
@@ -280,6 +302,21 @@ pub(crate) enum Command {
         key: u64,
         at: u64,
     },
+    /// Where a chain's sound goes: into another chain, or to the main output.
+    Route {
+        key: u64,
+        out: Option<u64>,
+    },
+    Send(Box<Send>),
+    /// The chain that keys a chain's effects, or none.
+    Key {
+        key: u64,
+        by: Option<u64>,
+    },
+    Rank {
+        key: u64,
+        rank: u32,
+    },
     Part {
         key: u64,
         at: u64,
@@ -311,6 +348,7 @@ pub(crate) enum Garbage {
     Voice(Box<Voice>),
     Change(Box<Change>),
     Chain(Box<Chain>),
+    Send(Box<Send>),
     Recorder(Box<Recorder>),
     Listener(Box<Listener>),
     Pool(Box<Pool>),
@@ -325,6 +363,9 @@ pub(crate) struct Mixer {
     #[allow(clippy::vec_box)]
     chains: Vec<Box<Chain>>,
     main: Option<Box<Chain>>,
+    /// Whether any chain has been given a rank, from when on the chains are kept in the order of their ranks.
+    ranked: bool,
+    levels: BufferVec,
     #[allow(clippy::vec_box)]
     changes: Vec<Box<Change>>,
     part_changes: Vec<(u64, u64, PartChange)>,
@@ -357,6 +398,8 @@ impl Mixer {
             voices: Vec::with_capacity(CAPACITY),
             chains: Vec::with_capacity(256),
             main: None,
+            ranked: false,
+            levels: BufferVec::new(1),
             changes: Vec::with_capacity(CAPACITY),
             part_changes: Vec::with_capacity(CAPACITY),
             buffer: BufferVec::new(2),
@@ -428,6 +471,36 @@ impl Mixer {
                     let solo = self.chains.iter().any(|c| c.heard.soloed);
                     chain.heard.aim(solo);
                     self.chains.push(chain);
+                    self.sort_chains();
+                }
+                Command::Route { key, out } => {
+                    if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
+                        chain.out = out;
+                    }
+                }
+                Command::Send(send) => {
+                    let chain = self.chains.iter_mut().find(|c| c.key == send.from);
+                    match chain {
+                        Some(chain) if chain.sends.len() < chain.sends.capacity() => {
+                            chain.sends.push(send);
+                        }
+                        _ => {
+                            let _ = self.garbage.push(Garbage::Send(send));
+                        }
+                    }
+                }
+                Command::Key { key, by } => {
+                    if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
+                        chain.key_from = by;
+                        chain.tap.start_block(by.is_some());
+                    }
+                }
+                Command::Rank { key, rank } => {
+                    if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
+                        chain.rank = rank;
+                    }
+                    self.ranked = true;
+                    self.sort_chains();
                 }
                 Command::StartMain(chain) => {
                     if let Some(old) = self.main.replace(chain) {
@@ -503,6 +576,13 @@ impl Mixer {
         }
     }
 
+    /// Puts the chains in the order of their ranks once any has one, so that each plays after those that feed or key it.
+    fn sort_chains(&mut self) {
+        if self.ranked {
+            self.chains.sort_unstable_by_key(|c| (c.rank, c.key));
+        }
+    }
+
     fn block(&mut self, left: &mut [f32], right: &mut [f32]) {
         let n = left.len();
         let end = self.now + n as u64;
@@ -547,9 +627,14 @@ impl Mixer {
 
         self.keep_to_the_limit(end);
 
+        let mut keyed = false;
         for chain in &mut self.chains {
             chain.input.clear();
             chain.heard.aim(solo);
+            if chain.key_from.is_some() {
+                chain.tap.start_block(true);
+                keyed = true;
+            }
         }
         for listener in &mut self.listeners {
             listener.sound.clear();
@@ -674,8 +759,12 @@ impl Mixer {
                     self.buffer.at_f32(0, k) * level,
                     self.buffer.at_f32(1, k) * level,
                 );
-                left[k] += l;
-                right[k] += r;
+                if chain.out.is_none() {
+                    left[k] += l;
+                    right[k] += r;
+                }
+                self.buffer.set_f32(0, k, l);
+                self.buffer.set_f32(1, k, r);
                 for listener in &mut self.listeners {
                     if listener.listened == Listened::Chain(chain.key) {
                         listener.sound.set_f32(0, k, l);
@@ -707,11 +796,62 @@ impl Mixer {
             if levels == Some(None) {
                 chain.played = (0, [0.0; 2], [0.0; 2]);
             }
-            let key = chain.key;
-            let finished = chain.stop.is_some_and(|stop| end >= stop + chain.tail)
+            let (key, out) = (chain.key, chain.out);
+            if let Some(to) = out
+                && let Some(target) = self.chains.iter_mut().find(|c| c.key == to)
+            {
+                for k in 0..n {
+                    let l = target.input.at_f32(0, k) + self.buffer.at_f32(0, k);
+                    let r = target.input.at_f32(1, k) + self.buffer.at_f32(1, k);
+                    target.input.set_f32(0, k, l);
+                    target.input.set_f32(1, k, r);
+                }
+                target.fed = end;
+            }
+            for s in 0..self.chains[i].sends.len() {
+                let send = &mut self.chains[i].sends[s];
+                send.level
+                    .process(n, &BufferRef::empty(), &mut self.levels.buffer_mut());
+                let to = send.to;
+                if let Some(target) = self.chains.iter_mut().find(|c| c.key == to) {
+                    for k in 0..n {
+                        let level = self.levels.at_f32(0, k);
+                        let l = target.input.at_f32(0, k) + self.buffer.at_f32(0, k) * level;
+                        let r = target.input.at_f32(1, k) + self.buffer.at_f32(1, k) * level;
+                        target.input.set_f32(0, k, l);
+                        target.input.set_f32(1, k, r);
+                    }
+                    target.fed = end;
+                }
+            }
+            if keyed {
+                for other in &self.chains {
+                    if other.key_from == Some(key) {
+                        for k in 0..n {
+                            other
+                                .tap
+                                .write(k, self.buffer.at_f32(0, k), self.buffer.at_f32(1, k));
+                        }
+                    }
+                }
+            }
+            let chain = &self.chains[i];
+            let fed = self
+                .chains
+                .iter()
+                .any(|c| c.out == Some(key) || c.sends.iter().any(|s| s.to == key));
+            let finished = !fed
+                && chain
+                    .stop
+                    .is_some_and(|stop| end >= Ord::max(stop, chain.fed) + chain.tail)
                 && !self.voices.iter().any(|v| v.out == Out::Chain(key));
             if finished {
-                let chain = self.chains.swap_remove(i);
+                // In order once chains are ranked, so that each still plays after those that feed it.
+                let chain = if self.ranked {
+                    self.chains.remove(i)
+                } else {
+                    self.chains.swap_remove(i)
+                };
                 let _ = self.garbage.push(Garbage::Chain(chain));
             } else {
                 i += 1;

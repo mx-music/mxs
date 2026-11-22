@@ -4,6 +4,8 @@
 
 ### 1. Enhancements
 
+  * [engine] Add `Engine::send`, which sends a share of a chain's sound into another chain at a level that `Target::Send` changes while it plays, `Engine::route`, which sends all of it there in place of the main output, and `Engine::key`, which has a chain's compressor follow another chain's level; the sound arrives at the same sample, a chain that would feed itself is refused, and a chain that others feed plays until they have ended
+  * [effects] An effect reads the chain that keys its own with `Options::key`
   * [engine] Add `Engine::start_main_effects`, the effects everything the engine plays goes through after each part's own effects, gain, mute and solo; a change reaches them by the chain it returns
   * [effects] Add `limiter`, which turns both sides down alike just before a peak on either would pass `ceiling`, in dB below full scale, and lets them back up over `relax_ms`; no sample passes the ceiling, and its sound comes out 5 ms late
   * [graph] `lowpass` and `highpass` given `poles: 1` are filters of one pole, falling 6 dB an octave, as mxs's snare, toms, congas and cuíca use; one given `q` beside it is refused when registered

@@ -338,7 +338,7 @@ fn compressor() -> Effect {
                 | o.follow("slope_above")
                 | (o.follow("clamp_ms") * 0.001)
                 | (o.follow("relax_ms") * 0.001);
-            (net(multipass::<U2>()) | controls) >> net(An(Compander::new()))
+            (net(multipass::<U2>()) | controls | o.key()) >> net(An(Compander::new()))
         })
 }
 
@@ -1414,8 +1414,8 @@ impl AudioNode for Lag {
     }
 }
 
-/// Follows the level of each channel and turns it down above the threshold, or up below it, by the slopes.
-/// Inputs: left, right, threshold, slope below, slope above, clamp time, relax time.
+/// Follows the level of each channel, or of the same channel of its key while it has one, and turns the channel down above the threshold, or up below it, by the slopes.
+/// Inputs: left, right, threshold, slope below, slope above, clamp time, relax time, the key's left and right, and whether it has a key.
 #[derive(Clone)]
 struct Compander {
     level: [f32; 2],
@@ -1433,7 +1433,7 @@ impl Compander {
 
 impl AudioNode for Compander {
     const ID: u64 = 0x6d78_0014;
-    type Inputs = U7;
+    type Inputs = U10;
     type Outputs = U2;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -1444,8 +1444,9 @@ impl AudioNode for Compander {
         self.level = [0.0; 2];
     }
 
-    fn tick(&mut self, input: &Frame<f32, U7>) -> Frame<f32, U2> {
+    fn tick(&mut self, input: &Frame<f32, U10>) -> Frame<f32, U2> {
         let threshold = input[2].max(0.0001);
+        let keyed = input[9] > 0.5;
         let keep = |seconds: f32| {
             if seconds > 0.0 {
                 0.001f32.powf(1.0 / (seconds * self.rate))
@@ -1457,7 +1458,11 @@ impl AudioNode for Compander {
         let mut out = [0.0f32; 2];
         for side in 0..2 {
             let x = input[side];
-            let size = x.abs();
+            let size = if keyed {
+                input[7 + side].abs()
+            } else {
+                x.abs()
+            };
             let keep = if size > self.level[side] {
                 clamp
             } else {

@@ -12,6 +12,73 @@ pub struct Options {
     pub(crate) values: HashMap<String, Value>,
     pub(crate) controls: Mutex<HashMap<String, Control>>,
     pub(crate) held: bool,
+    /// Where an effect reads the chain its chain is keyed by.
+    pub(crate) key: Option<Arc<KeyTap>>,
+}
+
+/// The block a chain is keyed by: both sides of the output of the chain that keys it, which the mixer writes before the keyed chain plays.
+pub(crate) struct KeyTap {
+    on: std::sync::atomic::AtomicBool,
+    block: std::sync::atomic::AtomicU64,
+    samples: [[std::sync::atomic::AtomicU32; fundsp::MAX_BUFFER_SIZE]; 2],
+}
+
+impl KeyTap {
+    pub(crate) fn new() -> KeyTap {
+        KeyTap {
+            on: std::sync::atomic::AtomicBool::new(false),
+            block: std::sync::atomic::AtomicU64::new(0),
+            samples: std::array::from_fn(|_| std::array::from_fn(|_| Default::default())),
+        }
+    }
+
+    /// Says whether a chain keys this one, and starts a block of silence.
+    pub(crate) fn start_block(&self, on: bool) {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.on.store(on, Relaxed);
+        self.block.fetch_add(1, Relaxed);
+        for side in &self.samples {
+            for sample in side {
+                sample.store(0, Relaxed);
+            }
+        }
+    }
+
+    pub(crate) fn write(&self, frame: usize, left: f32, right: f32) {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.samples[0][frame].store(left.to_bits(), Relaxed);
+        self.samples[1][frame].store(right.to_bits(), Relaxed);
+    }
+}
+
+/// Both sides of the chain that keys this one, and 1 while one does, 0 otherwise.
+#[derive(Clone)]
+pub(crate) struct Keyed {
+    tap: Arc<KeyTap>,
+    block: u64,
+    frame: usize,
+}
+
+impl fundsp::prelude::AudioNode for Keyed {
+    const ID: u64 = 0x6d78_007b;
+    type Inputs = fundsp::prelude::U0;
+    type Outputs = fundsp::prelude::U3;
+
+    fn tick(
+        &mut self,
+        _input: &fundsp::prelude::Frame<f32, Self::Inputs>,
+    ) -> fundsp::prelude::Frame<f32, Self::Outputs> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let block = self.tap.block.load(Relaxed);
+        if block != self.block {
+            (self.block, self.frame) = (block, 0);
+        }
+        let frame = Ord::min(self.frame, fundsp::MAX_BUFFER_SIZE - 1);
+        self.frame += 1;
+        let side = |side: usize| f32::from_bits(self.tap.samples[side][frame].load(Relaxed));
+        let on = if self.tap.on.load(Relaxed) { 1.0 } else { 0.0 };
+        [side(0), side(1), on].into()
+    }
 }
 
 /// The value an option glides to and the seconds it takes, which the engine sets while the note sounds.
@@ -29,6 +96,7 @@ impl Options {
             values,
             controls: Mutex::new(HashMap::new()),
             held: false,
+            key: None,
         }
     }
 
@@ -135,6 +203,19 @@ impl Options {
             })
             .clone();
         Net::wrap(Box::new(An(Glide::new(control, start))))
+    }
+
+    /// Both sides of the chain that keys the effect's chain, as [`Engine::key`](crate::Engine::key) sets it, and a third signal that is 1 while one does and 0 otherwise.
+    /// It is silence in a note.
+    pub fn key(&self) -> Net {
+        match &self.key {
+            Some(tap) => Net::wrap(Box::new(fundsp::prelude::An(Keyed {
+                tap: tap.clone(),
+                block: 0,
+                frame: 0,
+            }))),
+            None => Net::wrap(Box::new(fundsp::prelude::dc((0.0, 0.0, 0.0)))),
+        }
     }
 
     pub(crate) fn take_controls(&self) -> HashMap<String, Control> {

@@ -125,6 +125,20 @@ fn main() -> Result<(), mxs::Error> {
 The chain stays until its sounds have ended and its effects' tails have rung out, so a reverb is not cut off.
 Each effect declares how long its tail is.
 
+## A chain into another chain
+
+A chain's sound goes to the main output unless the chain is told otherwise.
+
+- [`Engine::send`] sends a share of it, at a level, into another chain as well, so several parts can share one reverb: each part sends into the reverb's chain, and the reverb is computed once.
+- [`Engine::route`] sends all of it into another chain in place of the main output.
+- [`Engine::key`] has a chain's compressor follow the level of another chain in place of its own input, so a pad drops under each kick.
+- A sound reaches the chain it is sent into at the same sample, since the mixer plays each chain after those that feed or key it.
+- A send, a route or a key that would make a chain feed itself is refused, naming the chains of the loop.
+- A chain that others feed plays on after it is stopped, until each of them has ended and its own tail has rung out.
+- An [`Event::Set`] to [`Target::Send`] changes a send's `level` at a time, gliding over `level_slide` seconds.
+
+[`Engine::start_main_effects`] starts the effects the main output itself goes through, after every chain, such as a limiter.
+
 ## Parts
 
 A part is a chain started under a name by [`Engine::start_part`], with effects or with none.
