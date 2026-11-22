@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
 use mxs::graph::{Clause, Graph};
-use mxs::nodes::{hz, struck};
+use mxs::nodes::{hz, modes, struck, white_noise};
 use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
 
 fn n(x: f64) -> Graph {
@@ -666,4 +666,75 @@ fn a_follower_rises_and_falls_within_its_times() {
     assert!(at(0.4) > 0.9 && at(0.4) <= 1.0);
     assert!(at(0.6) < 0.1, "{}", at(0.6));
     assert!(at(0.55) > 0.2, "{}", at(0.55));
+}
+
+fn list(xs: &[f64]) -> Graph {
+    Graph::List(xs.iter().map(|&x| n(x)).collect())
+}
+
+fn noise(seed: Option<f64>) -> Graph {
+    let named = seed.map(|s| ("seed", n(s))).into_iter().collect();
+    Graph::call("noise", vec![Graph::Name("white".to_string())], named)
+}
+
+/// noise(:white) |> mode(hz: [...], level: [...], fade: [...])
+fn bank(fades: &[f64]) -> Graph {
+    Graph::call(
+        "mode",
+        vec![noise(None)],
+        vec![
+            ("hz", list(&[440.0, 1210.0, 2630.0])),
+            ("level", list(&[0.3, 0.2, 0.1])),
+            ("fade", list(fades)),
+        ],
+    )
+}
+
+fn traced(name: &str, graph: Graph) -> Result<Synth, String> {
+    Synth::graph(
+        name,
+        note_specs(),
+        vec![Clause {
+            matches: vec![],
+            graph: rings(graph, 0.8),
+        }],
+    )
+}
+
+#[test]
+fn a_traced_mode_given_lists_strikes_every_mode_with_one_noise_as_modes_in_rust_does() {
+    let traced = traced("bank", bank(&[0.4, 0.3, 0.2])).unwrap();
+    let written = Synth::new("bank").options(note_specs()).build(|_, ctx| {
+        let noise = white_noise(ctx.seed());
+        let bank = modes(
+            noise,
+            &[440.0, 1210.0, 2630.0],
+            &[0.3, 0.2, 0.1],
+            &[0.4, 0.3, 0.2],
+        );
+        Note::rings(bank, 0.8)
+    });
+    let (a, b) = (render(traced, &[]), render(written, &[]));
+    assert!(a.iter().any(|x| x.abs() > 0.01));
+    assert_eq!(a, b);
+}
+
+#[test]
+fn a_mode_given_lists_of_different_lengths_is_refused_when_the_synth_is_registered() {
+    assert_eq!(
+        traced("bank", bank(&[0.4, 0.3])).err(),
+        Some("bank: mode's hz:, level: and fade: lists differ in length".to_string())
+    );
+}
+
+#[test]
+fn a_noise_given_a_seed_plays_that_seed_and_leaves_the_note_s_seeds_to_the_rest() {
+    let both = Graph::call("add", vec![noise(Some(7.0)), noise(None)], vec![]);
+    let traced = traced("seeded", both).unwrap();
+    let written = Synth::new("seeded")
+        .options(note_specs())
+        .build(|_, ctx| Note::rings(white_noise(7) + white_noise(ctx.seed()), 0.8));
+    let (a, b) = (render(traced, &[]), render(written, &[]));
+    assert!(a.iter().any(|x| x.abs() > 0.01));
+    assert_eq!(a, b);
 }

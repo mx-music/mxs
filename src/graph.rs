@@ -18,7 +18,7 @@
 //! | `sine(hz:, phase:)` | A sine wave; `phase` is in radians, and 0 unless given. |
 //! | `saw(hz:)`, `square(hz:)`, `triangle(hz:)` | The wave named. |
 //! | `pulse(hz:, width:)` | A pulse wave; `width` is the part of each cycle that is up, and a half unless given. |
-//! | `noise(colour)` | Noise; `colour` is the name `white` or `pink`. |
+//! | `noise(colour, seed:)` | Noise; `colour` is the name `white` or `pink`, and `seed`, if given, fixes its numbers instead of drawing a seed from the note. |
 //! | `time()` | The seconds since the note started. |
 //! | `follow(option)` | An option as a signal, which glides to each new value it is given while the note sounds. |
 //! | `input()` | In an effect, the channel coming in. |
@@ -32,7 +32,7 @@
 //! | `lowpass(sound, hz:, q:, poles:)`, `highpass`, `bandpass` | Filters it; `q` is 0.707 and `poles` is 2 unless given, and `hz` is held from 20 to 20000; `hz` and `q` may change while the note sounds. |
 //! | `ladder(sound, hz:, resonance:)` | Filters it through a four-pole resonant lowpass, the ladder of analog synths; `resonance` is from 0, unless given, to 1, where the filter rings on at `hz` once set ringing, and both may change while the note sounds. |
 //! | `lowshelf(sound, hz:, q:, db:)`, `highshelf`, `peak` | Raises or lowers it by `db` below, above or around `hz`. |
-//! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; all three are known when the note starts. |
+//! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; all three are known when the note starts. Given lists of the same length, it sets a resonator ringing for each, all struck by the one sound. |
 //! | `delay(sound, seconds:, max:)` | Delays it by `seconds`, which may change up to `max`. |
 //! | `dc_block(sound, hz:)` | Takes its constant offset away, below `hz`, 10 unless given. |
 //! | `allpass(sound, hz:, q:)` | Passes every frequency at the same level and shifts its phase around `hz`; `q` is 0.707 unless given, and both may change while it sounds. |
@@ -537,6 +537,19 @@ fn known(graph: &Graph) -> Result<(), String> {
             }) {
                 return Err(format!("{name} needs {key}:"));
             }
+            if name == "mode" {
+                let lengths: Vec<Option<usize>> = ["hz", "level", "fade"]
+                    .iter()
+                    .filter_map(|key| named.iter().find(|(k, _)| k == key))
+                    .map(|(_, v)| match v {
+                        Graph::List(items) => Some(items.len()),
+                        _ => None,
+                    })
+                    .collect();
+                if lengths.iter().any(Option::is_some) && lengths.windows(2).any(|w| w[0] != w[1]) {
+                    return Err("mode's hz:, level: and fade: lists differ in length".to_string());
+                }
+            }
             args.iter()
                 .chain(named.iter().map(|(_, v)| v))
                 .try_for_each(known)
@@ -908,15 +921,18 @@ impl Build<'_> {
                 wave.reset();
                 Ok(V::Sig((freq | width) >> net(wave)))
             }
-            "noise" => match arg(0)? {
-                V::Name(colour) if colour == "white" => {
-                    Ok(V::Sig(nodes::white_noise(self.ctx.seed())))
+            "noise" => {
+                let colour = arg(0)?;
+                let seed = match take("seed") {
+                    Some(seed) => number(seed, "a noise's seed")? as u64,
+                    None => self.ctx.seed(),
+                };
+                match colour {
+                    V::Name(colour) if colour == "white" => Ok(V::Sig(nodes::white_noise(seed))),
+                    V::Name(colour) if colour == "pink" => Ok(V::Sig(nodes::pink_noise(seed))),
+                    _ => Err("noise takes :white or :pink".to_string()),
                 }
-                V::Name(colour) if colour == "pink" => {
-                    Ok(V::Sig(nodes::pink_noise(self.ctx.seed())))
-                }
-                _ => Err("noise takes :white or :pink".to_string()),
-            },
+            }
             "lowpass" | "highpass" | "bandpass" => {
                 let mut sound = signal(arg(0)?)?;
                 let freq = take("hz").ok_or(format!("{name} needs hz:"))?;
@@ -970,7 +986,20 @@ impl Build<'_> {
             }
             "mode" => {
                 let sound = arg(0)?;
-                let freq = number(take("hz").ok_or("mode needs hz:")?, "a mode's hz")?;
+                let freq = take("hz").ok_or("mode needs hz:")?;
+                if let V::List(_) = freq {
+                    let freqs = numbers(freq, "a mode's hz")?;
+                    let levels =
+                        numbers(take("level").ok_or("mode needs level:")?, "a mode's level")?;
+                    let fades = numbers(take("fade").ok_or("mode needs fade:")?, "a mode's fade")?;
+                    return Ok(V::Sig(nodes::modes(
+                        signal(sound)?,
+                        &freqs,
+                        &levels,
+                        &fades,
+                    )));
+                }
+                let freq = number(freq, "a mode's hz")?;
                 let level = number(take("level").ok_or("mode needs level:")?, "a mode's level")?;
                 let fade = number(take("fade").ok_or("mode needs fade:")?, "a mode's fade")?;
                 if level == 0.0 || freq >= 20_000.0 {
