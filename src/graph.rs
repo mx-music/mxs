@@ -19,7 +19,7 @@
 //! | `saw(hz:)`, `square(hz:)`, `triangle(hz:)` | The wave named. |
 //! | `pulse(hz:, width:)` | A pulse wave; `width` is the part of each cycle that is up, and a half unless given. |
 //! | `noise(colour, seed:)` | Noise; `colour` is the name `white` or `pink`, and `seed`, if given, fixes its numbers instead of drawing a seed from the note. |
-//! | `time()` | The seconds since the note started. |
+//! | `time(every:)` | The seconds since the note started, starting over every `every` seconds if given, worked out before the sound is rounded to a sample's precision. |
 //! | `follow(option)` | An option as a signal, which glides to each new value it is given while the note sounds. |
 //! | `input()` | In an effect, the channel coming in. |
 //! | `left()`, `right()` | In an effect over both sides, the side named coming in. |
@@ -261,6 +261,7 @@ const NEEDS: &[(&str, &[&str])] = &[
 
 /// The arguments by name each of these calls takes, any other being refused when the graph is checked.
 const TAKES: &[(&str, &[&str])] = &[
+    ("time", &["every"]),
     ("sweep", &["length", "wave", "invert", "offset", "width"]),
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz", "q"]),
@@ -864,7 +865,13 @@ impl Build<'_> {
                 )?;
                 Ok(V::Sig(sound >> net(An(crate::effects::Lag::new(seconds)))))
             }
-            "time" => Ok(V::Sig(nodes::shape(|t| t))),
+            "time" => match take("every") {
+                Some(every) => {
+                    let every = number(every, "a time's every")?;
+                    Ok(V::Sig(nodes::shape(move |t| t % every)))
+                }
+                None => Ok(V::Sig(nodes::shape(|t| t))),
+            },
             "bowed_string" => {
                 let note = signal(take("note").ok_or("bowed_string needs note:")?)?;
                 let mut figure = |key: &str| {

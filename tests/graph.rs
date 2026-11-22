@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
 use mxs::graph::{Clause, Graph};
-use mxs::nodes::{hz, modes, struck, white_noise};
+use mxs::nodes::{hz, modes, shape, struck, white_noise};
 use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
 
 fn n(x: f64) -> Graph {
@@ -928,4 +928,30 @@ fn mod_wraps_a_number_and_a_sound_into_zero_up_to_its_divisor() {
     assert!((at(0.05) / at(0.09) - 0.05 / 0.09).abs() < 1e-3);
     assert!(at(0.2 + 0.5 / RATE).abs() < at(0.09).abs() * 1e-2);
     assert!((ramp[period + 100] - ramp[2 * period + 100]).abs() < 1e-4);
+}
+
+#[test]
+fn time_given_every_starts_over_at_that_period_on_the_same_sample_as_a_voice_in_rust() {
+    let graph = Graph::call("time", vec![], vec![("every", n(0.125))]);
+    let traced = Synth::graph(
+        "every",
+        note_specs(),
+        vec![Clause {
+            matches: vec![],
+            graph: rings(graph, 0.5),
+        }],
+    )
+    .unwrap();
+    let rust = Synth::new("every").build(|_, _| Note::rings(shape(|t| t % 0.125), 0.5));
+    assert_eq!(render(traced, &[]), render(rust, &[]));
+
+    let refused = Synth::graph(
+        "often",
+        note_specs(),
+        vec![Clause {
+            matches: vec![],
+            graph: rings(Graph::call("time", vec![], vec![("often", n(0.1))]), 0.5),
+        }],
+    );
+    assert_eq!(refused.err().unwrap(), "often: time does not take often:");
 }

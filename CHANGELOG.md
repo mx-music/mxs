@@ -12,6 +12,7 @@
   * [effects] Add `limiter`, which turns both sides down alike just before a peak on either would pass `ceiling`, in dB below full scale, and lets them back up over `relax_ms`; no sample passes the ceiling, and its sound comes out 5 ms late
   * [graph] `lowpass` and `highpass` given `poles: 1` are filters of one pole, falling 6 dB an octave, as mxs's snare, toms, congas and cuíca use; one given `q` beside it is refused when registered
   * [graph] Add `mod`, the remainder of its first argument after its second, from 0 up to the second for any first, so an envelope can start over at a period
+  * [graph] `time` takes `every`, the seconds after which it starts over, worked out as a Rust voice does, so it starts over on the same sample, where `mod` of `time` can start over one sample early
 
 ## v0.5.0 (2026-11-22)
 
