@@ -305,19 +305,20 @@ fn compressor() -> Effect {
     Effect::new("compressor")
         .option(
             Spec::float("threshold")
-                .default(0.2)
-                .range(0.0001, f64::INFINITY)
-                .doc("The level above which it lowers the sound."),
+                .default(-18.0)
+                .range(-80.0, 0.0)
+                .doc("The level above which it lowers the sound, in dB below full scale."),
         )
         .option(
-            Spec::float("slope_below")
-                .default(1.0)
-                .doc("How much the level changes below the threshold."),
+            Spec::float("ratio").default(4.0).range(1.0, 100.0).doc(
+                "How many dB the sound has to rise above the threshold to come out 1 dB louder.",
+            ),
         )
         .option(
-            Spec::float("slope_above")
-                .default(0.5)
-                .doc("How much the level changes above the threshold."),
+            Spec::float("makeup")
+                .default(0.0)
+                .range(-40.0, 40.0)
+                .doc("How many dB it raises the sound afterwards."),
         )
         .option(
             Spec::ms("clamp_ms")
@@ -327,18 +328,18 @@ fn compressor() -> Effect {
         )
         .option(
             Spec::ms("relax_ms")
-                .default(10.0)
+                .default(150.0)
                 .range(0.0, f64::INFINITY)
                 .doc("How many milliseconds it takes to let go."),
         )
         .tail(0.1)
         .build(|o, _| {
             let controls = o.follow("threshold")
-                | o.follow("slope_below")
-                | o.follow("slope_above")
+                | o.follow("ratio")
+                | o.follow("makeup")
                 | (o.follow("clamp_ms") * 0.001)
                 | (o.follow("relax_ms") * 0.001);
-            (net(multipass::<U2>()) | controls | o.key()) >> net(An(Compander::new()))
+            (net(multipass::<U2>()) | controls | o.key()) >> net(An(Compressor::new()))
         })
 }
 
@@ -1414,24 +1415,27 @@ impl AudioNode for Lag {
     }
 }
 
-/// Follows the level of each channel, or of the same channel of its key while it has one, and turns the channel down above the threshold, or up below it, by the slopes.
-/// Inputs: left, right, threshold, slope below, slope above, clamp time, relax time, the key's left and right, and whether it has a key.
+/// Follows the level of the louder side, or of the louder side of its key while it has one, and above the threshold turns both sides down alike, so the level comes out 1 dB higher for each ratio dB it rises.
+/// The level is the last peak let go over the relax time, which the level then rises to over the clamp time and falls to over the relax time again, so it holds still through the cycle of a low note.
+/// Inputs: left, right, threshold in dB, ratio, makeup in dB, clamp time, relax time, the key's left and right, and whether it has a key.
 #[derive(Clone)]
-struct Compander {
-    level: [f32; 2],
+struct Compressor {
+    peak: f32,
+    level: f32,
     rate: f32,
 }
 
-impl Compander {
+impl Compressor {
     fn new() -> Self {
-        Compander {
-            level: [0.0; 2],
+        Compressor {
+            peak: 0.0,
+            level: 0.0,
             rate: DEFAULT_SR as f32,
         }
     }
 }
 
-impl AudioNode for Compander {
+impl AudioNode for Compressor {
     const ID: u64 = 0x6d78_0014;
     type Inputs = U10;
     type Outputs = U2;
@@ -1441,12 +1445,10 @@ impl AudioNode for Compander {
     }
 
     fn reset(&mut self) {
-        self.level = [0.0; 2];
+        (self.peak, self.level) = (0.0, 0.0);
     }
 
     fn tick(&mut self, input: &Frame<f32, U10>) -> Frame<f32, U2> {
-        let threshold = input[2].max(0.0001);
-        let keyed = input[9] > 0.5;
         let keep = |seconds: f32| {
             if seconds > 0.0 {
                 0.001f32.powf(1.0 / (seconds * self.rate))
@@ -1455,31 +1457,22 @@ impl AudioNode for Compander {
             }
         };
         let (clamp, relax) = (keep(input[5]), keep(input[6]));
-        let mut out = [0.0f32; 2];
-        for side in 0..2 {
-            let x = input[side];
-            let size = if keyed {
-                input[7 + side].abs()
-            } else {
-                x.abs()
-            };
-            let keep = if size > self.level[side] {
-                clamp
-            } else {
-                relax
-            };
-            self.level[side] = size + (self.level[side] - size) * keep;
-            let level = self.level[side];
-            let gain = if level > threshold {
-                (level / threshold).powf(input[4] - 1.0)
-            } else if level > 0.0 {
-                (level / threshold).powf(input[3] - 1.0)
-            } else {
-                1.0
-            };
-            out[side] = x * gain.min(1000.0);
-        }
-        out.into()
+        let size = if input[9] > 0.5 {
+            input[7].abs().max(input[8].abs())
+        } else {
+            input[0].abs().max(input[1].abs())
+        };
+        self.peak = size.max(size + (self.peak - size) * relax);
+        let towards = if self.peak > self.level { clamp } else { relax };
+        self.level = self.peak + (self.level - self.peak) * towards;
+        let over = 20.0 * self.level.max(1e-9).log10() - input[2];
+        let lowered = if over > 0.0 {
+            over * (1.0 / input[3].max(1.0) - 1.0)
+        } else {
+            0.0
+        };
+        let gain = db_amp(lowered + input[4]);
+        [input[0] * gain, input[1] * gain].into()
     }
 }
 

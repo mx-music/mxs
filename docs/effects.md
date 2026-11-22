@@ -68,11 +68,11 @@ Besides its own options, every effect takes these.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
-| `threshold` | a number, 0.0001 or more | 0.2 | The level above which it lowers the sound. |
-| `slope_below` | a number | 1 | How much the level changes below the threshold. |
-| `slope_above` | a number | 0.5 | How much the level changes above the threshold. |
+| `threshold` | a number, -80 to 0 | -18 | The level above which it lowers the sound, in dB below full scale. |
+| `ratio` | a number, 1 to 100 | 4 | How many dB the sound has to rise above the threshold to come out 1 dB louder. |
+| `makeup` | a number, -40 to 40 | 0 | How many dB it raises the sound afterwards. |
 | `clamp_ms` | milliseconds, 0 or more | 10 | How many milliseconds it takes to lower the sound. |
-| `relax_ms` | milliseconds, 0 or more | 10 | How many milliseconds it takes to let go. |
+| `relax_ms` | milliseconds, 0 or more | 150 | How many milliseconds it takes to let go. |
 
 ### `chorus`
 

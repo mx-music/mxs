@@ -261,11 +261,7 @@ fn pumped(keyed: bool, pad: f64, kick: bool) -> Vec<f32> {
     let kicks = engine.start_effects(&[]).unwrap();
     let compressor = effect(
         "compressor",
-        &[
-            ("threshold", 0.2),
-            ("slope_above", 0.25),
-            ("relax_ms", 50.0),
-        ],
+        &[("threshold", -14.0), ("ratio", 4.0), ("relax_ms", 50.0)],
     );
     let pads = engine.start_effects(&[compressor]).unwrap();
     if keyed {

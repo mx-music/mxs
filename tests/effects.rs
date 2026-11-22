@@ -565,3 +565,117 @@ fn the_main_effects_take_everything_the_engine_plays_after_each_parts_own() {
     });
     assert_eq!(replaced, dry);
 }
+
+fn peak_db(samples: &[f32]) -> f32 {
+    20.0 * loudest(samples).log10()
+}
+
+/// The level in dB of the partial at `hz` over a whole number of its cycles from `from` seconds.
+fn partial_db(samples: &[f32], hz: f64, from: f64) -> f64 {
+    let cycles = (0.5 * hz).floor();
+    let window = &samples[frame(from)..frame(from) + (cycles / hz * RATE).round() as usize];
+    let (mut sin, mut cos) = (0.0, 0.0);
+    for (i, x) in window.iter().enumerate() {
+        let angle = std::f64::consts::TAU * hz * i as f64 / RATE;
+        sin += f64::from(*x) * angle.sin();
+        cos += f64::from(*x) * angle.cos();
+    }
+    20.0 * (2.0 * (sin * sin + cos * cos).sqrt() / window.len() as f64).log10()
+}
+
+#[test]
+fn the_compressor_lowers_what_is_over_its_threshold_by_its_ratio_and_raises_it_by_its_makeup() {
+    let dry = through("level", &[], "tone", 1.0);
+    let level = f64::from(peak_db(&dry[frame(0.5)..]));
+
+    // 12 dB over the threshold at a ratio of 4 leaves 3 dB over: 9 dB down.
+    let over = [("threshold", level - 12.0), ("ratio", 4.0)];
+    let squeezed = through("compressor", &over, "tone", 1.0);
+    let down = f64::from(peak_db(&squeezed[frame(0.5)..])) - level;
+    assert!((down + 9.0).abs() < 0.5, "{down}");
+
+    let made_up = [("threshold", level - 12.0), ("ratio", 4.0), ("makeup", 6.0)];
+    let raised = through("compressor", &made_up, "tone", 1.0);
+    let down = f64::from(peak_db(&raised[frame(0.5)..])) - level;
+    assert!((down + 3.0).abs() < 0.5, "{down}");
+
+    // 12 dB under the threshold it is left as it was.
+    let under = [("threshold", level + 12.0), ("ratio", 4.0)];
+    let left = through("compressor", &under, "tone", 1.0);
+    let apart = f64::from(peak_db(&left[frame(0.5)..])) - level;
+    assert!(apart.abs() < 0.2, "{apart}");
+
+    let mut engine = engine();
+    let effect = [("compressor".to_string(), options(&[("slope_above", 0.5)]))];
+    assert!(engine.start_effects(&effect).is_err());
+}
+
+#[test]
+fn the_compressor_as_it_comes_keeps_the_shape_of_a_low_notes_cycle() {
+    let mut engine = engine();
+    engine.register(Synth::new("low").build(|_, _| {
+        let first = Net::wrap(Box::new(sine_hz::<f32>(41.0))) * 0.8;
+        let third = Net::wrap(Box::new(sine_hz::<f32>(123.0))) * 0.2;
+        Note::rings(first + third, 3.0)
+    }));
+    let mut played = |effect: &str| {
+        let chain = engine
+            .start_effects(&[(effect.to_string(), vec![])])
+            .unwrap();
+        let note = Event::Note {
+            id: None,
+            synth: "low".to_string(),
+            options: vec![],
+            chain: Some(chain),
+            held: false,
+        };
+        let at = engine.now();
+        engine.play(&[(at, note)]).unwrap();
+        engine.render(3.5).unwrap().0
+    };
+    let (dry, squeezed) = (played("level"), played("compressor"));
+    // The note is over the threshold, so the compressor does turn it down.
+    assert!(
+        peak_db(&squeezed[frame(1.0)..frame(2.0)]) < peak_db(&dry[frame(1.0)..frame(2.0)]) - 3.0
+    );
+    let shape = |samples: &[f32]| partial_db(samples, 123.0, 1.0) - partial_db(samples, 41.0, 1.0);
+    let apart = shape(&squeezed) - shape(&dry);
+    assert!(apart.abs() < 0.5, "{apart}");
+}
+
+#[test]
+fn the_compressor_turns_both_sides_down_by_what_the_louder_side_asks() {
+    let notes = [("tone", 0.0, 1.0, 0.1), ("tone", 0.5, -1.0, 2.0)];
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[("compressor".to_string(), options(&[("relax_ms", 20.0)]))])
+        .unwrap();
+    let events: Vec<_> = notes
+        .iter()
+        .map(|(synth, at, pan, amp)| {
+            let note = Event::Note {
+                id: None,
+                synth: synth.to_string(),
+                options: options(&[("pan", *pan), ("amp", *amp), ("hz", 440.0 + 220.0 * pan)]),
+                chain: Some(chain),
+                held: false,
+            };
+            (*at, note)
+        })
+        .collect();
+    engine.play(&events).unwrap();
+    let (left, right) = engine.render(1.5).unwrap();
+    let (_, dry_right) = through_both("level", &[("tone", 0.0, 1.0, 0.1)], 1.5);
+    let (dry_left, _) = through_both("level", &[("tone", 0.5, -1.0, 2.0)], 1.5);
+    let level = |samples: &[f32], at: f64| rms(&samples[frame(at)..frame(at + 0.1)]);
+    // Alone the quiet right is under the threshold and left as it was.
+    assert!((20.0 * (level(&right, 0.3) / level(&dry_right, 0.3)).log10()).abs() < 0.2);
+    // Once the loud left plays, both come down by the same amount.
+    let left_down = 20.0 * (level(&left, 1.0) / level(&dry_left, 1.0)).log10();
+    let right_down = 20.0 * (level(&right, 1.0) / level(&dry_right, 1.0)).log10();
+    assert!(left_down < -6.0, "{left_down}");
+    assert!(
+        (left_down - right_down).abs() < 0.2,
+        "{left_down} {right_down}"
+    );
+}

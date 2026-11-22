@@ -4,6 +4,7 @@
 
 ### 1. Enhancements
 
+  * [effects] `compressor` is set as a compressor usually is: `threshold` in dB, -18 unless given, `ratio`, 4 unless given, and `makeup` in dB after it, in place of a threshold as a plain level, `slope_above` and `slope_below`; it follows the louder side and turns both down alike, and `relax_ms` is 150 unless given, so it no longer bends each cycle of a bass note
   * [engine] Add `Engine::send`, which sends a share of a chain's sound into another chain at a level that `Target::Send` changes while it plays, `Engine::route`, which sends all of it there in place of the main output, and `Engine::key`, which has a chain's compressor follow another chain's level; the sound arrives at the same sample, a chain that would feed itself is refused, and a chain that others feed plays until they have ended
   * [effects] An effect reads the chain that keys its own with `Options::key`
   * [engine] Add `Engine::start_main_effects`, the effects everything the engine plays goes through after each part's own effects, gain, mute and solo; a change reaches them by the chain it returns
