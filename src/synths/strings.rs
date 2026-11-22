@@ -5,7 +5,9 @@ use super::common::{
 };
 use super::figures::{Figures, Recipe, Voice, evened, fitted, kept, strike_among};
 use crate::DEFAULT_VEL;
-use crate::nodes::{db, decay2, hit, hz, modes, segment_at, shape, struck_gliding, white_noise};
+use crate::nodes::{
+    db, decay2, hit, hz, modes, pulses, segment_at, shape, struck_gliding, white_noise,
+};
 use crate::{Note, Options, Spec, Synth, Value};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -281,16 +283,7 @@ fn tanpura() -> Synth {
                         .sum::<f64>()
                     + 40.0 * (f / 100.0).min(1.0).log10()
             };
-            let plucks = |beat: f64| {
-                net(An(Pulses {
-                    start: beat * gap,
-                    period: 6.0 * gap,
-                    until,
-                    next: beat * gap,
-                    t: 0.0,
-                    dt: 1.0 / DEFAULT_SR,
-                }))
-            };
+            let plucks = |beat: f64| pulses(beat * gap, 6.0 * gap, until);
             let mut sound = net(zero());
             for (ratio, beat, offset) in [
                 (0.75, 0.0, -11.0),
@@ -346,40 +339,6 @@ fn tanpura() -> Synth {
                 o,
             )
         })
-}
-
-/// Impulses every `period` seconds from `start`, until `until` seconds.
-#[derive(Clone)]
-struct Pulses {
-    start: f64,
-    period: f64,
-    until: f64,
-    next: f64,
-    t: f64,
-    dt: f64,
-}
-
-impl AudioNode for Pulses {
-    const ID: u64 = 0x6d78_0041;
-    type Inputs = U0;
-    type Outputs = U1;
-
-    fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.dt = 1.0 / sample_rate;
-    }
-
-    fn reset(&mut self) {
-        (self.next, self.t) = (self.start, 0.0);
-    }
-
-    fn tick(&mut self, _input: &Frame<f32, U0>) -> Frame<f32, U1> {
-        let fire = self.t + self.dt / 2.0 >= self.next && self.next < self.until;
-        if fire {
-            self.next += self.period;
-        }
-        self.t += self.dt;
-        [if fire { 1.0 } else { 0.0 }].into()
-    }
 }
 
 /// The piano: the Steinway B of the Versilian Community Sample Library played from figures fitted partial by partial to its recordings, with the pedal and without.

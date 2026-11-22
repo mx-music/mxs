@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
 use mxs::graph::{Clause, Graph};
-use mxs::nodes::{decay2, dust, hz, modes, shape, struck, struck_gliding, white_noise};
+use mxs::nodes::{decay2, dust, hz, modes, pulses, shape, struck, struck_gliding, white_noise};
 use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
 
 fn n(x: f64) -> Graph {
@@ -1048,4 +1048,19 @@ fn mode_given_a_sound_in_hz_glides_as_struck_gliding_does_in_rust() {
         render(plain("alone", alone).unwrap(), &[]),
         render(rust, &[])
     );
+}
+
+#[test]
+fn impulse_given_at_period_and_until_plucks_as_the_tanpuras_pulses_do() {
+    let train = Graph::call(
+        "impulse",
+        vec![],
+        vec![("at", n(0.1)), ("period", n(0.15)), ("until", n(0.45))],
+    );
+    let traced = render(plain("train", train).unwrap(), &[]);
+    let fired: Vec<usize> = (0..traced.len()).filter(|&k| traced[k] != 0.0).collect();
+    assert_eq!(fired.len(), 3);
+    assert_eq!(fired[0], (0.1 * RATE) as usize);
+    let rust = Synth::new("train").build(|_, _| Note::rings(pulses(0.1, 0.15, 0.45), 0.5));
+    assert_eq!(traced, render(rust, &[]));
 }

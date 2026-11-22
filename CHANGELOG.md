@@ -15,6 +15,7 @@
   * [graph] `time` takes `every`, the seconds after which it starts over, worked out as a Rust voice does, so it starts over on the same sample, where `mod` of `time` can start over one sample early
   * [graph] Add `clicks`, clicks at random times at a `rate` a second, and `struck`, which rises over `attack` and falls over `fall` at each click of its sound, as mxs's shakers, cabasa and guiro use
   * [graph] `mode` given a sound in `hz`, or in its list, rings at the frequency the sound gives at each sample, gliding as mxs's sitar does
+  * [graph] `impulse` takes `at`, `period` and `until`: one at `at` seconds and again every `period` before `until`, as the tanpura plucks its strings
 
 ## v0.5.0 (2026-11-22)
 

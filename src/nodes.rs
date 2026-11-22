@@ -598,6 +598,51 @@ impl AudioNode for Onset {
     }
 }
 
+/// Impulses every `period` seconds from `start`, until `until` seconds.
+pub fn pulses(start: f64, period: f64, until: f64) -> Net {
+    Net::wrap(Box::new(An(Pulses {
+        start,
+        period,
+        until,
+        next: start,
+        t: 0.0,
+        dt: 1.0 / DEFAULT_SR,
+    })))
+}
+
+#[derive(Clone)]
+struct Pulses {
+    start: f64,
+    period: f64,
+    until: f64,
+    next: f64,
+    t: f64,
+    dt: f64,
+}
+
+impl AudioNode for Pulses {
+    const ID: u64 = 0x6d78_0041;
+    type Inputs = U0;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.dt = 1.0 / sample_rate;
+    }
+
+    fn reset(&mut self) {
+        (self.next, self.t) = (self.start, 0.0);
+    }
+
+    fn tick(&mut self, _input: &Frame<f32, U0>) -> Frame<f32, U1> {
+        let fire = self.t + self.dt / 2.0 >= self.next && self.next < self.until;
+        if fire {
+            self.next += self.period;
+        }
+        self.t += self.dt;
+        [if fire { 1.0 } else { 0.0 }].into()
+    }
+}
+
 /// Impulses at random times, as many a second on average as its input, each of a random level from 0 to 1, drawn from `seed`.
 pub fn dust(seed: u64) -> Net {
     Net::wrap(Box::new(An(Dust {

@@ -14,7 +14,7 @@
 //!
 //! | Call | What it makes |
 //! | --- | --- |
-//! | `impulse()` | One sample at 1 when the note starts, then silence. |
+//! | `impulse(at:, period:, until:)` | One sample at 1 when the note starts, then silence; given any of the three, one at `at` seconds, 0 unless given, and again every `period` seconds before `until`, as the tanpura plucks. |
 //! | `sine(hz:, phase:)` | A sine wave; `phase` is in radians, and 0 unless given. |
 //! | `saw(hz:)`, `square(hz:)`, `triangle(hz:)` | The wave named. |
 //! | `pulse(hz:, width:)` | A pulse wave; `width` is the part of each cycle that is up, and a half unless given. |
@@ -268,6 +268,7 @@ const NEEDS: &[(&str, &[&str])] = &[
 /// The arguments by name each of these calls takes, any other being refused when the graph is checked.
 const TAKES: &[(&str, &[&str])] = &[
     ("time", &["every"]),
+    ("impulse", &["at", "period", "until"]),
     ("sweep", &["length", "wave", "invert", "offset", "width"]),
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz", "q"]),
@@ -807,7 +808,25 @@ impl Build<'_> {
                     Ok(V::Sig(picked))
                 }
             },
-            "impulse" => Ok(V::Sig(net(impulse::<U1>()))),
+            "impulse" => {
+                let at = take("at")
+                    .map(|v| number(v, "an impulse's at"))
+                    .transpose()?;
+                let period = take("period")
+                    .map(|v| number(v, "an impulse's period"))
+                    .transpose()?;
+                let until = take("until")
+                    .map(|v| number(v, "an impulse's until"))
+                    .transpose()?;
+                Ok(V::Sig(match (at, period, until) {
+                    (None, None, None) => net(impulse::<U1>()),
+                    (at, period, until) => nodes::pulses(
+                        at.unwrap_or(0.0),
+                        period.unwrap_or(f64::INFINITY),
+                        until.unwrap_or(f64::INFINITY),
+                    ),
+                }))
+            }
             "sine" => {
                 let freq = signal(take("hz").ok_or("sine needs hz:")?)?;
                 let phase = take("phase")
