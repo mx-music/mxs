@@ -944,7 +944,18 @@ impl Engine {
         &mut self,
         effects: &[(String, Vec<(String, Value)>)],
     ) -> Result<u64, Error> {
-        self.start_chain(None, effects, false)
+        self.start_chain(None, effects, false, false)
+    }
+
+    /// Starts the main effects, which everything the engine plays goes through after each part's own effects, gain, mute and solo, and returns what a change names as their chain.
+    /// With `beats`, the options the effects declare in beats are given in beats, as [`Engine::start_part_in_beats`] takes them.
+    /// Started again, they take the place of those before, and an empty list ends them.
+    pub fn start_main_effects(
+        &mut self,
+        effects: &[(String, Vec<(String, Value)>)],
+        beats: bool,
+    ) -> Result<u64, Error> {
+        self.start_chain(None, effects, beats, true)
     }
 
     /// Starts a part by a name, with `effects` as [`Engine::start_effects`] takes them, none for a part without effects, and returns what a note, a sample or an input names as its `chain` to play into the part.
@@ -957,7 +968,7 @@ impl Engine {
         if self.book().parts.contains_key(name) {
             return Err(Error::PartExists(name.to_string()));
         }
-        self.start_chain(Some(name), effects, false)
+        self.start_chain(Some(name), effects, false, false)
     }
 
     /// Starts a part as [`Engine::start_part`] does, with the options its effects declare in beats given in beats, the ones left out too.
@@ -970,7 +981,7 @@ impl Engine {
         if self.book().parts.contains_key(name) {
             return Err(Error::PartExists(name.to_string()));
         }
-        self.start_chain(Some(name), effects, true)
+        self.start_chain(Some(name), effects, true, false)
     }
 
     /// What a note names as its `chain` to play into the part started by `name`.
@@ -1014,6 +1025,7 @@ impl Engine {
         name: Option<&str>,
         effects: &[(String, Vec<(String, Value)>)],
         beats: bool,
+        main: bool,
     ) -> Result<u64, Error> {
         self.check_running()?;
         let mut unit: Net = Net::wrap(Box::new(multipass::<U2>()));
@@ -1108,7 +1120,12 @@ impl Engine {
             played: (0, [0.0; 2], [0.0; 2]),
         };
         let mut book = self.book();
-        book.send(Command::StartChain(Box::new(chain)))?;
+        let chain = Box::new(chain);
+        book.send(if main {
+            Command::StartMain(chain)
+        } else {
+            Command::StartChain(chain)
+        })?;
         book.chains.insert(key, controls);
         book.in_beats.insert(key, in_beats);
         let followers = followers

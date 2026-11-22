@@ -498,3 +498,70 @@ fn the_limiter_lowers_both_sides_alike_and_lets_go_over_its_relax_ms() {
     assert!(20.0 * (level(&slow, 0.6 + LOOK_AHEAD) / quiet).log10() < -3.0);
     assert!(20.0 * (level(&right, 0.6 + LOOK_AHEAD) / quiet).log10() > -3.0);
 }
+
+/// A tone in a part of its own, another in a second part and a third in no part, for 1.5 seconds, with a setup run on the engine first.
+fn three_tones(setup: impl Fn(&mut Engine) -> Vec<(f64, Event)>) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    let mut events = setup(&mut engine);
+    let first = engine.start_part("first", &[]).unwrap();
+    let second = engine
+        .start_part("second", &[("level".to_string(), options(&[("amp", 0.5)]))])
+        .unwrap();
+    for (chain, hz) in [(Some(first), 220.0), (Some(second), 330.0), (None, 550.0)] {
+        let note = Event::Note {
+            id: None,
+            synth: "tone".to_string(),
+            options: options(&[("hz", hz)]),
+            chain,
+            held: false,
+        };
+        events.push((0.0, note));
+    }
+    engine.play(&events).unwrap();
+    engine.render(1.5).unwrap()
+}
+
+#[test]
+fn the_main_effects_take_everything_the_engine_plays_after_each_parts_own() {
+    let (dry, dry_right) = three_tones(|_| vec![]);
+    let (halved, halved_right) = three_tones(|engine| {
+        let main = [("level".to_string(), options(&[("amp", 0.5)]))];
+        engine.start_main_effects(&main, false).unwrap();
+        vec![]
+    });
+    for (dry, halved) in [(&dry, &halved), (&dry_right, &halved_right)] {
+        for (x, y) in dry.iter().zip(halved.iter()) {
+            assert!((x * 0.5 - y).abs() < 1e-6);
+        }
+    }
+
+    let (limited, _) = three_tones(|engine| {
+        let main = [("limiter".to_string(), options(&[("ceiling", -12.0)]))];
+        engine.start_main_effects(&main, false).unwrap();
+        vec![]
+    });
+    assert!(loudest(&dry) > 0.5);
+    assert!(loudest(&limited) <= 10f32.powf(-12.0 / 20.0) + 1e-6);
+
+    let (changed, _) = three_tones(|engine| {
+        let main = engine
+            .start_main_effects(&[("level".to_string(), vec![])], false)
+            .unwrap();
+        let set = Event::Set {
+            target: Target::Effect(main, 0),
+            options: vec![("amp".to_string(), 0.0)],
+        };
+        vec![(0.5, set)]
+    });
+    assert_eq!(changed[..frame(0.5)], dry[..frame(0.5)]);
+    assert_eq!(loudest(&changed[frame(0.6)..]), 0.0);
+
+    let (replaced, _) = three_tones(|engine| {
+        engine
+            .start_main_effects(&[("level".to_string(), options(&[("amp", 0.0)]))], false)
+            .unwrap();
+        engine.start_main_effects(&[], false).unwrap();
+        vec![]
+    });
+    assert_eq!(replaced, dry);
+}

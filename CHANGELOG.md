@@ -4,6 +4,7 @@
 
 ### 1. Enhancements
 
+  * [engine] Add `Engine::start_main_effects`, the effects everything the engine plays goes through after each part's own effects, gain, mute and solo; a change reaches them by the chain it returns
   * [effects] Add `limiter`, which turns both sides down alike just before a peak on either would pass `ceiling`, in dB below full scale, and lets them back up over `relax_ms`; no sample passes the ceiling, and its sound comes out 5 ms late
 
 ## v0.5.0 (2026-11-22)

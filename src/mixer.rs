@@ -274,6 +274,8 @@ pub(crate) enum Command {
     Start(Box<Voice>),
     Change(Box<Change>),
     StartChain(Box<Chain>),
+    /// The chain everything plays through last, in place of the one before.
+    StartMain(Box<Chain>),
     StopChain {
         key: u64,
         at: u64,
@@ -322,6 +324,7 @@ pub(crate) struct Mixer {
     voices: Vec<Box<Voice>>,
     #[allow(clippy::vec_box)]
     chains: Vec<Box<Chain>>,
+    main: Option<Box<Chain>>,
     #[allow(clippy::vec_box)]
     changes: Vec<Box<Change>>,
     part_changes: Vec<(u64, u64, PartChange)>,
@@ -353,6 +356,7 @@ impl Mixer {
             garbage,
             voices: Vec::with_capacity(CAPACITY),
             chains: Vec::with_capacity(256),
+            main: None,
             changes: Vec::with_capacity(CAPACITY),
             part_changes: Vec::with_capacity(CAPACITY),
             buffer: BufferVec::new(2),
@@ -424,6 +428,11 @@ impl Mixer {
                     let solo = self.chains.iter().any(|c| c.heard.soloed);
                     chain.heard.aim(solo);
                     self.chains.push(chain);
+                }
+                Command::StartMain(chain) => {
+                    if let Some(old) = self.main.replace(chain) {
+                        let _ = self.garbage.push(Garbage::Chain(old));
+                    }
                 }
                 Command::Part { key, at, change } => {
                     if self.part_changes.len() < self.part_changes.capacity() {
@@ -706,6 +715,19 @@ impl Mixer {
                 let _ = self.garbage.push(Garbage::Chain(chain));
             } else {
                 i += 1;
+            }
+        }
+
+        if let Some(main) = &mut self.main {
+            for k in 0..n {
+                main.input.set_f32(0, k, left[k]);
+                main.input.set_f32(1, k, right[k]);
+            }
+            main.unit
+                .process(n, &main.input.buffer_ref(), &mut self.buffer.buffer_mut());
+            for k in 0..n {
+                left[k] = self.buffer.at_f32(0, k);
+                right[k] = self.buffer.at_f32(1, k);
             }
         }
 
