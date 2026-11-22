@@ -275,6 +275,7 @@ fn spec(spec: &Spec) -> Json {
         Kind::Hz => "hz",
         Kind::Db => "db",
         Kind::Seconds => "seconds",
+        Kind::Ms => "ms",
         Kind::Beats => "beats",
         Kind::Float => "float",
         Kind::Integer => "integer",
