@@ -827,3 +827,41 @@ fn an_effect_that_cannot_be_built_is_an_error_naming_it_when_its_chain_starts() 
     );
     assert!(engine.start_effects(&[]).is_ok());
 }
+
+#[test]
+fn a_shared_sound_is_built_once_and_plays_the_same_noise_at_each_use_as_a_clone_in_rust_does() {
+    let input = || call("input", vec![]);
+    let body = Graph::call(
+        "add",
+        vec![
+            Graph::call(
+                "mode",
+                vec![input()],
+                vec![
+                    ("hz", list(&[440.0, 1210.0])),
+                    ("level", list(&[0.3, 0.2])),
+                    ("fade", list(&[0.4, 0.3])),
+                ],
+            ),
+            Graph::call("highpass", vec![input()], vec![("hz", n(3000.0))]),
+        ],
+        vec![],
+    );
+    let shared = Graph::call("share", vec![noise(None)], vec![("through", body)]);
+    let traced = traced("shared", shared).unwrap();
+    let written = Synth::new("shared").options(note_specs()).build(|_, ctx| {
+        let noise = white_noise(ctx.seed());
+        let rung = modes(noise.clone(), &[440.0, 1210.0], &[0.3, 0.2], &[0.4, 0.3]);
+        let high = noise
+            >> Net::wrap(Box::new(highpass_hz(
+                3000.0f32,
+                std::f32::consts::FRAC_1_SQRT_2,
+            )));
+        Note::rings(rung + high, 0.8)
+    });
+    let (a, b) = (render(traced, &[]), render(written, &[]));
+    assert!(a.iter().any(|x| x.abs() > 0.01));
+    for (k, (x, y)) in a.iter().zip(&b).enumerate() {
+        assert!((x - y).abs() < 1e-5, "frame {k}: {x} against {y}");
+    }
+}

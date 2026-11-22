@@ -58,6 +58,7 @@
 //! | `gain(sound, level)` | The sound, scaled. |
 //! | `follower(sound, rise:, fall:)` | The level of the sound, which rises towards its size over `rise` seconds and falls over `fall`, both known when the note starts. |
 //! | `mix(list)` | The sounds of a list, added up. |
+//! | `share(sound, through:)` | The sound `through` makes, in which each `input` is `sound`, built once, so a noise in it plays the same numbers at each use. |
 //!
 //! ## How the note ends
 //!
@@ -189,6 +190,7 @@ const NODES: &[&str] = &[
     "air_jet",
     "wind_bands",
     "vibrato",
+    "share",
     "saw",
     "square",
     "triangle",
@@ -250,6 +252,7 @@ const NEEDS: &[(&str, &[&str])] = &[
         &["note", "speed", "force", "position", "takes", "rosin"],
     ),
     ("air_jet", &["hz", "breath", "even"]),
+    ("share", &["through"]),
     ("sweep", &["length"]),
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz"]),
@@ -262,6 +265,7 @@ const TAKES: &[(&str, &[&str])] = &[
     ("follower", &["rise", "fall"]),
     ("allpass", &["hz", "q"]),
     ("lag", &["seconds"]),
+    ("share", &["through"]),
     ("tail", &["seconds", "option"]),
     ("sides", &[]),
     ("left", &[]),
@@ -458,9 +462,11 @@ fn calls(graph: &Graph, node: &str) -> bool {
                     .chain(
                         named
                             .iter()
-                            // An air jet's sound and side take the jet's outputs as their input.
-                            .filter(|(k, _)| {
-                                name != "air_jet" || !matches!(k.as_str(), "sound" | "side")
+                            // An air jet's sound and side take the jet's outputs as their input, and a share's through takes the shared sound.
+                            .filter(|(k, _)| match name.as_str() {
+                                "air_jet" => !matches!(k.as_str(), "sound" | "side"),
+                                "share" => k != "through",
+                                _ => true,
                             })
                             .map(|(_, v)| v),
                     )
@@ -687,6 +693,9 @@ impl Build<'_> {
         }
         if name == "air_jet" {
             return self.air_jet(named);
+        }
+        if name == "share" {
+            return self.share(args, named);
         }
         let before = self.inputs.as_ref().map_or(0, Vec::len);
         let mut ends = Vec::new();
@@ -1165,6 +1174,17 @@ impl Build<'_> {
             Some(side) => jet >> (sound | side) >> net(join::<U2>()),
             None => jet >> (sound | net(sink())),
         }))
+    }
+
+    /// The sound a share's `through` makes of its one sound, built once and fed to each of its uses.
+    fn share(&mut self, args: &[Graph], named: &[(String, Graph)]) -> Result<V, String> {
+        let [sound] = args else {
+            return Err("share takes the sound it shares".to_string());
+        };
+        let sound = signal(self.eval(sound)?)?;
+        let through = named.iter().find(|(k, _)| k == "through").map(|(_, g)| g);
+        let body = self.through(through)?.ok_or("share needs through:")?;
+        Ok(V::Sig(sound >> body))
     }
 
     /// The sound `graph` makes of its input, when given.

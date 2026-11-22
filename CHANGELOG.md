@@ -6,6 +6,7 @@
 
   * [effects] Add `eq`, an equaliser of three bands: a low shelf, a peak and a high shelf, each at a MIDI note, `low_at`, `mid_at` and `high_at`, and raised or lowered by `low_gain`, `mid_gain` and `high_gain` in dB, with `mid_q` for how narrow the peak is
   * [graph] `mode` given lists for `hz`, `level` and `fade` sets a resonator ringing for each, all struck by the one sound, as mxs's drums strike their modes, and lists of different lengths are refused when registered; `noise` takes a `seed`, which fixes its numbers instead of drawing a seed from the note
+  * [graph] Add `share`, which builds a sound once for a graph that uses it several times as its `input`, so a noise in it plays the same numbers at each use, as a clone of it does in Rust
 
 ### 2. Bug fixes
 
