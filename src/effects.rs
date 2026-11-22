@@ -58,6 +58,7 @@ pub fn all() -> Vec<Effect> {
         ping_pong(),
         pitch_shift(),
         eq(),
+        limiter(),
     ]
 }
 
@@ -529,6 +530,30 @@ fn eq() -> Effect {
                 (mid | cutoff(o, "high_at") | shelf() | gain_of(o, "high_gain"))
                     >> net(highshelf::<f32>())
             })
+        })
+}
+
+/// How far ahead of its output the limiter reads, in seconds, which is how late its sound comes out.
+pub const LIMITER_LOOK_AHEAD: f64 = 0.005;
+
+fn limiter() -> Effect {
+    Effect::new("limiter")
+        .option(
+            Spec::float("ceiling")
+                .default(-1.0)
+                .range(-60.0, 0.0)
+                .doc("The level no peak passes, in dB below full scale."),
+        )
+        .option(
+            Spec::ms("relax_ms")
+                .default(100.0)
+                .range(1.0, 10_000.0)
+                .doc("How many milliseconds it takes to let the sound back up."),
+        )
+        .tail(LIMITER_LOOK_AHEAD)
+        .build(|o, _| {
+            (net(multipass::<U2>()) | gain_of(o, "ceiling") | o.follow("relax_ms"))
+                >> net(An(Limiter::new()))
         })
 }
 
@@ -1192,6 +1217,98 @@ impl AudioNode for Ease {
         };
         self.level = Some(level);
         [level].into()
+    }
+}
+
+/// Turns both sides down alike just before a peak on either would pass the ceiling, and lets them back up afterwards; its sound comes out `LIMITER_LOOK_AHEAD` late.
+/// The gain each frame may have is the ceiling over its level; the lowest of those over the look-ahead, let back up over the relax time, is averaged over the look-ahead, so the gain glides down to each peak and no sample passes the ceiling.
+/// Inputs: left, right, the ceiling as a level, the relax time in milliseconds.
+#[derive(Clone)]
+struct Limiter {
+    ahead: usize,
+    sound: Vec<[f32; 2]>,
+    /// The frames of the look-ahead whose gain is lower than every later one, oldest first, as (frame, gain).
+    lowest: std::collections::VecDeque<(u64, f32)>,
+    let_up: f32,
+    gains: Vec<f32>,
+    sum: f64,
+    at: usize,
+    frame: u64,
+    rate: f64,
+}
+
+impl Limiter {
+    fn new() -> Self {
+        let mut limiter = Limiter {
+            ahead: 0,
+            sound: Vec::new(),
+            lowest: std::collections::VecDeque::new(),
+            let_up: 1.0,
+            gains: Vec::new(),
+            sum: 0.0,
+            at: 0,
+            frame: 0,
+            rate: DEFAULT_SR,
+        };
+        limiter.set_sample_rate(DEFAULT_SR);
+        limiter
+    }
+}
+
+impl AudioNode for Limiter {
+    const ID: u64 = 0x6d78_007a;
+    type Inputs = U4;
+    type Outputs = U2;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate;
+        self.ahead = (LIMITER_LOOK_AHEAD * sample_rate).round().max(1.0) as usize;
+        self.sound = vec![[0.0; 2]; self.ahead];
+        self.gains = vec![1.0; self.ahead];
+        self.lowest = std::collections::VecDeque::with_capacity(self.ahead + 2);
+        self.reset();
+    }
+
+    fn reset(&mut self) {
+        self.sound.fill([0.0; 2]);
+        self.gains.fill(1.0);
+        self.sum = self.ahead as f64;
+        self.lowest.clear();
+        self.let_up = 1.0;
+        self.at = 0;
+        self.frame = 0;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U2> {
+        let level = input[0].abs().max(input[1].abs());
+        let ceiling = input[2].max(1e-6);
+        let allowed = if level > ceiling {
+            ceiling / level
+        } else {
+            1.0
+        };
+        while self.lowest.back().is_some_and(|(_, gain)| *gain >= allowed) {
+            self.lowest.pop_back();
+        }
+        self.lowest.push_back((self.frame, allowed));
+        while self
+            .lowest
+            .front()
+            .is_some_and(|(frame, _)| frame + (self.ahead as u64) < self.frame)
+        {
+            self.lowest.pop_front();
+        }
+        let lowest = self.lowest.front().map_or(1.0, |(_, gain)| *gain);
+        let frames = (f64::from(input[3]).max(1.0) / 1000.0 * self.rate) as f32;
+        let risen = self.let_up + (1.0 - self.let_up) * (6.9 / frames).min(1.0);
+        self.let_up = lowest.min(risen);
+        self.sum += f64::from(self.let_up) - f64::from(self.gains[self.at]);
+        self.gains[self.at] = self.let_up;
+        let gain = (self.sum / self.ahead as f64) as f32;
+        let delayed = std::mem::replace(&mut self.sound[self.at], [input[0], input[1]]);
+        self.at = (self.at + 1) % self.ahead;
+        self.frame += 1;
+        [delayed[0] * gain, delayed[1] * gain].into()
     }
 }
 

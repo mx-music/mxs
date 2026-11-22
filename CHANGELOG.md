@@ -1,5 +1,11 @@
 # Changelog for mxs v0.5
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [effects] Add `limiter`, which turns both sides down alike just before a peak on either would pass `ceiling`, in dB below full scale, and lets them back up over `relax_ms`; no sample passes the ceiling, and its sound comes out 5 ms late
+
 ## v0.5.0 (2026-11-22)
 
 ### 1. Enhancements

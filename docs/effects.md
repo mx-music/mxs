@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq).
+[`level`](#level), [`reverb`](#reverb), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter).
 
 ## What every effect takes
 
@@ -170,4 +170,11 @@ Besides its own options, every effect takes these.
 | `mid_q` | a number, 0.1 to 20 | 1 | How narrow the mid band is: the higher, the narrower. |
 | `high_at` | a MIDI note | 96 | The MIDI note above which the high band acts. |
 | `high_gain` | a number | 0 | How far the high band is raised or lowered, in dB. |
+
+### `limiter`
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `ceiling` | a number, -60 to 0 | -1 | The level no peak passes, in dB below full scale. |
+| `relax_ms` | milliseconds, 1 to 10000 | 100 | How many milliseconds it takes to let the sound back up. |
 

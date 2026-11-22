@@ -396,3 +396,105 @@ fn a_change_to_the_ping_pongs_pan_start_moves_its_first_echo_to_the_other_side()
     let (left, right) = first_echo(&[("pan_start", -1.0)]);
     assert!(left > 0.01 && right < left / 100.0, "{left} {right}");
 }
+
+/// Both sides of notes through a limiter: each note is a synth, when it starts and the side it is panned to.
+fn limited(
+    given: &[(&str, f64)],
+    notes: &[(&str, f64, f64, f64)],
+    seconds: f64,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    engine.register(
+        Synth::new("burst")
+            .build(|_, _| Note::rings(Net::wrap(Box::new(sine_hz::<f32>(1000.0))) * 4.0, 0.05)),
+    );
+    let chain = engine
+        .start_effects(&[("limiter".to_string(), options(given))])
+        .unwrap();
+    let events: Vec<_> = notes
+        .iter()
+        .map(|(synth, at, pan, amp)| {
+            let note = Event::Note {
+                id: None,
+                synth: synth.to_string(),
+                options: options(&[("pan", *pan), ("amp", *amp)]),
+                chain: Some(chain),
+                held: false,
+            };
+            (*at, note)
+        })
+        .collect();
+    engine.play(&events).unwrap();
+    engine.render(seconds).unwrap()
+}
+
+const LOOK_AHEAD: f64 = 0.005;
+
+#[test]
+fn the_limiter_keeps_every_peak_under_its_ceiling_and_leaves_a_quiet_sound_as_it_was() {
+    let ceiling = 10f32.powf(-1.0 / 20.0);
+    let (left, right) = limited(&[], &[("tone", 0.0, 0.0, 8.0)], 1.0);
+    assert!(loudest(&left) <= ceiling + 1e-6 && loudest(&right) <= ceiling + 1e-6);
+    assert!(loudest(&left[frame(0.5)..]) > ceiling * 0.95);
+
+    let (left, _) = limited(&[("ceiling", -6.0)], &[("tone", 0.0, 0.0, 8.0)], 1.0);
+    assert!(loudest(&left) <= 10f32.powf(-6.0 / 20.0) + 1e-6);
+
+    let (dry, _) = through_both("level", &[("tone", 0.0, 0.0, 0.2)], 1.0);
+    let (quiet, _) = limited(&[], &[("tone", 0.0, 0.0, 0.2)], 1.0);
+    let late = frame(LOOK_AHEAD);
+    assert_eq!(dry[..frame(0.9)], quiet[late..late + frame(0.9)]);
+}
+
+/// Both sides of notes through one effect as it comes.
+fn through_both(
+    effect: &str,
+    notes: &[(&str, f64, f64, f64)],
+    seconds: f64,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[(effect.to_string(), vec![])])
+        .unwrap();
+    let events: Vec<_> = notes
+        .iter()
+        .map(|(synth, at, pan, amp)| {
+            let note = Event::Note {
+                id: None,
+                synth: synth.to_string(),
+                options: options(&[("pan", *pan), ("amp", *amp)]),
+                chain: Some(chain),
+                held: false,
+            };
+            (*at, note)
+        })
+        .collect();
+    engine.play(&events).unwrap();
+    engine.render(seconds).unwrap()
+}
+
+#[test]
+fn the_limiter_lowers_both_sides_alike_and_lets_go_over_its_relax_ms() {
+    let notes = [("tone", 0.0, 1.0, 0.2), ("burst", 0.5, -1.0, 1.0)];
+    let (_, right) = limited(&[], &notes, 1.2);
+    let (left, _) = limited(&[], &notes, 1.2);
+    let (_, dry_right) = through_both("level", &notes[..1], 1.2);
+    let level = |samples: &[f32], at: f64| rms(&samples[frame(at)..frame(at + 0.02)]);
+    let quiet = level(&dry_right, 0.3);
+    assert!((level(&right, 0.3 + LOOK_AHEAD) - quiet).abs() < quiet * 0.01);
+
+    // During the burst the left is held at the ceiling, about 12 dB down, and the right is down by the same.
+    let ceiling = 10f32.powf(-1.0 / 20.0);
+    assert!(loudest(&left[frame(0.5)..frame(0.56)]) <= ceiling + 1e-6);
+    let down = level(&right, 0.52 + LOOK_AHEAD) / quiet;
+    let held = ceiling / (4.0 * std::f32::consts::FRAC_1_SQRT_2 * 2.0f32.sqrt());
+    assert!((20.0 * (down / held).log10()).abs() < 1.5, "{down} {held}");
+
+    // Within 1 dB of dry 0.3 seconds after the burst ends.
+    let after = level(&right, 0.55 + 0.3 + LOOK_AHEAD) / quiet;
+    assert!(20.0 * after.log10() > -1.0, "{after}");
+
+    let (_, slow) = limited(&[("relax_ms", 1000.0)], &notes, 1.2);
+    assert!(20.0 * (level(&slow, 0.6 + LOOK_AHEAD) / quiet).log10() < -3.0);
+    assert!(20.0 * (level(&right, 0.6 + LOOK_AHEAD) / quiet).log10() > -3.0);
+}
