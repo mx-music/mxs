@@ -865,3 +865,35 @@ fn a_shared_sound_is_built_once_and_plays_the_same_noise_at_each_use_as_a_clone_
         assert!((x - y).abs() < 1e-5, "frame {k}: {x} against {y}");
     }
 }
+
+fn one_pole(name: &str, extra: Vec<(&str, Graph)>) -> Graph {
+    let mut named = vec![("hz", n(1000.0)), ("poles", n(1.0))];
+    named.extend(extra);
+    Graph::call(name, vec![noise(None)], named)
+}
+
+#[test]
+fn a_lowpass_and_a_highpass_of_one_pole_sound_as_fundsp_s_lowpole_and_highpole() {
+    for (name, filter) in [
+        ("lowpass", Net::wrap(Box::new(lowpole_hz(1000.0f32)))),
+        ("highpass", Net::wrap(Box::new(highpole_hz(1000.0f32)))),
+    ] {
+        let traced = traced("pole", one_pole(name, vec![])).unwrap();
+        let written = Synth::new("pole")
+            .options(note_specs())
+            .build(move |_, ctx| Note::rings(white_noise(ctx.seed()) >> filter.clone(), 0.8));
+        let (a, b) = (render(traced, &[]), render(written, &[]));
+        assert!(a.iter().any(|x| x.abs() > 0.01), "{name}");
+        for (k, (x, y)) in a.iter().zip(&b).enumerate() {
+            assert!((x - y).abs() < 1e-5, "{name}, frame {k}: {x} against {y}");
+        }
+    }
+}
+
+#[test]
+fn a_one_pole_filter_given_a_q_is_refused_when_the_synth_is_registered() {
+    assert_eq!(
+        traced("pole", one_pole("lowpass", vec![("q", n(2.0))])).err(),
+        Some("pole: lowpass of one pole takes no q:".to_string())
+    );
+}

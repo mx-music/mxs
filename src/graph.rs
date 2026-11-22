@@ -29,7 +29,7 @@
 //!
 //! | Call | What it does to `sound` |
 //! | --- | --- |
-//! | `lowpass(sound, hz:, q:, poles:)`, `highpass`, `bandpass` | Filters it; `q` is 0.707 and `poles` is 2 unless given, and `hz` is held from 20 to 20000; `hz` and `q` may change while the note sounds. |
+//! | `lowpass(sound, hz:, q:, poles:)`, `highpass`, `bandpass` | Filters it; `q` is 0.707 and `poles` is 2 unless given, and `hz` is held from 20 to 20000; `hz` and `q` may change while the note sounds; `poles: 1` makes a lowpass or a highpass of one pole, which takes no `q`. |
 //! | `ladder(sound, hz:, resonance:)` | Filters it through a four-pole resonant lowpass, the ladder of analog synths; `resonance` is from 0, unless given, to 1, where the filter rings on at `hz` once set ringing, and both may change while the note sounds. |
 //! | `lowshelf(sound, hz:, q:, db:)`, `highshelf`, `peak` | Raises or lowers it by `db` below, above or around `hz`. |
 //! | `mode(sound, hz:, level:, fade:)` | Sets a resonator ringing with it, which fades 60 dB over `fade` seconds; all three are known when the note starts. Given lists of the same length, it sets a resonator ringing for each, all struck by the one sound. |
@@ -543,6 +543,14 @@ fn known(graph: &Graph) -> Result<(), String> {
             }) {
                 return Err(format!("{name} needs {key}:"));
             }
+            if matches!(name.as_str(), "lowpass" | "highpass")
+                && named
+                    .iter()
+                    .any(|(k, v)| k == "poles" && *v == Graph::Number(1.0))
+                && named.iter().any(|(k, _)| k == "q")
+            {
+                return Err(format!("{name} of one pole takes no q:"));
+            }
             if name == "mode" {
                 let lengths: Vec<Option<usize>> = ["hz", "level", "fade"]
                     .iter()
@@ -981,6 +989,13 @@ impl Build<'_> {
                     f64::min,
                 )?;
                 let freq = signal(freq)?;
+                if poles == 1.0 && name != "bandpass" {
+                    let pole = match name {
+                        "lowpass" => net(lowpole::<f32>()),
+                        _ => net(highpole::<f32>()),
+                    };
+                    return Ok(V::Sig((sound | freq) >> pole));
+                }
                 for _ in 0..((poles / 2.0).round().max(1.0) as usize) {
                     let filter: Net = match name {
                         "lowpass" => net(lowpass::<f32>()),
