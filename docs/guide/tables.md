@@ -1,7 +1,7 @@
 # Tables
 
-Fifteen of mxs's synths play measured tables: the partials and noise of each note fitted to recordings of the real instrument.
-Their sixteen tables make about 10.6 MB of a program built with mxs, so a web page that plays only the piano would download every instrument's tables before it plays a note.
+Some of mxs's synths play measured tables: the partials and noise of each note fitted to recordings of the real instrument.
+The tables make about 10.4 MB of a program built with mxs, so a web page that plays only the piano would download every instrument's tables before it plays a note.
 
 ## The synths that need tables
 
@@ -22,7 +22,6 @@ Their sixteen tables make about 10.6 MB of a program built with mxs, so a web pa
 | piano | `piano.mxf` and `piano_pedal.mxf` |
 | timpani | `timpani.mxf` |
 | vibraphone | `vibraphone.mxf` |
-| violin | `violin.mxh` |
 | xylophone | `xylophone.mxf` |
 
 The files are in mxs's `src/synths/figures`.

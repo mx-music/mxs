@@ -19,7 +19,7 @@ A browser starts sound only after a click or a key press, so `live` is called fr
 
 ## Tables
 
-Fifteen synths, the piano among them, play measured tables, 10.6 MB in all, which the package does not load until the page plays one of those synths.
+Some synths, the piano among them, play measured tables, 10.4 MB in all, which the package does not load until the page plays one of those synths.
 The first note of such a synth fetches its tables from the `tables` folder beside `mxs.js`, and plays once they are loaded; a page that plays only the piano fetches `piano.mxf` and `piano_pedal.mxf`, about 2.7 MB, and no other table.
 `await engine.loadTables("piano")` fetches them before the first note, and the engine dispatches a `loaded` event, whose `detail` names the synth and the tables, once they are loaded.
 `synths()` gives each synth's `tables`.
