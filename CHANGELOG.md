@@ -11,6 +11,7 @@
   * [engine] Add `Engine::start_main_effects`, the effects everything the engine plays goes through after each part's own effects, gain, mute and solo; a change reaches them by the chain it returns
   * [effects] Add `limiter`, which turns both sides down alike just before a peak on either would pass `ceiling`, in dB below full scale, and lets them back up over `relax_ms`; no sample passes the ceiling, and its sound comes out 5 ms late
   * [graph] `lowpass` and `highpass` given `poles: 1` are filters of one pole, falling 6 dB an octave, as mxs's snare, toms, congas and cuíca use; one given `q` beside it is refused when registered
+  * [graph] Add `mod`, the remainder of its first argument after its second, from 0 up to the second for any first, so an envelope can start over at a period
 
 ## v0.5.0 (2026-11-22)
 

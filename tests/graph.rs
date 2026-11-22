@@ -897,3 +897,35 @@ fn a_one_pole_filter_given_a_q_is_refused_when_the_synth_is_registered() {
         Some("pole: lowpass of one pole takes no q:".to_string())
     );
 }
+
+#[test]
+fn mod_wraps_a_number_and_a_sound_into_zero_up_to_its_divisor() {
+    let synth = |name: &str, sound: Graph| {
+        Synth::graph(
+            name,
+            note_specs(),
+            vec![Clause {
+                matches: vec![],
+                graph: rings(sound, 0.5),
+            }],
+        )
+        .unwrap()
+    };
+    let impulse = || call("impulse", vec![]);
+    let wrapped = call("mul", vec![impulse(), call("mod", vec![n(-0.25), n(1.0)])]);
+    let plain = call("mul", vec![impulse(), n(0.75)]);
+    assert_eq!(
+        render(synth("wrapped", wrapped), &[]),
+        render(synth("plain", plain), &[])
+    );
+
+    let ramp = render(
+        synth("ramp", call("mod", vec![call("time", vec![]), n(0.1)])),
+        &[],
+    );
+    let period = (0.1 * RATE) as usize;
+    let at = |seconds: f64| ramp[(seconds * RATE) as usize];
+    assert!((at(0.05) / at(0.09) - 0.05 / 0.09).abs() < 1e-3);
+    assert!(at(0.2 + 0.5 / RATE).abs() < at(0.09).abs() * 1e-2);
+    assert!((ramp[period + 100] - ramp[2 * period + 100]).abs() < 1e-4);
+}

@@ -177,8 +177,8 @@ impl Graph {
 }
 
 const ARITHMETIC: &[&str] = &[
-    "add", "sub", "mul", "div", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs", "sin",
-    "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
+    "add", "sub", "mul", "div", "mod", "pow", "neg", "min", "max", "clamp", "log2", "exp", "abs",
+    "sin", "cos", "hz", "db", "lt", "gt", "le", "ge", "eq", "ne", "select", "or_else",
 ];
 const NODES: &[&str] = &[
     "impulse",
@@ -754,6 +754,7 @@ impl Build<'_> {
             "sub" => add(arg(0)?, mul(arg(1)?, V::Num(-1.0))?),
             "mul" => mul(arg(0)?, arg(1)?),
             "div" => binary(arg(0)?, arg(1)?, |a, b| a / b),
+            "mod" => binary(arg(0)?, arg(1)?, f64::rem_euclid),
             "pow" => binary(arg(0)?, arg(1)?, f64::powf),
             "min" => binary(arg(0)?, arg(1)?, f64::min),
             "max" => binary(arg(0)?, arg(1)?, f64::max),
