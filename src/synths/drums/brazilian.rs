@@ -610,8 +610,11 @@ pub fn berimbau() -> Synth {
 
             // With buzz, the coin rests on the wire and rattles against it.
             if buzz > 0.0 {
-                let rattle = ((dc((freq as f32, 0.08)) >> pulse()) * 0.5 + 0.42)
-                    >> highpass_hz(1200.0, 0.707);
+                let mut wave = pulse();
+                wave.set(Setting::phase(0.0));
+                wave.reset();
+                let rattle =
+                    ((dc((freq as f32, 0.08)) >> wave) * 0.5 + 0.42) >> highpass_hz(1200.0, 0.707);
                 let rattle = Net::wrap(Box::new(rattle))
                     * shape(|t| perc(t, 0.002, 0.12))
                     * (buzz * 0.3) as f32;
