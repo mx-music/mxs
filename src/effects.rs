@@ -253,19 +253,46 @@ fn slicer() -> Effect {
         )
         .tail(0.0)
         .build(|o, _| {
-            let offset = o.number("phase_offset") as f32;
-            let open =
-                (rate_of(o, "phase") | o.follow("pulse_width") | net(dc(1.0)) | net(dc(0.0)))
-                    >> net(An(Lfo::new(offset, 1.0, true)));
+            let open = (rate_of(o, "phase")
+                | o.follow("pulse_width")
+                | net(dc(1.0))
+                | net(dc(0.0))
+                | eased(o, "phase_offset"))
+                >> net(An(Shifted::new(o.number("phase_offset") as f32, true)));
             let low = o.follow("amp_min");
             let level = (open | low | o.follow("amp_max"))
-                >> net(map(|x: &Frame<f32, U3>| x[1] + x[0] * (x[2] - x[1])))
-                >> net(An(Lag::new(o.number("smooth_ms") / 1000.0)));
+                >> net(map(|x: &Frame<f32, U3>| x[1] + x[0] * (x[2] - x[1])));
+            let level = (level | o.follow("smooth_ms")) >> net(An(Smooth::new()));
             (net(multipass::<U2>()) | level)
                 >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> {
                     [x[0] * x[2], x[1] * x[2]].into()
                 }))
         })
+}
+
+/// An option that moves to each new value a change gives it over 10 ms for a whole step, so the change does not click.
+fn eased(options: &Options, name: &str) -> Net {
+    options.follow(name) >> net(An(Ease::default()))
+}
+
+/// An option that is off below 0.5 and on from it, as a level that goes from 0 to 1 and back over 10 ms.
+fn switched(options: &Options, name: &str) -> Net {
+    options.follow(name)
+        >> net(map(
+            |x: &Frame<f32, U1>| if x[0] >= 0.5 { 1.0 } else { 0.0 },
+        ))
+        >> net(An(Ease::default()))
+}
+
+/// `off` at a level of 0, `on` at 1, and between the two as the level goes from one to the other.
+fn between(off: f32, on: f32, level: f32) -> f32 {
+    if level <= 0.0 {
+        off
+    } else if level >= 1.0 {
+        on
+    } else {
+        off + (on - off) * level
+    }
 }
 
 /// Cycles a second of an option measured as the length of one cycle.
@@ -418,9 +445,15 @@ fn wave_options(
 
 /// The sweep from 0 to 1, of the shape and length the wave options give.
 fn sweep(options: &Options, width: Net) -> Net {
-    let offset = options.number("phase_offset") as f32;
-    (rate_of(options, "phase") | width | options.follow("wave") | options.follow("invert_wave"))
-        >> net(An(Lfo::new(offset, 1.0, false)))
+    (rate_of(options, "phase")
+        | width
+        | options.follow("wave")
+        | options.follow("invert_wave")
+        | eased(options, "phase_offset"))
+        >> net(An(Shifted::new(
+            options.number("phase_offset") as f32,
+            false,
+        )))
 }
 
 fn tremolo() -> Effect {
@@ -584,21 +617,9 @@ fn flanger() -> Effect {
         .tail(1.0)
         .build(|o, _| {
             let most = o.number("max_delay_ms") / 1000.0;
-            let flip = if o.number("stereo_invert_wave") >= 0.5 {
-                1.0
-            } else {
-                0.0
-            };
-            let sign = if o.number("invert_flange") >= 0.5 {
-                -1.0
-            } else {
-                1.0
-            };
-            let side = |flipped: f32| {
-                let level = sweep(o, net(dc(0.5)))
-                    >> net(map(
-                        move |x: &Frame<f32, U1>| if flipped > 0.0 { 1.0 - x[0] } else { x[0] },
-                    ));
+            let side = |flipped: Net| {
+                let level = (sweep(o, net(dc(0.5))) | flipped)
+                    >> net(map(|x: &Frame<f32, U2>| between(x[0], 1.0 - x[0], x[1])));
                 let limit = most as f32;
                 let delay = (o.follow("delay_ms") | o.follow("depth_ms") | level)
                     >> net(map(move |x: &Frame<f32, U3>| {
@@ -607,9 +628,14 @@ fn flanger() -> Effect {
                 let decay = (o.follow("decay") | o.follow("feedback"))
                     >> net(map(|x: &Frame<f32, U2>| x[0] * x[1].clamp(0.0, 1.0)));
                 let comb = (net(pass()) | delay | decay) >> net(An(Comb::new(most, true)));
-                net(pass()) & (comb * sign)
+                (net(pass()) | switched(o, "invert_flange"))
+                    >> net(map(|x: &Frame<f32, U2>| -> Frame<f32, U3> {
+                        [x[0], x[0], x[1]].into()
+                    }))
+                    >> (net(pass()) | comb | net(pass()))
+                    >> net(map(|x: &Frame<f32, U3>| x[0] + x[1] * (1.0 - 2.0 * x[2])))
             };
-            side(flip) | side(0.0)
+            side(switched(o, "stereo_invert_wave")) | side(net(dc(0.0)))
         })
 }
 
@@ -645,7 +671,6 @@ fn wobble() -> Effect {
         )
         .tail(0.2)
         .build(|o, _| {
-            let high = o.number("filter") >= 0.5;
             per_channel(|| {
                 let level = sweep(o, o.follow("pulse_width"));
                 let cut = (level | o.follow("cutoff_min") | o.follow("cutoff_max"))
@@ -653,11 +678,13 @@ fn wobble() -> Effect {
                         hz((x[1] + x[0] * (x[2] - x[1])) as f64).clamp(20.0, 20_000.0) as f32
                     }));
                 let input = net(pass()) | cut | q_of(o, "res");
-                if high {
-                    input >> net(highpass::<f32>())
-                } else {
-                    input >> net(lowpass::<f32>())
-                }
+                let both = input
+                    >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U6> {
+                        [x[0], x[1], x[2], x[0], x[1], x[2]].into()
+                    }))
+                    >> (net(lowpass::<f32>()) | net(highpass::<f32>()));
+                (both | switched(o, "filter"))
+                    >> net(map(|x: &Frame<f32, U3>| between(x[0], x[1], x[2])))
             })
         })
 }
@@ -693,9 +720,11 @@ fn ping_pong() -> Effect {
             (2.0 * phase * (-60.0 / (20.0 * feedback.log10())).max(1.0)).min(60.0)
         })
         .build(|o, _| {
-            let side = o.number("pan_start") as f32;
-            (net(multipass::<U2>()) | o.follow("phase") | o.follow("feedback"))
-                >> net(An(PingPong::new(o.number("max_phase"), side)))
+            (net(multipass::<U2>())
+                | o.follow("phase")
+                | o.follow("feedback")
+                | eased(o, "pan_start"))
+                >> net(An(PingPong::new(o.number("max_phase"))))
         })
 }
 
@@ -1087,6 +1116,140 @@ impl AudioNode for Lfo {
     }
 }
 
+/// An [`Lfo`] whose cycle moves on by as much as its last input, where in the cycle it starts, changes.
+/// Inputs: the Lfo's four, then the offset from 0 to 1.
+#[derive(Clone)]
+struct Shifted {
+    lfo: Lfo,
+}
+
+impl Shifted {
+    fn new(offset: f32, pulse_only: bool) -> Self {
+        Shifted {
+            lfo: Lfo::new(offset, 1.0, pulse_only),
+        }
+    }
+}
+
+impl AudioNode for Shifted {
+    const ID: u64 = 0x6d78_0077;
+    type Inputs = U5;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.lfo.set_sample_rate(sample_rate);
+    }
+
+    fn reset(&mut self) {
+        self.lfo.reset();
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U5>) -> Frame<f32, U1> {
+        if input[4] != self.lfo.offset {
+            self.lfo.phase = (self.lfo.phase + input[4] - self.lfo.offset).rem_euclid(1.0);
+            self.lfo.offset = input[4];
+        }
+        self.lfo
+            .tick(&[input[0], input[1], input[2], input[3]].into())
+    }
+}
+
+/// Moves to its input at no more than 1 every 10 ms, starting at its first input.
+#[derive(Clone)]
+struct Ease {
+    level: Option<f32>,
+    step: f32,
+}
+
+impl Default for Ease {
+    fn default() -> Self {
+        Ease {
+            level: None,
+            step: (100.0 / DEFAULT_SR) as f32,
+        }
+    }
+}
+
+impl AudioNode for Ease {
+    const ID: u64 = 0x6d78_0078;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.step = (100.0 / sample_rate) as f32;
+    }
+
+    fn reset(&mut self) {
+        self.level = None;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let level = match self.level {
+            Some(level) if (input[0] - level).abs() > self.step => {
+                level + self.step.copysign(input[0] - level)
+            }
+            _ => input[0],
+        };
+        self.level = Some(level);
+        [level].into()
+    }
+}
+
+/// Glides to its first input, falling 60 dB short of each step over its second, in milliseconds.
+/// Inputs: level, milliseconds.
+#[derive(Clone)]
+struct Smooth {
+    ms: f32,
+    keep: f32,
+    level: Option<f32>,
+    rate: f64,
+}
+
+impl Smooth {
+    fn new() -> Self {
+        Smooth {
+            ms: 0.0,
+            keep: 0.0,
+            level: None,
+            rate: DEFAULT_SR,
+        }
+    }
+}
+
+impl AudioNode for Smooth {
+    const ID: u64 = 0x6d78_0079;
+    type Inputs = U2;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate;
+        self.ms = 0.0;
+        self.keep = 0.0;
+    }
+
+    fn reset(&mut self) {
+        self.level = None;
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+        if input[1] != self.ms {
+            self.ms = input[1];
+            let seconds = self.ms as f64 / 1000.0;
+            self.keep = if seconds > 0.0 {
+                0.001f64.powf(1.0 / (seconds * self.rate)) as f32
+            } else {
+                0.0
+            };
+        }
+        let level = match self.level {
+            Some(level) => input[0] + (level - input[0]) * self.keep,
+            None => input[0],
+        };
+        self.level = Some(level);
+        [level].into()
+    }
+}
+
 /// Glides to its input, falling 60 dB short of each step over `seconds`.
 #[derive(Clone)]
 pub(crate) struct Lag {
@@ -1252,11 +1415,10 @@ impl AudioNode for Crusher {
 }
 
 /// Echoes a phase apart, alternating between one side and the other, each `feedback` times the one before.
-/// Inputs: left, right, phase in seconds, feedback.
+/// Inputs: left, right, phase in seconds, feedback, the side of the first echo from -1 to 1.
 #[derive(Clone)]
 struct PingPong {
     most: f64,
-    side: f32,
     first: Vec<f32>,
     second: Vec<f32>,
     at: usize,
@@ -1264,10 +1426,9 @@ struct PingPong {
 }
 
 impl PingPong {
-    fn new(most: f64, side: f32) -> Self {
+    fn new(most: f64) -> Self {
         let mut ping = PingPong {
             most,
-            side,
             first: Vec::new(),
             second: Vec::new(),
             at: 0,
@@ -1289,7 +1450,7 @@ impl PingPong {
 
 impl AudioNode for PingPong {
     const ID: u64 = 0x6d78_0016;
-    type Inputs = U4;
+    type Inputs = U5;
     type Outputs = U2;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -1305,7 +1466,7 @@ impl AudioNode for PingPong {
         self.second.fill(0.0);
     }
 
-    fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U2> {
+    fn tick(&mut self, input: &Frame<f32, U5>) -> Frame<f32, U2> {
         let limit = (self.first.len() - 3) as f32;
         let frames = (input[2] * self.rate).clamp(1.0, limit);
         let feedback = input[3].clamp(0.0, 0.999);
@@ -1318,8 +1479,8 @@ impl AudioNode for PingPong {
             let angle = (side + 1.0) * FRAC_PI_4;
             (angle.cos(), angle.sin())
         };
-        let (fl, fr) = place(self.side);
-        let (sl, sr) = place(-self.side);
+        let (fl, fr) = place(input[4]);
+        let (sl, sr) = place(-input[4]);
         [
             input[0] + first * fl + second * sl,
             input[1] + first * fr + second * sr,

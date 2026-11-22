@@ -16,6 +16,9 @@ fn engine() -> Engine {
             .build(|o, ctx| Note::rings(white_noise(ctx.seed()) * 0.25, o.number("length"))),
     );
     engine.register(
+        Synth::new("steady").build(|_, _| Note::rings(Net::wrap(Box::new(dc(0.5))), 3.0)),
+    );
+    engine.register(
         Synth::new("tone")
             .option(Spec::hz("hz").default(440.0))
             .build(|o, _| {
@@ -264,4 +267,132 @@ fn eq_glides_a_band_to_a_new_gain_over_its_slide() {
     let db = |seconds: f64| 20.0 * (at(seconds) / at(0.4)).log10();
     assert!(db(0.75) < -1.5 && db(0.75) > -4.5, "{}", db(0.75));
     assert!((db(1.2) + 6.0).abs() < 0.2, "{}", db(1.2));
+}
+
+/// Both sides of `synth` through one effect for 1.5 seconds, with a change to its options half a second in, when given.
+fn changed(
+    effect: &str,
+    given: &[(&str, f64)],
+    change: &[(&str, f64)],
+    synth: &str,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[(effect.to_string(), options(given))])
+        .unwrap();
+    let note = |synth: &str| Event::Note {
+        id: None,
+        synth: synth.to_string(),
+        options: vec![],
+        chain: Some(chain),
+        held: false,
+    };
+    let mut events = vec![(0.0, note(synth))];
+    if synth == "click" {
+        events.push((0.6, note(synth)));
+    }
+    if !change.is_empty() {
+        let set = Event::Set {
+            target: Target::Effect(chain, 0),
+            options: change.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+        };
+        events.push((0.5, set));
+    }
+    engine.play(&events).unwrap();
+    engine.render(1.5).unwrap()
+}
+
+fn loudest(samples: &[f32]) -> f32 {
+    samples.iter().fold(0.0f32, |a, x| a.max(x.abs()))
+}
+
+/// The largest difference between two renders over a stretch of seconds.
+fn apart(a: &[f32], b: &[f32], from: f64, to: f64) -> f32 {
+    let (from, to) = (frame(from), frame(to));
+    a[from..to]
+        .iter()
+        .zip(&b[from..to])
+        .fold(0.0f32, |m, (x, y)| m.max((x - y).abs()))
+}
+
+#[test]
+fn a_change_to_the_slicers_smooth_ms_and_phase_offset_reaches_it_while_it_plays() {
+    let step = |samples: &[f32], from: f64, to: f64| {
+        samples[frame(from)..frame(to)]
+            .windows(2)
+            .fold(0.0f32, |m, w| m.max((w[1] - w[0]).abs()))
+    };
+    let (smoothed, _) = changed("slicer", &[], &[("smooth_ms", 100.0)], "steady");
+    assert!(step(&smoothed, 0.05, 0.5) > 0.2);
+    assert!(step(&smoothed, 0.6, 1.4) < 0.01);
+    assert!(loudest(&smoothed[frame(0.6)..]) > 0.2);
+
+    let (plain, _) = changed("slicer", &[], &[], "steady");
+    let (moved, _) = changed("slicer", &[], &[("phase_offset", 0.5)], "steady");
+    assert_eq!(plain[..frame(0.5)], moved[..frame(0.5)]);
+    assert_eq!(plain[frame(0.7)], 0.0);
+    assert!((moved[frame(0.7)] - loudest(&plain)).abs() < 1e-6);
+}
+
+#[test]
+fn a_change_to_the_flangers_switches_and_the_wobbles_filter_reaches_them_without_a_click() {
+    let cases: [(&str, &[(&str, f64)], (&str, f64)); 3] = [
+        (
+            "flanger",
+            &[("feedback", 0.7), ("phase", 0.5)],
+            ("stereo_invert_wave", 1.0),
+        ),
+        (
+            "flanger",
+            &[("feedback", 0.7), ("phase", 0.5)],
+            ("invert_flange", 1.0),
+        ),
+        ("wobble", &[], ("filter", 1.0)),
+    ];
+    for (effect, given, change) in cases {
+        let (plain, plain_right) = changed(effect, given, &[], "tone");
+        let (left, right) = changed(effect, given, &[change], "tone");
+        assert_eq!(
+            plain[..frame(0.5)],
+            left[..frame(0.5)],
+            "{effect} {change:?}"
+        );
+        let peak = loudest(&plain);
+        assert!(
+            apart(&plain, &left, 0.6, 1.4) > peak / 10.0,
+            "{effect} {change:?}"
+        );
+        let before = loudest(&left[frame(0.0)..frame(0.5)]);
+        assert!(
+            loudest(&left[frame(0.5)..frame(0.52)]) <= before * 1.05,
+            "{effect} {change:?}"
+        );
+        if change.0 == "stereo_invert_wave" {
+            assert_eq!(plain, plain_right);
+            assert!(apart(&left, &right, 0.6, 1.4) > peak / 10.0);
+        }
+        let mut whole = given.to_vec();
+        whole.push(change);
+        let (from_start, _) = changed(effect, &whole, &[], "tone");
+        assert!(
+            apart(&from_start, &left, 1.3, 1.5) < peak,
+            "{effect} {change:?}"
+        );
+    }
+}
+
+#[test]
+fn a_change_to_the_ping_pongs_pan_start_moves_its_first_echo_to_the_other_side() {
+    let first_echo = |change: &[(&str, f64)]| {
+        let (left, right) = changed("ping_pong", &[], change, "click");
+        let at = frame(0.6 + 0.25);
+        (
+            loudest(&left[at - 48..at + 48]),
+            loudest(&right[at - 48..at + 48]),
+        )
+    };
+    let (left, right) = first_echo(&[]);
+    assert!(right > 0.01 && left < right / 100.0, "{left} {right}");
+    let (left, right) = first_echo(&[("pan_start", -1.0)]);
+    assert!(left > 0.01 && right < left / 100.0, "{left} {right}");
 }

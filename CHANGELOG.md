@@ -11,6 +11,7 @@
 ### 2. Bug fixes
 
   * [graph] An effect whose graph takes its input in a sound that is multiplied by 0, or in the side a `select` leaves out when its condition is known as the effect starts, is built and plays the rest, where it panicked
+  * [effects] A change reaches the options that were read once as an effect started: `phase_offset` of `slicer`, `tremolo`, `flanger` and `wobble`, `smooth_ms` of `slicer`, `invert_flange` and `stereo_invert_wave` of `flanger`, `filter` of `wobble`, and `pan_start` of `ping_pong`; a switch goes over in 10 ms, so it does not click
   * [engine] An effect that cannot be built when its chain starts is the error `CannotBuild`, naming the effect and why, where `start_effects` and `start_part` panicked
 
 ## v0.4.1 (2026-11-22)
