@@ -4,5 +4,6 @@ set -e
 cd "$(dirname "$0")"
 cargo build --release --target wasm32-unknown-unknown
 cp target/wasm32-unknown-unknown/release/mxs.wasm package/
+rm -rf package/tables
 mkdir -p package/tables
 cp ../src/synths/figures/*.mx[fh] package/tables/

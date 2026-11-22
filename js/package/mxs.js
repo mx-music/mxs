@@ -1,5 +1,5 @@
 // mxs on a web page: its synths and effects played live in an audio worklet, or rendered offline into arrays of samples.
-// Fifteen synths play measured tables, which an engine fetches the first time the page plays one of them.
+// Some synths play measured tables, which an engine fetches the first time the page plays one of them.
 
 import { Core, MxsError } from "./core.js";
 
