@@ -985,3 +985,100 @@ fn the_phaser_sweeps_its_notches_once_every_phase_and_the_left_the_other_way_whe
     );
     assert!(together > 0.5 && half < 0.1, "{together} {half}");
 }
+
+/// How far, in dB, the part of `samples` at `high` hertz is above the part at `low` in the tenth of a second from `from`.
+fn tilt(samples: &[f32], high: f64, low: f64, from: f64) -> f64 {
+    let part = |hz: f64| {
+        let turn = std::f64::consts::TAU * hz / RATE;
+        let (re, im) = samples[frame(from)..frame(from + 0.09)]
+            .iter()
+            .enumerate()
+            .fold((0.0, 0.0), |(re, im), (n, x)| {
+                let angle = turn * n as f64;
+                (
+                    re + f64::from(*x) * angle.cos(),
+                    im + f64::from(*x) * angle.sin(),
+                )
+            });
+        10.0 * (re * re + im * im).log10()
+    };
+    part(high) - part(low)
+}
+
+/// A click through `effect` with echoes 0.1 seconds apart, both sides added, since ping_pong puts each echo on one.
+fn echoed_click(effect: &str, given: &[(&str, f64)]) -> Vec<f32> {
+    let mut engine = engine();
+    let mut all = vec![("phase", 0.1)];
+    all.extend_from_slice(given);
+    let chain = engine
+        .start_effects(&[(effect.to_string(), options(&all))])
+        .unwrap();
+    let note = Event::Note {
+        id: None,
+        synth: "click".to_string(),
+        options: vec![],
+        chain: Some(chain),
+        held: false,
+    };
+    engine.play(&[(0.0, note)]).unwrap();
+    let (left, right) = engine.render(0.5).unwrap();
+    left.iter().zip(&right).map(|(l, r)| l + r).collect()
+}
+
+#[test]
+fn an_echo_cuts_each_repeat_above_its_high_cut_and_below_its_low_cut_once_more_than_the_one_before()
+{
+    for (effect, long) in [("echo", ("decay", 1.0)), ("ping_pong", ("feedback", 0.7))] {
+        for (cut, high, low) in [
+            (("high_cut", 84.0), 4000.0, 500.0),
+            (("low_cut", 60.0), 100.0, 1000.0),
+        ] {
+            let sound = echoed_click(effect, &[long, cut]);
+            let tilts: Vec<f64> = [0.0, 0.1, 0.2, 0.3]
+                .iter()
+                .map(|at| tilt(&sound, high, low, at - 0.001))
+                .collect();
+            for pair in tilts.windows(2) {
+                assert!(pair[1] <= pair[0] - 3.0, "{effect} {cut:?} {tilts:?}");
+            }
+        }
+        let plain = echoed_click(effect, &[long]);
+        let flat = tilt(&plain, 4000.0, 500.0, 0.299) - tilt(&plain, 4000.0, 500.0, 0.0);
+        assert!(flat.abs() < 0.01, "{effect} {flat}");
+    }
+}
+
+#[test]
+fn an_echos_drive_rounds_each_repeat_off_more_than_the_one_before() {
+    for (effect, long) in [
+        ("echo", ("decay", 150.0)),
+        ("ping_pong", ("feedback", 0.97)),
+    ] {
+        let mut engine = engine();
+        // A tone a quarter of full scale, as a part in a mix is.
+        let given = [
+            ("phase", 2.5),
+            ("max_phase", 3.0),
+            long,
+            ("drive", 0.5),
+            ("pre_amp", 0.5),
+        ];
+        let chain = engine
+            .start_effects(&[(effect.to_string(), options(&given))])
+            .unwrap();
+        let note = Event::Note {
+            id: None,
+            synth: "tone".to_string(),
+            options: vec![],
+            chain: Some(chain),
+            held: false,
+        };
+        engine.play(&[(0.0, note)]).unwrap();
+        let (left, right) = engine.render(9.5).unwrap();
+        let sound: Vec<f32> = left.iter().zip(&right).map(|(l, r)| l + r).collect();
+        let third = |from: f64| tilt(&sound, 1320.0, 440.0, from);
+        let (dry, first, last) = (third(1.0), third(3.5), third(8.5));
+        assert!(dry < -40.0, "{effect} {dry}");
+        assert!(last >= first + 6.0, "{effect} {first} {last}");
+    }
+}

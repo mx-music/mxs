@@ -4,6 +4,7 @@
 
 ### 1. Enhancements
 
+  * [effects] `echo` and `ping_pong` take `high_cut` and `low_cut`, MIDI notes above and below which each echo is cut once more than the one before, and `drive`, from 0 to 1, which rounds each echo off once more than the one before, as a tape echo's repeats grow duller; with none given the samples are as they were
   * [effects] `phaser` given no `mix` is half dry, where its notches are deepest; it passed only the turned sound, with no notch
   * [engine] An effect that lists `mix`, `pre_amp` or `amp` among its own options gives it its own default, in place of the one every effect has
 

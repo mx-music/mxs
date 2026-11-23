@@ -144,8 +144,25 @@ fn reverb() -> Effect {
         })
 }
 
+/// The options of an echo whose repeats wear as a tape's do.
+fn worn(effect: crate::synth::EffectDecl) -> crate::synth::EffectDecl {
+    effect
+        .option(Spec::note("high_cut").default(136.0).doc(
+            "A MIDI note above which each echo is cut once more than the one before; off from 136.",
+        ))
+        .option(Spec::note("low_cut").default(0.0).doc(
+            "A MIDI note below which each echo is cut once more than the one before; off at 0.",
+        ))
+        .option(
+            Spec::float("drive")
+                .default(0.0)
+                .range(0.0, 1.0)
+                .doc("How much each echo is rounded off, once more than the one before."),
+        )
+}
+
 fn echo() -> Effect {
-    Effect::new("echo")
+    worn(Effect::new("echo"))
         .option(
             Spec::beats("phase")
                 .default(0.25)
@@ -167,8 +184,13 @@ fn echo() -> Effect {
         .build(|o, _| {
             let most = o.number("max_phase");
             per_channel(|| {
-                let comb = (net(pass()) | o.follow("phase") | o.follow("decay"))
-                    >> net(An(Comb::new(most, false)));
+                let comb = (net(pass())
+                    | o.follow("phase")
+                    | o.follow("decay")
+                    | o.follow("high_cut")
+                    | o.follow("low_cut")
+                    | o.follow("drive"))
+                    >> net(An(Echo::new(most)));
                 net(pass()) & comb
             })
         })
@@ -859,7 +881,7 @@ fn wobble() -> Effect {
 }
 
 fn ping_pong() -> Effect {
-    Effect::new("ping_pong")
+    worn(Effect::new("ping_pong"))
         .option(
             Spec::beats("phase")
                 .default(0.25)
@@ -892,7 +914,10 @@ fn ping_pong() -> Effect {
             (net(multipass::<U2>())
                 | o.follow("phase")
                 | o.follow("feedback")
-                | eased(o, "pan_start"))
+                | eased(o, "pan_start")
+                | o.follow("high_cut")
+                | o.follow("low_cut")
+                | o.follow("drive"))
                 >> net(An(PingPong::new(o.number("max_phase"))))
         })
 }
@@ -1126,6 +1151,97 @@ impl AudioNode for Comb {
                 .copysign(decay)
         };
         self.buffer[self.at] = input[0] + feedback * delayed;
+        [delayed].into()
+    }
+}
+
+/// What each pass round an echo's loop does to the sound: a low-pass and a high-pass of one pole, and a curve that rounds it off.
+/// A cut that is off, or a drive of 0, leaves the samples as they are.
+#[derive(Clone, Default)]
+struct Wear {
+    below: f32,
+    under: f32,
+    cuts: (f32, f32),
+    keeps: (f32, f32),
+}
+
+impl Wear {
+    fn pass(&mut self, sound: f32, high_cut: f32, low_cut: f32, drive: f32, rate: f32) -> f32 {
+        if (high_cut, low_cut) != self.cuts {
+            self.cuts = (high_cut, low_cut);
+            let keep = |note: f32| 1.0 - (-TAU * hz(note as f64) as f32 / rate).exp();
+            self.keeps = (keep(high_cut).min(1.0), keep(low_cut).min(1.0));
+        }
+        let mut sound = sound;
+        if high_cut < 136.0 {
+            self.below += self.keeps.0 * (sound - self.below);
+            sound = self.below;
+        } else {
+            self.below = sound;
+        }
+        if low_cut > 0.0 {
+            self.under += self.keeps.1 * (sound - self.under);
+            sound -= self.under;
+        } else {
+            self.under = 0.0;
+        }
+        if drive > 0.0 {
+            let gain = 4.0 * drive.min(1.0);
+            sound = (gain * sound).tanh() / gain;
+        }
+        sound
+    }
+}
+
+/// The comb of the echo: a delay that feeds back on itself by as much as dies away 60 dB over its decay, each pass worn by its cuts and its drive, the first echo once.
+/// Inputs: sound, delay in seconds, decay in seconds, high_cut and low_cut as MIDI notes, drive.
+#[derive(Clone)]
+struct Echo {
+    comb: Comb,
+    wear: Wear,
+}
+
+impl Echo {
+    fn new(most: f64) -> Self {
+        Echo {
+            comb: Comb::new(most, false),
+            wear: Wear::default(),
+        }
+    }
+}
+
+impl AudioNode for Echo {
+    const ID: u64 = 0x6d78_007e;
+    type Inputs = U6;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.comb.set_sample_rate(sample_rate);
+    }
+
+    fn reset(&mut self) {
+        self.comb.reset();
+        self.wear = Wear::default();
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U6>) -> Frame<f32, U1> {
+        let comb = &mut self.comb;
+        let limit = (comb.buffer.len() - 3) as f32;
+        let frames = (input[1] * comb.rate).clamp(1.0, limit);
+        comb.at = (comb.at + 1) % comb.buffer.len();
+        let delayed = comb.read(frames);
+        let delayed = self
+            .wear
+            .pass(delayed, input[3], input[4], input[5], comb.rate);
+        let decay = input[2];
+        let feedback = if decay == 0.0 {
+            0.0
+        } else {
+            0.001f32
+                .powf(input[1].max(0.0) / decay.abs())
+                .copysign(decay)
+        };
+        comb.buffer[comb.at] = input[0] + feedback * delayed;
         [delayed].into()
     }
 }
@@ -1770,8 +1886,8 @@ impl AudioNode for Crusher {
     }
 }
 
-/// Echoes a phase apart, alternating between one side and the other, each `feedback` times the one before.
-/// Inputs: left, right, phase in seconds, feedback, the side of the first echo from -1 to 1.
+/// Echoes a phase apart, alternating between one side and the other, each `feedback` times the one before and worn by the cuts and the drive once more.
+/// Inputs: left, right, phase in seconds, feedback, the side of the first echo from -1 to 1, high_cut and low_cut as MIDI notes, drive.
 #[derive(Clone)]
 struct PingPong {
     most: f64,
@@ -1779,6 +1895,7 @@ struct PingPong {
     second: Vec<f32>,
     at: usize,
     rate: f32,
+    wear: (Wear, Wear),
 }
 
 impl PingPong {
@@ -1789,6 +1906,7 @@ impl PingPong {
             second: Vec::new(),
             at: 0,
             rate: DEFAULT_SR as f32,
+            wear: (Wear::default(), Wear::default()),
         };
         ping.set_sample_rate(DEFAULT_SR);
         ping
@@ -1806,7 +1924,7 @@ impl PingPong {
 
 impl AudioNode for PingPong {
     const ID: u64 = 0x6d78_0016;
-    type Inputs = U5;
+    type Inputs = U8;
     type Outputs = U2;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -1820,15 +1938,23 @@ impl AudioNode for PingPong {
     fn reset(&mut self) {
         self.first.fill(0.0);
         self.second.fill(0.0);
+        self.wear = (Wear::default(), Wear::default());
     }
 
-    fn tick(&mut self, input: &Frame<f32, U5>) -> Frame<f32, U2> {
+    fn tick(&mut self, input: &Frame<f32, U8>) -> Frame<f32, U2> {
         let limit = (self.first.len() - 3) as f32;
         let frames = (input[2] * self.rate).clamp(1.0, limit);
         let feedback = input[3].clamp(0.0, 0.999);
         self.at = (self.at + 1) % self.first.len();
-        let first = Self::read(&self.first, self.at, frames) * feedback;
-        let second = Self::read(&self.second, self.at, frames) * feedback;
+        let (high_cut, low_cut, drive) = (input[5], input[6], input[7]);
+        let first = Self::read(&self.first, self.at, frames);
+        let first = self.wear.0.pass(first, high_cut, low_cut, drive, self.rate) * feedback;
+        let second = Self::read(&self.second, self.at, frames);
+        let second = self
+            .wear
+            .1
+            .pass(second, high_cut, low_cut, drive, self.rate)
+            * feedback;
         self.first[self.at] = input[0] + input[1] + second;
         self.second[self.at] = first;
         let place = |side: f32| {

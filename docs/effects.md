@@ -19,6 +19,9 @@ An effect that lists one of them among its own, as `phaser` lists `mix`, gives i
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
+| `high_cut` | a MIDI note | 136 | A MIDI note above which each echo is cut once more than the one before; off from 136. |
+| `low_cut` | a MIDI note | 0 | A MIDI note below which each echo is cut once more than the one before; off at 0. |
+| `drive` | a number, 0 to 1 | 0 | How much each echo is rounded off, once more than the one before. |
 | `phase` | seconds, 0 or more | 0.25 | The time between echoes. |
 | `decay` | seconds | 2 | How long the echoes take to die away. |
 | `max_phase` | seconds, 0 to 60 | 2 | The longest phase it can change to. |
@@ -142,6 +145,9 @@ An effect that lists one of them among its own, as `phaser` lists `mix`, gives i
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
+| `high_cut` | a MIDI note | 136 | A MIDI note above which each echo is cut once more than the one before; off from 136. |
+| `low_cut` | a MIDI note | 0 | A MIDI note below which each echo is cut once more than the one before; off at 0. |
+| `drive` | a number, 0 to 1 | 0 | How much each echo is rounded off, once more than the one before. |
 | `phase` | seconds, 0.001 or more | 0.25 | The time between echoes. |
 | `feedback` | a number, 0 to 0.999 | 0.5 | How much of each echo the next keeps. |
 | `max_phase` | seconds, 0.01 to 60 | 1 | The longest phase it can change to. |
