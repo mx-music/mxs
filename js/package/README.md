@@ -38,7 +38,7 @@ Every call returns a promise; times are in seconds from now.
 - `sample(after, sample, options, { id, chain })` plays a sound file `loadSample` loaded.
 - `set(after, ids, options)`, `release(after, ids)` and `stop(after, ids)` change, let go and end sounds.
 - `play(events)` plays several events at once, all or none, each with its `kind`: note, sample, set, release or stop.
-- `startEffects([["reverb", { room: 0.6 }]])` starts a chain of effects, and gives the number a note's `chain` plays into it by.
+- `startEffects([["reverb", { decay_seconds: 2 }]])` starts a chain of effects, and gives the number a note's `chain` plays into it by.
 - `synths()` and `effects()` give the catalog: each one's name and options, with each option's kind, default, range and doc.
 - `loadSynth(text)` and `loadEffect(text)` register a synth or an effect from an `mxs-synth` or `mxs-effect` file, as mxs's guide to building one describes.
 - `loadSample(bytes, name)` loads a FLAC, WAV or AIFF file from its bytes, such as those of a `fetch`, and gives the number `sample` plays it by.

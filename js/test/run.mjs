@@ -35,7 +35,7 @@ const tests = {
   async "a phrase rendered offline has the native render's level in every tenth of a second, within 0.01 dB"(page) {
     const levels = await page.evaluate(async () => {
       const engine = await mxs.offline();
-      const chain = await engine.startEffects([["reverb", { room: 0.6 }]]);
+      const chain = await engine.startEffects([["reverb", { decay_seconds: 2 }]]);
       const sample = await engine.loadSample(tone(), "tone.wav");
       for (const [i, note] of [60, 64, 67, 72].entries()) {
         await engine.note(i * 0.5, "piano", { note, sustain: 0.4 }, { chain });
