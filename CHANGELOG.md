@@ -1,6 +1,6 @@
 # Changelog for mxs v0.6
 
-## Unreleased
+## v0.6.2 (2026-11-23)
 
 ### 1. Enhancements
 
