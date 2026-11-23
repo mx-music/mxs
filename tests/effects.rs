@@ -847,6 +847,30 @@ fn notches(stages: usize) -> Vec<f64> {
 }
 
 #[test]
+fn a_phaser_given_no_mix_is_half_dry_so_its_notches_are_cut() {
+    let held = [("low", 72.0), ("high", 72.0)];
+    for (left, right) in phaser_gains(&held, &notches(4), 0.5) {
+        assert!(left <= -12.0 && right <= -12.0, "{left} {right}");
+    }
+    let own = |name: &str| {
+        let engine = engine();
+        let effect = engine
+            .effects()
+            .find(|effect| effect.name() == name)
+            .unwrap();
+        let mixes: Vec<Option<Value>> = effect
+            .specs()
+            .iter()
+            .filter(|spec| spec.name == "mix")
+            .map(|spec| spec.default.clone())
+            .collect();
+        mixes
+    };
+    assert_eq!(own("phaser"), vec![Some(Value::Number(0.5))]);
+    assert_eq!(own("echo"), vec![]);
+}
+
+#[test]
 fn the_phaser_cuts_a_notch_for_every_two_stages_and_none_dry() {
     let grid: Vec<f64> = (0..36).map(|i| 80.0 * 2f64.powf(i as f64 / 6.0)).collect();
     let held = |stages: f64| {

@@ -5,6 +5,7 @@
 ## What every effect takes
 
 Besides its own options, every effect takes these.
+An effect that lists one of them among its own, as `phaser` lists `mix`, gives it its own default.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|
@@ -194,4 +195,5 @@ Besides its own options, every effect takes these.
 | `low` | a MIDI note | 60 | The MIDI note its sweep starts from. |
 | `high` | a MIDI note | 108 | The MIDI note its sweep reaches. |
 | `feedback` | a number, 0 to 0.95 | 0 | How much of its sound feeds back, which raises the sound between the notches. |
+| `mix` | a number, 0 to 1 | 0.5 | How much of the turned sound replaces the dry one; the notches are deepest at 0.5. |
 

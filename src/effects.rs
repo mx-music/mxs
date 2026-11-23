@@ -725,6 +725,12 @@ fn phaser() -> Effect {
                 .range(0.0, 0.95)
                 .doc("How much of its sound feeds back, which raises the sound between the notches."),
         )
+        .option(
+            Spec::float("mix")
+                .default(0.5)
+                .range(0.0, 1.0)
+                .doc("How much of the turned sound replaces the dry one; the notches are deepest at 0.5."),
+        )
         .tail(0.1)
         .build(|o, _| {
             let stages = o.number("stages");

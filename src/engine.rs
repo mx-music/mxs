@@ -807,12 +807,10 @@ impl Engine {
     /// Adds an effect, replacing one of the same name.
     pub fn register_effect(&mut self, effect: Effect) {
         let owner: Arc<str> = Arc::from(effect.name.as_str());
-        let specs: Vec<Spec> = effect
-            .specs
-            .iter()
-            .cloned()
-            .chain(blending_specs())
-            .collect();
+        let shared = blending_specs()
+            .into_iter()
+            .filter(|shared| effect.specs.iter().all(|own| own.name != shared.name));
+        let specs: Vec<Spec> = effect.specs.iter().cloned().chain(shared).collect();
         self.effects.insert(
             effect.name.clone(),
             Registered {
@@ -880,6 +878,7 @@ impl Engine {
     }
 
     /// The options every effect takes besides its own: mix, pre_amp and amp.
+    /// An effect that lists one of them among its own gives it its own default.
     pub fn effect_specs(&self) -> Vec<Spec> {
         blending_specs()
     }

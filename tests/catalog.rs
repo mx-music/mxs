@@ -162,7 +162,7 @@ fn effects_catalog() -> String {
         .collect();
     let mut out = format!("## The effects\n\n{}.\n\n", names.join(", "));
     out.push_str(
-        "## What every effect takes\n\nBesides its own options, every effect takes these.\n\n",
+        "## What every effect takes\n\nBesides its own options, every effect takes these.\nAn effect that lists one of them among its own, as `phaser` lists `mix`, gives it its own default.\n\n",
     );
     let common = Engine::offline(RATE).effect_specs();
     out.push_str(&table(&common.iter().collect::<Vec<_>>()));

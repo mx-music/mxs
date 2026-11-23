@@ -1,5 +1,12 @@
 # Changelog for mxs v0.6
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [effects] `phaser` given no `mix` is half dry, where its notches are deepest; it passed only the turned sound, with no notch
+  * [engine] An effect that lists `mix`, `pre_amp` or `amp` among its own options gives it its own default, in place of the one every effect has
+
 ## v0.6.0 (2026-11-22)
 
 ### 1. Breaking changes
