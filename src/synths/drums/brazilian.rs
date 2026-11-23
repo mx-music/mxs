@@ -476,10 +476,10 @@ const RINGS: [f64; 19] = [
 
 /// The wire's bands, and its modes' level in dB, ring in seconds and tail in dB at each.
 const BANDS: [f64; 7] = [794.0, 1265.0, 2000.0, 3162.0, 5019.0, 7937.0, 12649.0];
-const WIRE_OPEN: [f64; 7] = [-14.0, -8.0, -6.0, 17.0, 8.0, 6.0, 3.0];
-const WIRE_PRESSED: [f64; 7] = [-14.0, -8.0, -3.0, 15.0, 10.0, 6.0, 5.0];
+const WIRE_OPEN: [f64; 7] = [-14.0, -8.0, -3.0, 17.0, 8.0, 13.0, 13.0];
+const WIRE_PRESSED: [f64; 7] = [-14.0, -8.0, -3.0, 15.0, 10.0, 13.0, 15.0];
 const WIRE_RINGS: [f64; 7] = [0.6, 0.6, 0.5, 0.25, 0.08, 0.07, 0.06];
-const TAILS: [f64; 7] = [-60.0, -60.0, -60.0, -40.0, -22.0, -28.0, -24.0];
+const TAILS: [f64; 7] = [-60.0, -60.0, -60.0, -40.0, -22.0, -35.0, -34.0];
 /// Seeds the wire's modes; of the seeds tried, 7000 keeps them under the string's 3rd and 5th harmonics, as scsynth's draws from 1956 are.
 const SEED: u64 = 7000;
 /// What the wire's levels take off at each band to sound as loud as scsynth's render: its modes are drawn from another generator than scsynth's.

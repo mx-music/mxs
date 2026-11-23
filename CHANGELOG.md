@@ -8,6 +8,7 @@
   * [synths] `clave` is 5 dB louder at its overtone 2.72 times its note, between 4 and 6.3 kHz, as the recorded claves are
   * [synths] `tabla_tas`, and `tabla` playing tas, has its burst of noise at the note 7 dB quieter, so its lowest band starts and fades as the recorded bol does
   * [synths] `guiro` is 12 dB louder at its overtone three times its note, between 4 and 6.3 kHz, as the recorded güiros are
+  * [synths] `berimbau` has its wire 7 to 10 dB louder above 6.3 kHz as the stick strikes, fading there as before, and 3 dB louder near 2 kHz, as the recorded strokes are
 
 ## v0.6.4 (2026-11-23)
 
