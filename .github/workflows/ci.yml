@@ -58,3 +58,23 @@ jobs:
       - run: js/build.sh
       - run: npm install -g playwright@1.49.1 && playwright install --with-deps chromium webkit
       - run: PLAYWRIGHT="$(npm root -g)/playwright/index.mjs" node js/test/run.mjs
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: python
+      - working-directory: python
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install maturin
+          maturin develop
+          python -m unittest discover tests
