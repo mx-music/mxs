@@ -118,7 +118,7 @@ fn clave() -> Synth {
             let strike =
                 impulse_net() + (noise(ctx) >> hpf(1000.0)) * hit(0.0002, 0.002, -4.0) * 0.3;
             let ratios = [0.65, 1.0, 1.08, 1.5, 2.72, 3.6, 6.2];
-            let levels: Vec<f64> = [-24.0, 0.0, -6.0, -6.0, -9.5, -20.0, -22.0]
+            let levels: Vec<f64> = [-24.0, 0.0, -6.0, -6.0, -4.5, -20.0, -22.0]
                 .iter()
                 .zip([0.0, 0.0, 0.0, 0.6, 0.6, 1.3, 1.0])
                 .map(|(l, b)| db(l + b * bright))
