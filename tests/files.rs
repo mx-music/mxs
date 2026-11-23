@@ -418,3 +418,22 @@ fn the_marimba_file_renders_middle_c_to_the_samples_the_python_package_checks() 
     let hash = fnv(left[..second].iter().chain(&right[..second]).copied());
     assert_eq!(format!("{hash:016x}"), "3406ffda23b0932d");
 }
+
+#[test]
+fn mxs_s_marimba_renders_as_the_marimba_file_to_within_60_db() {
+    let shipped = || {
+        mxs::synths::all()
+            .into_iter()
+            .find(|s| s.name() == "marimba")
+            .unwrap()
+    };
+    for (note, vel) in [(36.0, 0.3), (52.0, 0.55), (68.0, 0.8), (84.0, 1.0)] {
+        let file = render(Synth::from_json(MARIMBA).unwrap(), note, vel).0;
+        let ours = render(shipped(), note, vel).0;
+        let power = |xs: &[f32]| xs.iter().map(|x| (*x as f64).powi(2)).sum::<f64>();
+        let apart: Vec<f32> = file.iter().zip(&ours).map(|(a, b)| a - b).collect();
+        let db = 10.0 * (power(&apart) / power(&file)).log10();
+        println!("note {note} at vel {vel}: {db:.1} dB apart");
+        assert!(db < -60.0, "note {note} at vel {vel} is {db:.1} dB apart");
+    }
+}

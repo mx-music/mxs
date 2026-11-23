@@ -1,7 +1,7 @@
 # Tables
 
 Some of mxs's synths play measured tables: the partials and noise of each note fitted to recordings of the real instrument.
-The tables make about 10.4 MB of a program built with mxs, so a web page that plays only the piano would download every instrument's tables before it plays a note.
+The tables make about 9.4 MB of a program built with mxs, so a web page that plays only the piano would download every instrument's tables before it plays a note.
 
 ## The synths that need tables
 
@@ -18,7 +18,6 @@ The tables make about 10.4 MB of a program built with mxs, so a web page that pl
 | glockenspiel | `glockenspiel.mxf` |
 | guitar | `guitar.mxf` |
 | harp | `harp.mxf` |
-| marimba | `marimba.mxf` |
 | piano | `piano.mxf` and `piano_pedal.mxf` |
 | timpani | `timpani.mxf` |
 | vibraphone | `vibraphone.mxf` |

@@ -130,6 +130,10 @@ fn a_synth_that_builds_each_note_for_its_note_alone_is_refused() {
         Err(Error::CannotKeepReady("tri".to_string()))
     );
     assert_eq!(
+        engine.keep_ready("marimba", 3),
+        Err(Error::CannotKeepReady("marimba".to_string()))
+    );
+    assert_eq!(
         engine.keep_ready("nothing", 4),
         Err(Error::UnknownSynth("nothing".to_string()))
     );
@@ -165,10 +169,10 @@ fn held_notes_of_the_cello_and_flute_start_from_ready_voices_as_built_ones_play(
 #[test]
 fn a_count_of_0_stops_keeping_voices_ready() {
     let mut engine = engine();
-    engine.keep_ready("marimba", 3).unwrap();
-    assert_eq!(engine.kept_ready("marimba"), 3);
-    engine.keep_ready("marimba", 0).unwrap();
-    assert_eq!(engine.kept_ready("marimba"), 0);
+    engine.keep_ready("vibraphone", 3).unwrap();
+    assert_eq!(engine.kept_ready("vibraphone"), 3);
+    engine.keep_ready("vibraphone", 0).unwrap();
+    assert_eq!(engine.kept_ready("vibraphone"), 0);
 }
 
 #[test]

@@ -801,7 +801,7 @@ It takes the envelope, with a `sustain` of 0.5 and a `release` of 0.2 unless giv
 
 ### `marimba`
 
-A marimba, fitted partial by partial to the University of Iowa's marimba struck with yarn mallets, from C2 to C7, and played down to F1. One of the mallets, meant to play from F1 to C7.
+A marimba built from its bar's modes and the tube's harmonics, each a resonator struck once, with a mallet whose harder strokes bring out higher overtones and a short tap of the mallet above them. One of the mallets, meant to play from F1 to C7.
 
 | Option | Takes | Default | What it does |
 |---|---|---|---|

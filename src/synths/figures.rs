@@ -2045,7 +2045,7 @@ mod tests {
 
     #[test]
     fn a_voice_with_room_fills_with_any_note_as_a_new_voice_would_and_allocates_nothing() {
-        let all: [(&str, &[u8]); 15] = [
+        let all: [(&str, &[u8]); 14] = [
             ("cello", include_bytes!("figures/cello.mxh")),
             ("deep_bass", include_bytes!("figures/deep_bass.mxf")),
             ("electric_bass", include_bytes!("figures/electric_bass.mxf")),
@@ -2061,7 +2061,6 @@ mod tests {
             ("glockenspiel", include_bytes!("figures/glockenspiel.mxf")),
             ("guitar", include_bytes!("figures/guitar.mxf")),
             ("harp", include_bytes!("figures/harp.mxf")),
-            ("marimba", include_bytes!("figures/marimba.mxf")),
             ("piano_pedal", include_bytes!("figures/piano_pedal.mxf")),
             ("piano", include_bytes!("figures/piano.mxf")),
             ("timpani", include_bytes!("figures/timpani.mxf")),
@@ -2163,7 +2162,7 @@ mod build_time {
         for (name, rate) in [
             ("piano", 41_000.0),
             ("cello", 41_001.0),
-            ("marimba", 41_002.0),
+            ("vibraphone", 41_002.0),
             ("electric_piano", 41_003.0),
         ] {
             let synth = synth(name);
@@ -2192,7 +2191,7 @@ mod build_time {
         // A rate no other test plays, so the first note works its bands out.
         let rate = 37_000.0;
         let render = || {
-            let mut note = build(&synth("marimba"), 48.0, rate);
+            let mut note = build(&synth("vibraphone"), 48.0, rate);
             let mut frame = vec![0.0; note.sound.outputs()];
             (0..rate as usize)
                 .flat_map(|_| {
@@ -2253,7 +2252,6 @@ mod ready {
             "harp",
             "electric_piano",
             "electric_guitar",
-            "marimba",
             "vibraphone",
             "xylophone",
             "glockenspiel",

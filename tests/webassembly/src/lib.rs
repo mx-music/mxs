@@ -10,7 +10,7 @@ use std::io::Cursor;
 pub const SECONDS: usize = 4;
 
 /// The tables the phrase's synths play.
-pub const TABLES: [&str; 3] = ["piano.mxf", "piano_pedal.mxf", "marimba.mxf"];
+pub const TABLES: [&str; 2] = ["piano.mxf", "piano_pedal.mxf"];
 
 /// The bytes of a WAV file of a decaying 330 Hz tone, a quarter of a second long.
 fn tone() -> Vec<u8> {

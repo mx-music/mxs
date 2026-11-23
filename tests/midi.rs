@@ -330,8 +330,8 @@ fn changing_the_instrument_plays_the_next_key_with_it_and_leaves_a_held_note_rin
     let after = magnitude(&sound[seconds(0.6, 0.7)], hz(57.0));
     assert!(after < 0.01, "{after} once its key came up");
     engine.change_midi(Some(&name), "piano", &[]).unwrap();
-    engine.change_midi(Some(&name), "marimba", &[]).unwrap();
-    assert_eq!(engine.kept_ready("marimba"), 10);
+    engine.change_midi(Some(&name), "vibraphone", &[]).unwrap();
+    assert_eq!(engine.kept_ready("vibraphone"), 10);
 }
 
 #[test]

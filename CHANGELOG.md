@@ -1,5 +1,15 @@
 # Changelog for mxs v0.6
 
+## Unreleased
+
+### 1. Breaking changes
+
+  * [synths] `marimba` plays no table: `marimba.mxf` is gone, so loading it is refused, and the marimba can no longer be kept ready, as no synth without a table can; a MIDI input playing it builds each note as its key goes down
+
+### 2. Enhancements
+
+  * [synths] `marimba` is built from its bar's modes and the tube's harmonics, each a resonator struck once, with a mallet that dulls the overtones by their frequency the softer it strikes and a short tap of noise above them; it keeps its options, `bend` and `brightness` among them, and a program built without tables plays it
+
 ## v0.6.7 (2026-11-23)
 
 ### 1. Enhancements

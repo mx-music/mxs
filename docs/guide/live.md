@@ -114,7 +114,7 @@ fn main() -> Result<(), mxs::Error> {
 - A ready voice sounds as a voice built for the same note, sample for sample.
 - Each voice taken is replaced on the builder thread, so the number asked for is kept: ten piano voices are back within about 10 ms.
 - A note with any other option, of a synth with no voice ready, or in a pass is built as before.
-- The instruments fitted to recordings can be kept ready: the piano, guitar, electric bass, deep bass, harp, electric piano, electric guitar, marimba, vibraphone, xylophone, glockenspiel and timpani, and the violin, cello and `flute_figured`; a voice of any other synth is refused with [`Error::CannotKeepReady`].
+- The instruments fitted to recordings can be kept ready: the piano, guitar, electric bass, deep bass, harp, electric piano, electric guitar, vibraphone, xylophone, glockenspiel and timpani, and the violin, cello and `flute_figured`; a voice of any other synth is refused with [`Error::CannotKeepReady`].
 - Filling a ready voice takes the audio thread 0.1 to 0.2 ms for a piano note, so a chord of ten takes up to 2 ms of one buffer.
 - A held note that slides to another note or vel while it sounds still works out the new note's figures on the audio thread, as a note built for it does.
 

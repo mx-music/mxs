@@ -100,7 +100,7 @@
 //! ## The instruments' models
 //!
 //! `partials`, `bowed_string`, `air_jet`, `reed`, `wind_bands`, `vibrato`, `fingers` and `sway` are the models the crate's own strings and winds are built from.
-//! `figures(table, play:, level:)` plays a note from one of mxs's tables, named by its file with or without its extension, as `marimba`, as mxs's voices play theirs, and ends the note, as `rings` does; a synth naming a table mxs has not is refused when it registers.
+//! `figures(table, play:, level:)` plays a note from one of mxs's tables, named by its file with or without its extension, as `vibraphone`, as mxs's voices play theirs, and ends the note, as `rings` does; a synth naming a table mxs has not is refused when it registers.
 //! Struck, `play` is `kept`, whose figures carry its loudness, `fitted`, louder by vel to the power `growth:`, or `evened`, every note at vel 1 as loud, each at `level`, or `following`, as `kept`, multiplied by the sound `times:`, as the vibraphone's motor pulses it.
 //! Held, `play` is `held`, bowed, at `level` and quieter below the softest vel recorded, or `blown`, at `level`, breathed by `wander:`, `wander_above:`, `catch:`, `vary:`, `inhale:` and `even:` as mxs's flute_figured is; each takes `vibrato:` in place of the recordings', which a negative one keeps, and `legato:`.
 //! `piano` plays mxs's piano from its two tables, with the note's options.

@@ -1296,11 +1296,11 @@ fn sway_drifts_as_the_winds_drift_from_the_same_seed() {
 
 #[test]
 fn figures_plays_a_table_as_the_voice_that_reads_it_does() {
-    let marimba = Synth::graph(
-        "marimba",
+    let vibraphone = Synth::graph(
+        "vibraphone",
         mxs::synths::all()
             .into_iter()
-            .find(|s| s.name() == "marimba")
+            .find(|s| s.name() == "vibraphone")
             .unwrap()
             .specs()
             .to_vec(),
@@ -1308,19 +1308,19 @@ fn figures_plays_a_table_as_the_voice_that_reads_it_does() {
             matches: vec![],
             graph: Graph::call(
                 "figures",
-                vec![Graph::Name("marimba".into())],
-                vec![("play", Graph::Name("kept".into())), ("level", n(1.53))],
+                vec![Graph::Name("vibraphone".into())],
+                vec![("play", Graph::Name("kept".into())), ("level", n(14.7))],
             ),
         }],
     )
     .unwrap();
-    assert_eq!(marimba.tables(), ["marimba.mxf"]);
+    assert_eq!(vibraphone.tables(), ["vibraphone.mxf"]);
     let rust = mxs::synths::all()
         .into_iter()
-        .find(|s| s.name() == "marimba")
+        .find(|s| s.name() == "vibraphone")
         .unwrap();
     let options = [("note", Value::Number(64.0)), ("vel", Value::Number(0.8))];
-    let traced = render(marimba, &options);
+    let traced = render(vibraphone, &options);
     assert!(traced.iter().any(|x| *x != 0.0));
     assert_eq!(traced, render(rust, &options));
 

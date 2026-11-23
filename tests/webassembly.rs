@@ -79,7 +79,7 @@ fn without_the_tables_the_module_is_under_3_mb_refuses_the_piano_and_plays_the_t
     );
 
     let figures = concat!(env!("CARGO_MANIFEST_DIR"), "/src/synths/figures");
-    let tables = ["piano.mxf", "piano_pedal.mxf", "marimba.mxf"];
+    let tables = ["piano.mxf", "piano_pedal.mxf"];
     let wasm = levels(&run(Command::new("node")
         .args([script, &module, figures])
         .args(tables)));

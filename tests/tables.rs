@@ -24,7 +24,7 @@ fn loudest(engine: &mut Engine) -> f32 {
 }
 
 #[test]
-fn the_piano_names_its_two_tables_the_pluck_none_and_fourteen_synths_need_some() {
+fn the_piano_names_its_two_tables_the_pluck_and_marimba_none_and_thirteen_synths_need_some() {
     let all = synths::all();
     let tables = |name: &str| {
         all.iter()
@@ -35,7 +35,8 @@ fn the_piano_names_its_two_tables_the_pluck_none_and_fourteen_synths_need_some()
     };
     assert_eq!(tables("piano"), ["piano.mxf", "piano_pedal.mxf"]);
     assert!(tables("pluck").is_empty());
-    assert_eq!(all.iter().filter(|s| !s.tables().is_empty()).count(), 14);
+    assert!(tables("marimba").is_empty());
+    assert_eq!(all.iter().filter(|s| !s.tables().is_empty()).count(), 13);
 }
 
 #[test]
@@ -94,5 +95,12 @@ fn a_piano_note_is_refused_until_both_its_tables_load_and_the_pluck_plays_with_n
     );
     synths::load_table("piano_pedal.mxf", &table("piano_pedal.mxf")).unwrap();
     engine.play(&note("piano")).unwrap();
+    assert!(loudest(&mut engine) > 0.01);
+}
+
+#[test]
+fn a_marimba_note_plays_with_no_table_loaded() {
+    let mut engine = engine();
+    engine.play(&note("marimba")).unwrap();
     assert!(loudest(&mut engine) > 0.01);
 }

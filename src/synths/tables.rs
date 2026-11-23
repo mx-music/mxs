@@ -23,7 +23,6 @@ tables![
     "glockenspiel.mxf",
     "guitar.mxf",
     "harp.mxf",
-    "marimba.mxf",
     "piano.mxf",
     "piano_pedal.mxf",
     "timpani.mxf",
@@ -42,7 +41,6 @@ const SYNTHS: &[(&str, &[&str])] = &[
     ("glockenspiel", &["glockenspiel.mxf"]),
     ("guitar", &["guitar.mxf"]),
     ("harp", &["harp.mxf"]),
-    ("marimba", &["marimba.mxf"]),
     ("piano", &["piano.mxf", "piano_pedal.mxf"]),
     ("timpani", &["timpani.mxf"]),
     ("vibraphone", &["vibraphone.mxf"]),
@@ -80,7 +78,7 @@ pub(super) fn figures(file: &str) -> &'static Figures {
         .unwrap_or_else(|| panic!("the table {file} is not loaded"))
 }
 
-/// The file of the table named `name`, its file's name with or without its extension, such as `marimba` or `marimba.mxf`.
+/// The file of the table named `name`, its file's name with or without its extension, such as `piano` or `piano.mxf`.
 pub(crate) fn file(name: &str) -> Option<&'static str> {
     FILES
         .iter()
