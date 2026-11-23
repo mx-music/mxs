@@ -52,9 +52,9 @@ const PANDEIRO: [Stroke; 4] = [
         name: "thumb",
         gain: 0.0507,
         modes: PANDEIRO_FREE,
-        head: [1.0, 0.16, 0.35, 0.11, 0.11],
+        head: [2.8, 0.8, 0.812, 0.28, 0.308],
         rings: [0.85, 1.3, 0.69, 0.76, 0.48],
-        crack: [5.5, 0.15, 7.0, 2.0],
+        crack: [4.5, 0.15, 7.0, 2.0],
         jingle: [0.75, 0.45, 1.5],
         shake: (&[0.02, 0.2, 1.0, 0.5, 0.001], &[0.008, 0.02, 0.05, 0.3]),
         length: 1.6,
@@ -63,7 +63,7 @@ const PANDEIRO: [Stroke; 4] = [
         name: "heel",
         gain: 0.023,
         modes: PANDEIRO_FREE,
-        head: [1.0, 0.2, 2.7, 0.2, 0.36],
+        head: [3.0, 0.93, 1.35, 0.75, 1.71],
         rings: [2.4, 1.5, 0.8, 0.7, 0.49],
         crack: [28.0, 0.15, 10.0, 2.0],
         jingle: [7.5, 0.38, 1.4],
@@ -74,9 +74,9 @@ const PANDEIRO: [Stroke; 4] = [
         name: "slap",
         gain: 0.19,
         modes: [0.974, 1.59, 2.17, 2.5, 2.93],
-        head: [0.012, 0.0104, 0.028, 0.0205, 0.049],
+        head: [0.0369, 0.0309, 0.047, 0.034, 0.0276],
         rings: [0.83, 0.77, 0.57, 0.61, 0.52],
-        crack: [20.0, 0.13, 3.3, 0.6],
+        crack: [16.0, 0.13, 3.3, 0.6],
         jingle: [1.5, 0.3, 0.6],
         shake: (&[0.5, 1.0, 0.45, 0.13, 0.001], &[0.008, 0.03, 0.04, 0.25]),
         length: 0.8,
@@ -122,8 +122,7 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
         let mute = o.number("muted").clamp(0.0, 1.0);
         let pressed = freq * PANDEIRO_MUTED[0].powf(mute);
         let rings = s.rings.map(|ring| ring * PANDEIRO_MUTED[1].powf(mute));
-        let stick =
-            (impulse_net() + noise(ctx) * hit(0.0005, 0.004, -4.0)) >> lpf(800.0 + vel * 4000.0);
+        let stick = impulse_net() >> lpf(800.0 + vel * 4000.0);
         let skin = modes(stick, &scaled(&s.modes, pressed), &s.head, &rings);
         let body = (noise(ctx) >> bpf(freq * s.crack[2], s.crack[3]))
             * (hit(0.001, s.crack[1], -4.0) + hit(0.001, s.crack[1] * 4.0, -4.0) * 0.06)
