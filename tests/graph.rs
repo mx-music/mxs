@@ -1267,3 +1267,14 @@ fn fed_back_at_a_period_of_the_note_with_its_burst_let_in_once_is_mxs_pluck() {
     let apart = 10.0 * (difference / level).log10();
     assert!(apart < -60.0, "{apart} dB apart");
 }
+
+#[test]
+fn sway_drifts_as_the_winds_drift_from_the_same_seed() {
+    let traced = plain("swaying", Graph::call("sway", vec![], vec![])).unwrap();
+    let rust = Synth::new("swaying")
+        .options(note_specs())
+        .build(|_, ctx| Note::rings(mxs::synths::sway(ctx.seed()), 0.5));
+    let traced = render(traced, &[]);
+    assert!(traced.iter().any(|x| *x != 0.0));
+    assert_eq!(traced, render(rust, &[]));
+}

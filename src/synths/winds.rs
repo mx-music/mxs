@@ -692,7 +692,8 @@ impl AudioNode for Sway {
     }
 }
 
-fn sway(seed: u64) -> Net {
+/// A slow random sway of about unit size, as a wind player's pitch and level drift and flutter while a note holds, from `seed`.
+pub fn sway(seed: u64) -> Net {
     Net::wrap(Box::new(An(Sway::new(seed))))
 }
 
@@ -743,6 +744,17 @@ impl AudioNode for Fingers {
         }
         [self.held].into()
     }
+}
+
+/// A player's [`Fingers`] on the note it follows.
+pub(crate) fn fingers() -> Net {
+    Net::wrap(Box::new(An(Fingers {
+        held: 0.0,
+        before: 0.0,
+        gliding: 0.0,
+        started: false,
+        rate: DEFAULT_SR as f32,
+    })))
 }
 
 /// Peaks at each band mx measures, their gains following vel between the ones fitted at pp, mf and ff, or held at those given for fitting, then the level for vel.
@@ -891,14 +903,7 @@ fn pitch(o: &Options, rate: f64, sharp: [[f32; 3]; 3], jitter: f32, seed: u64) -
         let grown = ((t - 0.25) / 1.2).clamp(0.0, 1.0);
         (std::f64::consts::TAU * rate * t).sin() * grown * grown
     }))) >> combined(o, "vibrato", |swing, depth| swing * depth);
-    let fingers = Fingers {
-        held: 0.0,
-        before: 0.0,
-        gliding: 0.0,
-        started: false,
-        rate: DEFAULT_SR as f32,
-    };
-    let note = o.follow("note") >> Net::wrap(Box::new(An(fingers))) >> moved_by(o, "bend", |x| x);
+    let note = o.follow("note") >> fingers() >> moved_by(o, "bend", |x| x);
     (note | swing | sway(seed) | followed_effort(o))
         >> Net::wrap(Box::new(map(move |x: &Frame<f32, U4>| {
             let from = x[0] - 60.0;
@@ -999,12 +1004,13 @@ pub(crate) fn played_jet(
     (pitch | breath | white_noise(seed)) >> Net::wrap(Box::new(An(jet)))
 }
 
-/// The bands and level as a defsynth plays them, following `vel`: `gains` at pp, mf and ff, eight to each for the bands up to 3162 Hz, and `levels` at each.
+/// The bands and level as a defsynth plays them, following `vel`: `gains` at pp, mf and ff, eight to each for the bands up to 3162 Hz or eleven for all of them, and `levels` at each.
 pub(crate) fn wind_bands(sound: Net, vel: Net, gains: &[f64], levels: &[f64]) -> Net {
+    let each = gains.len() / 3;
     let gain = |d: usize| {
         std::array::from_fn(|band| {
-            if band < 8 {
-                gains[d * 8 + band] as f32
+            if band < each {
+                gains[d * each + band] as f32
             } else {
                 0.0
             }
@@ -1134,6 +1140,48 @@ fn flute_figured() -> Synth {
 
 /// The figured flute's gain at vel 1, as loud as the flute playing the same Sarabande.
 const FLUTE_FIGURED_LEVEL: f64 = 3.4;
+
+/// How a reed and the bell after it are set: the reed's [`Reed`] fields, then the bell's [`Bell`] fields.
+#[derive(Clone, Copy)]
+pub(crate) struct Reeded {
+    pub conical: bool,
+    pub cutoff: f32,
+    pub corner: f32,
+    pub keep: f32,
+    pub zeta: f32,
+    pub apex: f32,
+    pub relative: bool,
+    pub tongue: f32,
+    pub gasp: f32,
+    pub mend: f32,
+    pub bell: f32,
+    pub bell_corner: f32,
+    pub smooth: f32,
+    pub lift: f32,
+    pub catch: f32,
+}
+
+/// A reed blown by `breath` at `pitch` Hz, its turbulence from `seed`, sounding through the bell, which `steep` steepens, `through` lets the wave through from 0 to 1, and `eased` eases the steepening by.
+pub(crate) fn reed_through_bell(
+    pitch: Net,
+    breath: Net,
+    seed: u64,
+    steep: Net,
+    through: Net,
+    eased: Net,
+    set: Reeded,
+) -> Net {
+    let mut reed = Reed::new(set.conical, set.cutoff, set.corner, set.keep);
+    reed.zeta = set.zeta;
+    reed.apex_part = set.apex;
+    reed.relative = set.relative;
+    reed.tongue_part = set.tongue;
+    (reed.catch, reed.mend) = (set.gasp, set.mend);
+    let model = (pitch | breath | white_noise(seed)) >> Net::wrap(Box::new(An(reed)));
+    let mut bell = Bell::new(set.bell, set.bell_corner);
+    (bell.smooth, bell.lift, bell.catch) = (set.smooth, set.lift, set.catch);
+    (model | steep | through | eased) >> Net::wrap(Box::new(An(bell)))
+}
 
 /// A reed or brass wind's bore and how it is played.
 struct Bore {
@@ -1376,17 +1424,23 @@ fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Sy
         )
         .build(move |o, ctx| {
             let or = |name: &str, fitted: f32| o.given(name).map_or(fitted, |given| given as f32);
-            let mut reed = Reed::new(
-                bore.conical,
-                or("least_corner", bore.cutoff),
-                or("corner", bore.corner),
-                or("keep", bore.keep),
-            );
-            reed.zeta = or("zeta", bore.zeta);
-            reed.apex_part = or("apex", 0.3);
-            reed.relative = bore.relative;
-            reed.tongue_part = or("tongue", bore.tongue);
-            (reed.catch, reed.mend) = (or("gasp", bore.gasp), or("mend", bore.mend));
+            let set = Reeded {
+                conical: bore.conical,
+                cutoff: or("least_corner", bore.cutoff),
+                corner: or("corner", bore.corner),
+                keep: or("keep", bore.keep),
+                zeta: or("zeta", bore.zeta),
+                apex: or("apex", 0.3),
+                relative: bore.relative,
+                tongue: or("tongue", bore.tongue),
+                gasp: or("gasp", bore.gasp),
+                mend: or("mend", bore.mend),
+                bell: or("bell", bore.bell),
+                bell_corner: bore.bell_corner,
+                smooth: bore.smooth,
+                lift: or("lift", fit.lift),
+                catch: or("catch", bore.catch),
+            };
             let sharp = o
                 .given("sharp")
                 .map_or(fit.sharp, |cents| [[cents as f32, 0.0, 0.0]; 3]);
@@ -1411,11 +1465,8 @@ fn reed_wind(name: &'static str, rate: f64, bore: Bore, fit: &'static Fit) -> Sy
             let kick = (or("kick", bore.kick) - start).max(0.0) as f64;
             let kicked = shape(move |t| kick * (-t / KICK).exp() * risen(t, SPEAKS));
             let breath = breath(o, fit, rise.min(SPEAKS)) + kicked;
-            let model = (pitch | breath | white_noise(ctx.seed())) >> Net::wrap(Box::new(An(reed)));
-            let mut bell = Bell::new(or("bell", bore.bell), bore.bell_corner);
-            (bell.smooth, bell.lift, bell.catch) =
-                (bore.smooth, or("lift", fit.lift), or("catch", bore.catch));
-            let sound = (model | steep | let_through | eased) >> Net::wrap(Box::new(An(bell)));
+            let sound =
+                reed_through_bell(pitch, breath, ctx.seed(), steep, let_through, eased, set);
             let depth = or("shimmer", bore.shimmer);
             let shimmer = sway(ctx.seed())
                 >> Net::wrap(Box::new(map(move |x: &Frame<f32, U1>| {

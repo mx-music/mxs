@@ -99,7 +99,7 @@
 //!
 //! ## The instruments' models
 //!
-//! `partials`, `bowed_string`, `air_jet`, `wind_bands` and `vibrato` are the models the crate's own strings and winds are built from.
+//! `partials`, `bowed_string`, `air_jet`, `reed`, `wind_bands`, `vibrato`, `fingers` and `sway` are the models the crate's own strings and winds are built from.
 //! Their arguments are in this module's source.
 //!
 //! # Files
@@ -209,6 +209,9 @@ const NODES: &[&str] = &[
     "mode",
     "delay",
     "fed_back",
+    "sway",
+    "fingers",
+    "reed",
     "dc_block",
     "saturate",
     "clip",
@@ -250,6 +253,7 @@ const NEEDS: &[(&str, &[&str])] = &[
     ("mode", &["hz", "level", "fade"]),
     ("delay", &["seconds", "max"]),
     ("fed_back", &["seconds", "feedback"]),
+    ("reed", &["hz", "breath", "corner", "keep", "bell"]),
     ("perc", &["attack", "release"]),
     ("rings", &["seconds"]),
     ("partials", &["ratios", "levels"]),
@@ -278,6 +282,32 @@ const TAKES: &[(&str, &[&str])] = &[
     (
         "fed_back",
         &["seconds", "feedback", "lowpass", "highpass", "let_in"],
+    ),
+    ("sway", &[]),
+    (
+        "reed",
+        &[
+            "hz",
+            "breath",
+            "steep",
+            "through",
+            "eased",
+            "conical",
+            "least_corner",
+            "corner",
+            "keep",
+            "zeta",
+            "apex",
+            "relative",
+            "tongue",
+            "gasp",
+            "mend",
+            "bell",
+            "bell_corner",
+            "smooth",
+            "lift",
+            "catch",
+        ],
     ),
     ("sweep", &["length", "wave", "invert", "offset", "width"]),
     ("follower", &["rise", "fall"]),
@@ -1011,9 +1041,9 @@ impl Build<'_> {
                     "a band's gain",
                 )?;
                 let levels = numbers(take("levels").ok_or("wind_bands needs levels:")?, "a level")?;
-                if gains.len() != 24 || levels.len() != 3 {
+                if !matches!(gains.len(), 24 | 33) || levels.len() != 3 {
                     return Err(
-                        "wind_bands takes 24 gains, eight at each of pp, mf and ff, and 3 levels"
+                        "wind_bands takes 24 gains, eight at each of pp, mf and ff, or 33, eleven at each, and 3 levels"
                             .to_string(),
                     );
                 }
@@ -1021,6 +1051,9 @@ impl Build<'_> {
                     sound, vel, &gains, &levels,
                 )))
             }
+            "sway" => Ok(V::Sig(crate::synths::sway(self.ctx.seed()))),
+            "fingers" => Ok(V::Sig(signal(arg(0)?)? >> crate::synths::fingers())),
+            "reed" => reed(&mut take, self.ctx),
             "partials" => {
                 let pitch = signal(arg(0)?)?;
                 let ratios = numbers(
@@ -1325,7 +1358,6 @@ impl Build<'_> {
         }))
     }
 
-    /// The sound a share's `through` makes of its one sound, built once and fed to each of its uses.
     /// The note's seed for `draw` and a drawn noise: the context's next seed mixed with how many notes came before, `mix` times; drawn once, at the first that asks.
     fn note_seed(&mut self, mix: Option<V>) -> Result<u64, String> {
         let mix = match mix {
@@ -1349,6 +1381,7 @@ impl Build<'_> {
         }
     }
 
+    /// The sound a share's `through` makes of its one sound, built once and fed to each of its uses.
     fn share(&mut self, args: &[Graph], named: &[(String, Graph)]) -> Result<V, String> {
         let [sound] = args else {
             return Err("share takes the sound it shares".to_string());
@@ -1371,7 +1404,6 @@ impl Build<'_> {
     }
 }
 
-/// Segments from silence through each of `points`, each `[seconds, level]` straight, `[seconds, level, curve]` bent as `segments` bends them, or `[seconds, level, exp]` exponential.
 /// Resonators struck by `sound`, each at a frequency that may change as the note sounds, as mxs's sitar's strings glide; a list of `freqs` gives one for each, with its level and fade.
 fn gliding_modes(sound: Net, freqs: V, levels: V, fades: V) -> Result<V, String> {
     let (freqs, levels, fades) = match freqs {
@@ -1403,6 +1435,53 @@ fn gliding_modes(sound: Net, freqs: V, levels: V, fades: V) -> Result<V, String>
     })
 }
 
+/// A reed through its bell, from the arguments `take` hands over; kept out of [`Build::call`], whose frame it would otherwise grow.
+#[inline(never)]
+fn reed(take: &mut impl FnMut(&str) -> Option<V>, ctx: &mut Context) -> Result<V, String> {
+    let mut sound = |key: &str, default: Option<f64>| -> Result<Net, String> {
+        match (take(key), default) {
+            (Some(value), _) => signal(value),
+            (None, Some(default)) => signal(V::Num(default)),
+            (None, None) => Err(format!("reed needs {key}:")),
+        }
+    };
+    let pitch = sound("hz", None)?;
+    let breath = sound("breath", None)?;
+    let steep = sound("steep", Some(0.0))?;
+    let through = sound("through", Some(1.0))?;
+    let eased = sound("eased", Some(1.0))?;
+    let mut known = |key: &str, default: Option<f64>| -> Result<f32, String> {
+        match (take(key), default) {
+            (Some(value), _) => Ok(number(value, &format!("a reed's {key}"))? as f32),
+            (None, Some(default)) => Ok(default as f32),
+            (None, None) => Err(format!("reed needs {key}:")),
+        }
+    };
+    let set = crate::synths::Reeded {
+        conical: known("conical", Some(0.0))? != 0.0,
+        cutoff: known("least_corner", Some(0.0))?,
+        corner: known("corner", None)?,
+        keep: known("keep", None)?,
+        zeta: known("zeta", Some(0.4))?,
+        apex: known("apex", Some(0.3))?,
+        relative: known("relative", Some(0.0))? != 0.0,
+        tongue: known("tongue", Some(0.0))?,
+        gasp: known("gasp", Some(0.0))?,
+        mend: known("mend", Some(0.02))?,
+        bell: known("bell", None)?,
+        bell_corner: known("bell_corner", Some(0.0))?,
+        smooth: known("smooth", Some(0.0))?,
+        lift: known("lift", Some(0.0))?,
+        catch: known("catch", Some(0.0))?,
+    };
+    // The reed draws its turbulence's seed after its arguments have drawn theirs.
+    let seed = ctx.seed();
+    Ok(V::Sig(crate::synths::reed_through_bell(
+        pitch, breath, seed, steep, through, eased, set,
+    )))
+}
+
+/// Segments from silence through each of `points`, each `[seconds, level]` straight, `[seconds, level, curve]` bent as `segments` bends them, or `[seconds, level, exp]` exponential.
 fn envelope(points: V) -> Result<Net, String> {
     let V::List(points) = points else {
         return Err("an envelope takes a list of points".to_string());

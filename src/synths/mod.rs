@@ -43,7 +43,10 @@ pub(crate) use bowed::bowed_string;
 pub(crate) use common::partials;
 pub use tables::load_table;
 pub(crate) use tables::missing as missing_tables;
-pub(crate) use winds::{drifting_swing, played_jet, wind_bands};
+pub use winds::sway;
+pub(crate) use winds::{
+    Reeded, drifting_swing, fingers, played_jet, reed_through_bell, wind_bands,
+};
 
 /// The piano: each harmonic a resonator struck once, with a thump of noise.
 pub fn piano() -> crate::Synth {
