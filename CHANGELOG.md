@@ -1,11 +1,13 @@
 # Changelog for mxs v0.6
 
-## Unreleased
+## v0.6.7 (2026-11-23)
 
 ### 1. Enhancements
 
   * [synths] `pandeiro`'s fingertip stroke, `pandeiro_jingles`, is the heel's stroke played lighter, with a little of the hand and the head in it: its jingles answer 13 ms after the fingers land and are 7 dB down after 40 ms and 22 dB down after 80 ms, as the light strokes of jacksonjust's "Loop Pandeiro_127" on Freesound are, and the stroke is 6 dB quieter
   * [synths] `pandeiro`'s heel stroke, `pandeiro_heel`, is 6 dB quieter, so the heel and the fingertips sit a like distance under the thumb
+  * [packages] mxs is on npm as `@mx-music/mxs`: it plays mxs's synths and effects on a web page in an audio worklet, or renders them offline, and fetches only the tables of the synths a page plays
+  * [packages] mxs is on PyPI as `mxs-audio`, imported as `mxs`: an engine live on a sound card or offline, with mxs's synths and effects and those read from files
 
 ## v0.6.6 (2026-11-23)
 
