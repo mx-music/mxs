@@ -42,8 +42,8 @@ fn the_piano_names_its_two_tables_the_pluck_none_and_fourteen_synths_need_some()
 fn bytes_that_are_not_a_whole_table_of_mxs_are_refused() {
     let piano = table("piano.mxf");
     assert_eq!(
-        synths::load_table("organ.mxf", &piano),
-        Err("mxs has no table organ.mxf".to_string())
+        synths::load_table("organ.mxf", b"RIFF and more"),
+        Err("organ.mxf: not figures of struck or held notes".to_string())
     );
     assert_eq!(
         synths::load_table("piano.mxf", &piano[..piano.len() / 2]),
