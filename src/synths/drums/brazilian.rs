@@ -41,6 +41,8 @@ struct Stroke {
     jingle: [f64; 3],
     /// The jingles' level over the stroke, as levels and the seconds from each to the next: they answer the hand a moment after it lands.
     shake: (&'static [f64], &'static [f64]),
+    /// What a finger pressed on the head multiplies the jingles' level by.
+    pressed: f64,
     length: f64,
 }
 
@@ -54,9 +56,10 @@ const PANDEIRO: [Stroke; 4] = [
         modes: PANDEIRO_FREE,
         head: [2.8, 0.8, 0.812, 0.28, 0.308],
         rings: [0.85, 1.3, 0.69, 0.76, 0.48],
-        crack: [4.5, 0.15, 7.0, 2.0],
+        crack: [3.4, 0.15, 7.0, 2.0],
         jingle: [0.75, 0.45, 1.5],
         shake: (&[0.02, 0.2, 1.0, 0.5, 0.001], &[0.008, 0.02, 0.05, 0.3]),
+        pressed: 0.5,
         length: 1.6,
     },
     Stroke {
@@ -68,6 +71,7 @@ const PANDEIRO: [Stroke; 4] = [
         crack: [28.0, 0.15, 10.0, 2.0],
         jingle: [7.5, 0.38, 1.4],
         shake: (&[0.5, 1.0, 0.45, 0.25, 0.001], &[0.012, 0.028, 0.04, 0.2]),
+        pressed: 1.0,
         length: 1.0,
     },
     Stroke {
@@ -79,6 +83,7 @@ const PANDEIRO: [Stroke; 4] = [
         crack: [16.0, 0.13, 3.3, 0.6],
         jingle: [1.5, 0.3, 0.6],
         shake: (&[0.5, 1.0, 0.45, 0.13, 0.001], &[0.008, 0.03, 0.04, 0.25]),
+        pressed: 1.0,
         length: 0.8,
     },
     Stroke {
@@ -90,12 +95,16 @@ const PANDEIRO: [Stroke; 4] = [
         crack: [1.0, 0.08, 10.0, 2.0],
         jingle: [1.0, 0.35, 0.8],
         shake: (&[0.001, 1.0, 0.001], &[0.001, 0.35]),
+        pressed: 1.0,
         length: 1.2,
     },
 ];
 
-/// What a fully muted head's modes are multiplied by: their pitch, a whole tone up, and the seconds they ring; chosen by ear, not measured.
+/// What a fully muted head's modes are multiplied by under a slap, whose hand is on the head already: their pitch, a whole tone up, and the seconds they ring; chosen by ear, not measured.
 const PANDEIRO_MUTED: [f64; 2] = [1.1225, 0.2];
+
+/// What a finger pressed on a free head multiplies each mode's level and ring by, as the pressed thumbs and heel strokes of the recordings have them: the lowest mode all but goes, and the head sounds at its second.
+const PANDEIRO_PRESSED: [[f64; 5]; 2] = [[0.9, 1.4, 0.6, 0.8, 1.5], [0.2, 0.77, 1.0, 0.6, 0.8]];
 
 /// The pandeiro, whose `stroke` option picks the stroke; `fixed` makes one of the old names that each played one stroke.
 fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
@@ -120,10 +129,22 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
         let vel = vel(o, 0.0);
         let freq = hz(o.number("note"));
         let mute = o.number("muted").clamp(0.0, 1.0);
-        let pressed = freq * PANDEIRO_MUTED[0].powf(mute);
-        let rings = s.rings.map(|ring| ring * PANDEIRO_MUTED[1].powf(mute));
+        let free = s.modes == PANDEIRO_FREE;
+        let pressed = if free {
+            freq
+        } else {
+            freq * PANDEIRO_MUTED[0].powf(mute)
+        };
+        let mut head = s.head;
+        let mut rings = s.rings.map(|ring| ring * PANDEIRO_MUTED[1].powf(mute));
+        if free {
+            for mode in 0..5 {
+                head[mode] = s.head[mode] * PANDEIRO_PRESSED[0][mode].powf(mute);
+                rings[mode] = s.rings[mode] * PANDEIRO_PRESSED[1][mode].powf(mute);
+            }
+        }
         let stick = impulse_net() >> lpf(800.0 + vel * 4000.0);
-        let skin = modes(stick, &scaled(&s.modes, pressed), &s.head, &rings);
+        let skin = modes(stick, &scaled(&s.modes, pressed), &head, &rings);
         let body = (noise(ctx) >> bpf(freq * s.crack[2], s.crack[3]))
             * (hit(0.001, s.crack[1], -4.0) + hit(0.001, s.crack[1] * 4.0, -4.0) * 0.06)
             * s.crack[0] as f32;
@@ -151,7 +172,8 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
                     &disc_rings,
                 ))
                 | (hpf(freq * 20.0) * s.jingle[2] as f32));
-        let jingles = (discs >> net(map(|x: &Frame<f32, U2>| x[0] + x[1]))) * s.jingle[0] as f32;
+        let jingles = (discs >> net(map(|x: &Frame<f32, U2>| x[0] + x[1])))
+            * (s.jingle[0] * s.pressed.powf(mute)) as f32;
         let bright = (skin + body + jingles) >> high_shelf(2000.0, (vel - DEFAULT_VEL) * 5.0);
         Note::rings(
             bright * (s.gain * (vel / DEFAULT_VEL).powf(0.75)) as f32,

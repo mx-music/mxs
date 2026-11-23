@@ -1,5 +1,11 @@
 # Changelog for mxs v0.6
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [synths] `pandeiro`'s `muted` on the thumb, the heel and the fingertips follows the recordings' strokes on a pressed head: the head keeps its pitches, its lowest tone thumps and dies within 50 ms, and it sounds at its second tone, 1.7 times the note, where before every tone rose a whole tone and rang a fifth as long; the thumb's jingles are half as loud under it
+
 ## v0.6.5 (2026-11-23)
 
 ### 1. Enhancements
