@@ -19,6 +19,16 @@ fn engine() -> Engine {
         Synth::new("steady").build(|_, _| Note::rings(Net::wrap(Box::new(dc(0.5))), 3.0)),
     );
     engine.register(
+        Synth::new("level")
+            .option(Spec::seconds("length").default(1.0))
+            .build(|o, _| Note::rings(Net::wrap(Box::new(dc(0.5))), o.number("length"))),
+    );
+    engine.register(
+        Synth::new("counted")
+            .option(Spec::seconds("length").default(1.0))
+            .build(|o, _| Note::rings(Net::wrap(Box::new(An(Counted(0)))), o.number("length"))),
+    );
+    engine.register(
         Synth::new("saw")
             .option(Spec::hz("hz").default(440.0))
             .build(|o, _| {
@@ -39,6 +49,26 @@ fn engine() -> Engine {
             }),
     );
     engine
+}
+
+/// A sine at 100 Hz worked out from the count of its frames, so it repeats every 480 of them for as long as it plays.
+#[derive(Clone)]
+struct Counted(u64);
+
+impl AudioNode for Counted {
+    const ID: u64 = 0x6d78_7401;
+    type Inputs = U0;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        self.0 = 0;
+    }
+
+    fn tick(&mut self, _: &Frame<f32, U0>) -> Frame<f32, U1> {
+        let turn = (self.0 % 480) as f64 / 480.0;
+        self.0 += 1;
+        [(0.5 * (std::f64::consts::TAU * turn).sin()) as f32].into()
+    }
 }
 
 fn options(pairs: &[(&str, f64)]) -> Vec<(String, Value)> {
@@ -1518,4 +1548,83 @@ fn a_wah_closes_over_its_relax_ms_after_the_sound_stops_and_opens_over_its_clamp
     let (fast, slow) = (falls(100.0), falls(500.0));
     assert!(slow >= 2.0 * fast, "{fast} {slow}");
     assert!(fast < 0.2, "{fast}");
+}
+
+#[test]
+fn a_slicers_pulse_starts_on_its_beat_after_a_minute() {
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[("slicer".to_string(), options(&[("phase", 0.6)]))])
+        .unwrap();
+    let note = Event::Note {
+        id: None,
+        synth: "level".to_string(),
+        options: options(&[("length", 60.0)]),
+        chain: Some(chain),
+        held: false,
+    };
+    engine.play(&[(0.0, note)]).unwrap();
+    let (left, _) = engine.render(60.0).unwrap();
+    let starts: Vec<usize> = (1..left.len())
+        .filter(|at| left[*at] != 0.0 && left[at - 1] == 0.0)
+        .collect();
+    assert_eq!(starts.len(), 99);
+    for (pulse, start) in starts.iter().enumerate() {
+        let due = (pulse + 1) * 28800;
+        assert!(
+            start.abs_diff(due) <= 1,
+            "pulse {pulse} at {start}, due at {due}"
+        );
+    }
+}
+
+#[test]
+fn a_sweep_is_where_it_was_in_its_cycle_after_a_minute() {
+    for (effect, given) in [
+        ("tremolo", vec![("depth", 1.0)]),
+        ("wobble", vec![]),
+        ("phaser", vec![]),
+        ("flanger", vec![]),
+    ] {
+        let mut engine = engine();
+        let mut given = given;
+        given.push(("phase", 0.6));
+        let chain = engine
+            .start_effects(&[(effect.to_string(), options(&given))])
+            .unwrap();
+        let note = Event::Note {
+            id: None,
+            synth: "counted".to_string(),
+            options: options(&[("length", 60.0)]),
+            chain: Some(chain),
+            held: false,
+        };
+        engine.play(&[(0.0, note)]).unwrap();
+        let (left, _) = engine.render(60.0).unwrap();
+        let cycle = |number: usize| &left[number * 28800..(number + 1) * 28800];
+        let (early, late) = (cycle(2), cycle(98));
+        let furthest = early
+            .iter()
+            .zip(late)
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0, f32::max);
+        // The sweep moves the sound: a cycle is not the same all through.
+        assert!(loudest(early) > 0.1, "{effect}");
+        assert!(furthest < 0.002 * loudest(early), "{effect} {furthest}");
+    }
+}
+
+#[test]
+fn a_change_of_a_sweeps_phase_leaves_no_step_in_its_level() {
+    let given = [("phase", 1.0), ("depth", 1.0), ("wave", 3.0)];
+    let (left, _) = changed("tremolo", &given, &[("phase", 0.5)], "steady");
+    let step = |from: f64, to: f64| {
+        left[frame(from)..frame(to)]
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0, f32::max)
+    };
+    // The sweep is twice as fast after the change, so its steps are up to twice as large.
+    assert!(step(0.49, 0.52) <= 2.1 * step(0.2, 0.49));
+    assert!(step(0.6, 1.0) > 1.5 * step(0.2, 0.49));
 }

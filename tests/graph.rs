@@ -1497,3 +1497,23 @@ fn figures_plays_a_table_loaded_from_outside_mxs_by_its_name() {
     assert!(traced.iter().any(|x| *x != 0.0));
     assert_eq!(traced, render(rust, &options));
 }
+
+#[test]
+fn a_sweep_is_on_its_beat_after_a_minute() {
+    let pulse = named("sweep", vec![], vec![("length", n(0.6)), ("wave", n(1.0))]);
+    let effect = Effect::graph("pulses", vec![], pulse).unwrap();
+    let mut engine = Engine::offline(RATE);
+    engine.register_effect(effect);
+    engine
+        .start_effects(&[("pulses".to_string(), vec![])])
+        .unwrap();
+    let (left, _) = engine.render(60.0).unwrap();
+    let starts: Vec<usize> = (1..left.len())
+        .filter(|at| left[*at] > 0.5 && left[at - 1] < 0.5)
+        .collect();
+    assert_eq!(starts.len(), 99);
+    for (pulse, start) in starts.iter().enumerate() {
+        let due = (pulse + 1) * 28800;
+        assert!(start.abs_diff(due) <= 1, "pulse {pulse} at {start}");
+    }
+}

@@ -1698,20 +1698,21 @@ impl AudioNode for Reverb {
 #[derive(Clone)]
 pub(crate) struct Lfo {
     offset: f32,
-    phase: f32,
+    /// Its place in its cycle, kept in f64: a step is a few millionths of a cycle, and in f32 its rounding adds up to milliseconds within a minute.
+    phase: f64,
     level: f32,
     pulse_only: bool,
-    rate: f32,
+    rate: f64,
 }
 
 impl Lfo {
     pub(crate) fn new(offset: f32, level: f32, pulse_only: bool) -> Self {
         Lfo {
             offset,
-            phase: offset.rem_euclid(1.0),
+            phase: f64::from(offset).rem_euclid(1.0),
             level,
             pulse_only,
-            rate: DEFAULT_SR as f32,
+            rate: DEFAULT_SR,
         }
     }
 }
@@ -1722,16 +1723,16 @@ impl AudioNode for Lfo {
     type Outputs = U1;
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.rate = sample_rate as f32;
+        self.rate = sample_rate;
     }
 
     fn reset(&mut self) {
-        self.phase = self.offset.rem_euclid(1.0);
+        self.phase = f64::from(self.offset).rem_euclid(1.0);
     }
 
     fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U1> {
-        let level = self.at(self.phase, input);
-        self.phase = (self.phase + input[0].max(0.0) / self.rate).fract();
+        let level = self.at(self.phase as f32, input);
+        self.phase = (self.phase + f64::from(input[0].max(0.0)) / self.rate).fract();
         [level].into()
     }
 }
@@ -1799,7 +1800,8 @@ impl AudioNode for Shifted {
 
     fn tick(&mut self, input: &Frame<f32, U5>) -> Frame<f32, U1> {
         if input[4] != self.lfo.offset {
-            self.lfo.phase = (self.lfo.phase + input[4] - self.lfo.offset).rem_euclid(1.0);
+            let moved = f64::from(input[4]) - f64::from(self.lfo.offset);
+            self.lfo.phase = (self.lfo.phase + moved).rem_euclid(1.0);
             self.lfo.offset = input[4];
         }
         self.lfo
@@ -1844,10 +1846,10 @@ impl AudioNode for Sides {
             return [left, left].into();
         }
         // The Shifted has moved on a frame, so the place the left was read at is a frame back.
-        let step = input[0].max(0.0) / self.shifted.lfo.rate;
-        let behind = step + 0.5 * input[5].min(1.0);
+        let step = f64::from(input[0].max(0.0)) / self.shifted.lfo.rate;
+        let behind = step + 0.5 * f64::from(input[5].min(1.0));
         let place = (self.shifted.lfo.phase - behind).rem_euclid(1.0);
-        [left, self.shifted.lfo.at(place, &lfo)].into()
+        [left, self.shifted.lfo.at(place as f32, &lfo)].into()
     }
 }
 

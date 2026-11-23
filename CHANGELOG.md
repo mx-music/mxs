@@ -1,5 +1,11 @@
 # Changelog for mxs v0.6
 
+## Unreleased
+
+### 1. Bug fixes
+
+  * [effects] A sweep stays on the beat for as long as it runs: `slicer`, `tremolo`, `wobble`, `flanger` and `phaser`, and a graph's `sweep`, fell 4 ms behind for every minute they ran at a cycle of half a second, and a slicer's pulse now starts within a frame of its beat after a minute; a render with a sweep has other samples than before
+
 ## v0.6.3 (2026-11-23)
 
 ### 1. Enhancements
