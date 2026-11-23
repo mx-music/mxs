@@ -85,7 +85,7 @@ const PANDEIRO: [Stroke; 4] = [
         name: "jingles",
         gain: 0.3,
         modes: PANDEIRO_FREE,
-        head: [0.035, 0.025, 0.03, 0.012, 0.003],
+        head: [0.098, 0.07, 0.084, 0.034, 0.0084],
         rings: [0.4, 0.4, 0.4, 0.3, 0.1],
         crack: [1.0, 0.08, 10.0, 2.0],
         jingle: [1.0, 0.35, 0.8],
