@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`reverb`](#reverb), [`phaser`](#phaser), [`width`](#width).
+[`level`](#level), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`reverb`](#reverb), [`phaser`](#phaser), [`width`](#width), [`wah`](#wah).
 
 ## What every effect takes
 
@@ -213,4 +213,15 @@ An effect that lists one of them among its own, as `phaser` lists `mix`, gives i
 |---|---|---|---|
 | `side` | a number, 0 to 2 | 1 | How wide the sound is: 0 is mono, 1 is as it came and 2 is twice the difference between its sides. |
 | `mono_below` | a MIDI note | 0 | A MIDI note below which everything is put in the centre, off at 0. |
+
+### `wah`
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `cutoff_min` | a MIDI note | 60 | The MIDI note the filter is at with silence coming in. |
+| `cutoff_max` | a MIDI note | 100 | The MIDI note the filter is at with a sound at full scale coming in. |
+| `res` | a number, 0 to 1 | 0.7 | How much it rings at its cutoff. |
+| `sensitivity` | a number | 0 | How far the level it follows is raised or lowered, in dB. |
+| `clamp_ms` | milliseconds, 0 or more | 10 | How many milliseconds it takes to follow a rising sound. |
+| `relax_ms` | milliseconds, 0 or more | 150 | How many milliseconds it takes to follow a falling sound. |
 

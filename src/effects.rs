@@ -61,6 +61,7 @@ pub fn all() -> Vec<Effect> {
         reverb(),
         phaser(),
         width(),
+        wah(),
     ]
 }
 
@@ -706,6 +707,60 @@ fn rlpf() -> Effect {
             per_channel(|| {
                 (net(pass()) | cutoff(o, "cutoff") | q_of(o, "res")) >> net(lowpass::<f32>())
             })
+        })
+}
+
+/// How far under full scale, in dB, a sound leaves the wah's filter at `cutoff_min`.
+const WAH_FLOOR: f32 = 40.0;
+
+fn wah() -> Effect {
+    Effect::new("wah")
+        .option(
+            Spec::note("cutoff_min")
+                .default(60.0)
+                .doc("The MIDI note the filter is at with silence coming in."),
+        )
+        .option(
+            Spec::note("cutoff_max")
+                .default(100.0)
+                .doc("The MIDI note the filter is at with a sound at full scale coming in."),
+        )
+        .option(
+            Spec::float("res")
+                .default(0.7)
+                .range(0.0, 1.0)
+                .doc("How much it rings at its cutoff."),
+        )
+        .option(
+            Spec::float("sensitivity")
+                .default(0.0)
+                .doc("How far the level it follows is raised or lowered, in dB."),
+        )
+        .option(
+            Spec::ms("clamp_ms")
+                .default(10.0)
+                .range(0.0, f64::INFINITY)
+                .doc("How many milliseconds it takes to follow a rising sound."),
+        )
+        .option(
+            Spec::ms("relax_ms")
+                .default(150.0)
+                .range(0.0, f64::INFINITY)
+                .doc("How many milliseconds it takes to follow a falling sound."),
+        )
+        .tail(0.2)
+        .build(|o, _| {
+            let controls = (o.follow("clamp_ms") * 0.001)
+                | (o.follow("relax_ms") * 0.001)
+                | o.follow("sensitivity")
+                | o.follow("cutoff_min")
+                | o.follow("cutoff_max");
+            let cut = (net(multipass::<U2>()) | controls) >> net(An(Following::new()));
+            ((net(multipass::<U2>()) ^ cut) | q_of(o, "res"))
+                >> net(map(|x: &Frame<f32, U4>| -> Frame<f32, U6> {
+                    [x[0], x[2], x[3], x[1], x[2], x[3]].into()
+                }))
+                >> (net(lowpass::<f32>()) | net(lowpass::<f32>()))
         })
 }
 
@@ -2089,6 +2144,59 @@ impl AudioNode for Compressor {
         };
         let gain = db_amp(lowered + input[4]);
         [input[0] * gain, input[1] * gain].into()
+    }
+}
+
+/// A cutoff in Hz that follows the level of the louder side: at the first note with silence, at the second with a sound at full scale, and between them by the level in dB over the `WAH_FLOOR` under full scale.
+/// The level is followed as the [`Compressor`] follows it.
+/// Inputs: left, right, clamp time, relax time, dB added to the level, the two MIDI notes.
+#[derive(Clone)]
+struct Following {
+    peak: f32,
+    level: f32,
+    rate: f32,
+}
+
+impl Following {
+    fn new() -> Self {
+        Following {
+            peak: 0.0,
+            level: 0.0,
+            rate: DEFAULT_SR as f32,
+        }
+    }
+}
+
+impl AudioNode for Following {
+    const ID: u64 = 0x6d78_0082;
+    type Inputs = U7;
+    type Outputs = U1;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.rate = sample_rate as f32;
+    }
+
+    fn reset(&mut self) {
+        (self.peak, self.level) = (0.0, 0.0);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U7>) -> Frame<f32, U1> {
+        let keep = |seconds: f32| {
+            if seconds > 0.0 {
+                0.001f32.powf(1.0 / (seconds * self.rate))
+            } else {
+                0.0
+            }
+        };
+        let (clamp, relax) = (keep(input[2]), keep(input[3]));
+        let size = input[0].abs().max(input[1].abs());
+        self.peak = size.max(size + (self.peak - size) * relax);
+        let towards = if self.peak > self.level { clamp } else { relax };
+        self.level = self.peak + (self.level - self.peak) * towards;
+        let db = 20.0 * self.level.max(1e-9).log10() + input[4];
+        let open = (1.0 + db / WAH_FLOOR).clamp(0.0, 1.0);
+        let note = input[5] + open * (input[6] - input[5]);
+        [hz(note as f64).clamp(20.0, 20_000.0) as f32].into()
     }
 }
 

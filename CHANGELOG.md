@@ -5,6 +5,7 @@
 ### 1. Enhancements
 
   * [effects] Add `width`: `side`, from 0, mono, through 1, the sound as it came, to 2, twice the difference between its sides, and `mono_below`, a MIDI note below which everything is put in the centre, off at 0
+  * [effects] Add `wah`, a resonant low-pass whose cutoff follows the level of the louder side coming in: at the note `cutoff_min` with silence, at `cutoff_max` with a sound at full scale, and between them by the level in dB over the 40 dB under full scale, raised or lowered by `sensitivity`; it opens over `clamp_ms` and closes over `relax_ms`, and rings at its cutoff by `res`
   * [effects] `tremolo` and `slicer` take `spread`, from 0 to 1, the share of half a cycle the right side's cycle runs after the left's, so at 1 the sound moves from side to side; at 0 the samples are as they were
 
 ## v0.6.2 (2026-11-23)

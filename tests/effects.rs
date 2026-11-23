@@ -1411,3 +1411,111 @@ fn a_slicers_spread_of_1_sounds_one_side_at_a_time() {
     let (left, right) = both(&[("phase", 1.0)]);
     assert_eq!(left, right);
 }
+
+/// Both sides of notes, each a synth at a time, an amp and a length or frequency, through a wah with the options given, for 2 seconds.
+fn wah(given: &[(&str, f64)], notes: &[(&str, f64, f64, (&str, f64))]) -> (Vec<f32>, Vec<f32>) {
+    notes_through("wah", given, notes)
+}
+
+fn notes_through(
+    effect: &str,
+    given: &[(&str, f64)],
+    notes: &[(&str, f64, f64, (&str, f64))],
+) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[(effect.to_string(), options(given))])
+        .unwrap();
+    let events: Vec<_> = notes
+        .iter()
+        .map(|(synth, at, amp, (name, value))| {
+            let note = Event::Note {
+                id: None,
+                synth: synth.to_string(),
+                options: options(&[("amp", *amp), (name, *value)]),
+                chain: Some(chain),
+                held: false,
+            };
+            (*at, note)
+        })
+        .collect();
+    engine.play(&events).unwrap();
+    engine.render(2.0).unwrap()
+}
+
+/// How far, in dB, a wah with the options given raises a saw's partial at 1980 Hz, the saw at 220 Hz and the amp given.
+fn wah_gain(given: &[(&str, f64)], amp: f64) -> f64 {
+    let saw = [("saw", 0.0, amp, ("hz", 220.0))];
+    let (wet, _) = wah(given, &saw);
+    let dry: Vec<(&str, f64)> = given.iter().cloned().chain([("mix", 0.0)]).collect();
+    let (dry, _) = wah(&dry, &saw);
+    partial_db(&wet, 1980.0, 0.5) - partial_db(&dry, 1980.0, 0.5)
+}
+
+#[test]
+fn a_wah_opens_its_filter_further_the_louder_the_sound_coming_in() {
+    let open = [("cutoff_min", 60.0), ("cutoff_max", 100.0)];
+    let (loud, quiet) = (wah_gain(&open, 1.0), wah_gain(&open, 0.1));
+    assert!(loud > quiet + 12.0, "{loud} {quiet}");
+    assert!(quiet < -12.0, "{quiet}");
+
+    let closing = [("cutoff_min", 100.0), ("cutoff_max", 60.0)];
+    let (loud, quiet) = (wah_gain(&closing, 1.0), wah_gain(&closing, 0.1));
+    assert!(loud < quiet - 12.0, "{loud} {quiet}");
+
+    let raised = [
+        ("cutoff_min", 60.0),
+        ("cutoff_max", 100.0),
+        ("sensitivity", 12.0),
+    ];
+    let level = 10f64.powf(-12.0 / 20.0);
+    let same = wah_gain(&raised, level) - wah_gain(&open, 1.0);
+    assert!(same.abs() < 0.5, "{same}");
+}
+
+#[test]
+fn a_wah_given_mix_0_is_the_dry_sound_and_moves_both_sides_alike() {
+    let saw = [("saw", 0.0, 1.0, ("hz", 220.0))];
+    let (dry, _) = notes_through("level", &[], &saw);
+    let (wet, _) = wah(&[("mix", 0.0)], &saw);
+    assert!(loudest(&dry) > 0.1);
+    let floor = loudest(&dry) * 1e-5;
+    for (x, y) in dry.iter().zip(&wet) {
+        assert!((x - y).abs() <= floor);
+    }
+    let (left, right) = wah(&[], &saw);
+    assert_eq!(left, right);
+    assert!(apart(&left, &dry, 0.5, 1.5) > 0.01);
+}
+
+#[test]
+fn a_wah_closes_over_its_relax_ms_after_the_sound_stops_and_opens_over_its_clamp_ms() {
+    // A loud burst of noise for half a second over a quiet saw whose partial at 2000 Hz shows where the filter is.
+    let notes = [
+        ("hiss", 0.0, 2.0, ("length", 0.5)),
+        ("saw", 0.0, 0.004, ("hz", 500.0)),
+    ];
+    let level = |samples: &[f32], at: f64| {
+        let window = &samples[frame(at)..frame(at + 0.02)];
+        let (mut sin, mut cos) = (0.0, 0.0);
+        for (i, x) in window.iter().enumerate() {
+            let angle = std::f64::consts::TAU * 2000.0 * i as f64 / RATE;
+            sin += f64::from(*x) * angle.sin();
+            cos += f64::from(*x) * angle.cos();
+        }
+        10.0 * (sin * sin + cos * cos).log10()
+    };
+    // The seconds after the burst ends at which the partial is 12 dB under where it was 10 ms after it.
+    let falls = |relax: f64| {
+        let (left, _) = wah(&[("relax_ms", relax)], &notes);
+        let start = level(&left, 0.51);
+        (0..140)
+            .map(|step| 0.51 + f64::from(step) * 0.01)
+            .find(|at| level(&left, *at) <= start - 12.0)
+            .unwrap()
+            - 0.5
+    };
+    let (fast, slow) = (falls(100.0), falls(500.0));
+    assert!(slow >= 2.0 * fast, "{fast} {slow}");
+    assert!(fast < 0.2, "{fast}");
+}
