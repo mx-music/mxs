@@ -5,6 +5,7 @@
 ### 1. Enhancements
 
   * [graph] Add `reed`, a reed or the lips blown on a bore and sounding through its bell, with the options mxs's reed and brass winds give theirs, `sway`, the slow random drift of a wind player's pitch and level, and `fingers`, a note as a wind player's fingers hold it through a fast glide; `wind_bands` takes 33 gains, eleven at each of pp, mf and ff, for all of mx's bands
+  * [graph] Add `figures`, a note played from one of mxs's tables as its voice plays it: struck, as `kept`, `fitted`, `evened` or `following`, held, as `held` or `blown`, or as the `piano`; a synth naming a table mxs has not is refused when it registers, and a synth's tables are the ones its graph names
 
 ## v0.6.1 (2026-11-23)
 

@@ -383,25 +383,28 @@ pub fn piano() -> Synth {
         )
         .options(Spec::envelope(1.0, 1.0))
         .options(Spec::expressions(&["bend", "brightness"]))
-        .build(|options, ctx| {
-            let pedal = options.number("pedal");
-            // A note with the pedal all the way up or down plays one voice, which can be kept ready for either.
-            if pedal == 0.0 || pedal == 1.0 {
-                let choices = [0.0, 1.0].map(|down| (piano_at(down), piano_recipe(options, down)));
-                return strike_among(choices.into(), pedal as usize, options, ctx);
-            }
-            let sound = [(0.0, 1.0 - pedal), (1.0, pedal)]
-                .into_iter()
-                .filter(|(_, share)| *share > 0.0)
-                .map(|(down, share)| {
-                    let (voice, gain) = piano_voice(options, down);
-                    let end = voice.silent_after();
-                    (voice.sound() * (gain * share) as f32, end)
-                })
-                .reduce(|(a, x), (b, y)| (a + b, x.max(y)))
-                .expect("a piano note has a voice");
-            Note::envelope(sound.0, options).within(sound.1)
+        .build(piano_note)
+}
+
+/// A piano note with `options`, as the piano plays it.
+pub(super) fn piano_note(options: &Options, ctx: &mut crate::Context) -> Note {
+    let pedal = options.number("pedal");
+    // A note with the pedal all the way up or down plays one voice, which can be kept ready for either.
+    if pedal == 0.0 || pedal == 1.0 {
+        let choices = [0.0, 1.0].map(|down| (piano_at(down), piano_recipe(options, down)));
+        return strike_among(choices.into(), pedal as usize, options, ctx);
+    }
+    let sound = [(0.0, 1.0 - pedal), (1.0, pedal)]
+        .into_iter()
+        .filter(|(_, share)| *share > 0.0)
+        .map(|(down, share)| {
+            let (voice, gain) = piano_voice(options, down);
+            let end = voice.silent_after();
+            (voice.sound() * (gain * share) as f32, end)
         })
+        .reduce(|(a, x), (b, y)| (a + b, x.max(y)))
+        .expect("a piano note has a voice");
+    Note::envelope(sound.0, options).within(sound.1)
 }
 
 /// The piano's figures without the pedal, fitted partial by partial to the Steinway's recordings.

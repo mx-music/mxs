@@ -100,6 +100,10 @@
 //! ## The instruments' models
 //!
 //! `partials`, `bowed_string`, `air_jet`, `reed`, `wind_bands`, `vibrato`, `fingers` and `sway` are the models the crate's own strings and winds are built from.
+//! `figures(table, play:, level:)` plays a note from one of mxs's tables, named by its file with or without its extension, as `marimba`, as mxs's voices play theirs, and ends the note, as `rings` does; a synth naming a table mxs has not is refused when it registers.
+//! Struck, `play` is `kept`, whose figures carry its loudness, `fitted`, louder by vel to the power `growth:`, or `evened`, every note at vel 1 as loud, each at `level`, or `following`, as `kept`, multiplied by the sound `times:`, as the vibraphone's motor pulses it.
+//! Held, `play` is `held`, bowed, at `level` and quieter below the softest vel recorded, or `blown`, at `level`, breathed by `wander:`, `wander_above:`, `catch:`, `vary:`, `inhale:` and `even:` as mxs's flute_figured is; each takes `vibrato:` in place of the recordings', which a negative one keeps, and `legato:`.
+//! `piano` plays mxs's piano from its two tables, with the note's options.
 //! Their arguments are in this module's source.
 //!
 //! # Files
@@ -209,6 +213,7 @@ const NODES: &[&str] = &[
     "mode",
     "delay",
     "fed_back",
+    "figures",
     "sway",
     "fingers",
     "reed",
@@ -254,6 +259,7 @@ const NEEDS: &[(&str, &[&str])] = &[
     ("delay", &["seconds", "max"]),
     ("fed_back", &["seconds", "feedback"]),
     ("reed", &["hz", "breath", "corner", "keep", "bell"]),
+    ("figures", &["play"]),
     ("perc", &["attack", "release"]),
     ("rings", &["seconds"]),
     ("partials", &["ratios", "levels"]),
@@ -284,6 +290,23 @@ const TAKES: &[(&str, &[&str])] = &[
         &["seconds", "feedback", "lowpass", "highpass", "let_in"],
     ),
     ("sway", &[]),
+    (
+        "figures",
+        &[
+            "play",
+            "level",
+            "growth",
+            "times",
+            "vibrato",
+            "legato",
+            "wander",
+            "wander_above",
+            "catch",
+            "vary",
+            "inhale",
+            "even",
+        ],
+    ),
     (
         "reed",
         &[
@@ -339,6 +362,11 @@ impl Synth {
         for clause in &clauses {
             known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
             named_options(&clause.graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
+            for table in tables_in(&clause.graph) {
+                if crate::synths::table_file(&table).is_none() {
+                    return Err(format!("{name}: mxs has no table {table}"));
+                }
+            }
             let mut mixes = Vec::new();
             mixes_in(&clause.graph, &mut mixes);
             if mixes.windows(2).any(|pair| pair[0] != pair[1]) {
@@ -354,8 +382,15 @@ impl Synth {
             }
         }
         let owner = name.to_string();
+        let mut files: Vec<&'static str> = clauses
+            .iter()
+            .flat_map(|clause| tables_in(&clause.graph))
+            .flat_map(|table| crate::synths::table_files(&table))
+            .collect();
+        files.sort_unstable();
+        files.dedup();
         let notes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        Ok(Synth::new(name).options(specs).build(move |options, ctx| {
+        let mut synth = Synth::new(name).options(specs).build(move |options, ctx| {
             let count = notes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let Some(clause) = clauses
                 .iter()
@@ -377,7 +412,9 @@ impl Synth {
                 Ok(_) => panic!("{owner} ends with neither note_envelope nor rings"),
                 Err(reason) => panic!("{owner}: {reason}"),
             }
-        }))
+        });
+        synth.tables = Vec::leak(files);
+        Ok(synth)
     }
 }
 
@@ -587,6 +624,26 @@ fn compared<'g>(a: &'g Graph, b: &'g Graph) -> Option<(&'g str, &'g str)> {
         }
         _ => None,
     }
+}
+
+/// The tables `graph` plays with `figures`, by the names it gives them.
+fn tables_in(graph: &Graph) -> Vec<String> {
+    let mut tables = Vec::new();
+    let mut at = vec![graph];
+    while let Some(graph) = at.pop() {
+        match graph {
+            Graph::List(items) => at.extend(items),
+            Graph::Call { name, args, named } => {
+                if let ("figures", Some(Graph::Name(table))) = (name.as_str(), args.first()) {
+                    tables.push(table.clone());
+                }
+                at.extend(args);
+                at.extend(named.iter().map(|(_, g)| g));
+            }
+            _ => {}
+        }
+    }
+    tables
 }
 
 /// The mixes given to `draw` and to a drawn `noise` in `graph`, in order.
@@ -1051,6 +1108,7 @@ impl Build<'_> {
                     sound, vel, &gains, &levels,
                 )))
             }
+            "figures" => figures(arg(0)?, &mut take, self.options, self.ctx),
             "sway" => Ok(V::Sig(crate::synths::sway(self.ctx.seed()))),
             "fingers" => Ok(V::Sig(signal(arg(0)?)? >> crate::synths::fingers())),
             "reed" => reed(&mut take, self.ctx),
@@ -1433,6 +1491,62 @@ fn gliding_modes(sound: Net, freqs: V, levels: V, fades: V) -> Result<V, String>
         Some(bank) => V::Sig(sound >> bank),
         None => V::Num(0.0),
     })
+}
+
+/// A note played from one of mxs's tables, named by `table`, from the arguments `take` hands over; kept out of [`Build::call`], whose frame it would otherwise grow.
+#[inline(never)]
+fn figures(
+    table: V,
+    take: &mut impl FnMut(&str) -> Option<V>,
+    options: &Options,
+    ctx: &mut Context,
+) -> Result<V, String> {
+    let V::Name(table) = table else {
+        return Err("figures names its table".to_string());
+    };
+    let file =
+        crate::synths::table_file(&table).ok_or_else(|| format!("mxs has no table {table}"))?;
+    let play = match take("play") {
+        Some(V::Name(play)) => play,
+        _ => return Err("figures needs play:".to_string()),
+    };
+    let mut known = |key: &str, default: f64| -> Result<f64, String> {
+        take(key).map_or(Ok(default), |v| number(v, &format!("a table's {key}")))
+    };
+    let level = known("level", f64::NAN)?;
+    if level.is_nan() && play != "piano" {
+        return Err("figures needs level:".to_string());
+    }
+    let note = match play.as_str() {
+        "following" => {
+            let times = signal(take("times").ok_or("figures following needs times:")?)?;
+            crate::synths::following_from(file, level, times, options)
+        }
+        "held" | "blown" => {
+            let vibrato = known("vibrato", -1.0)?;
+            let vibrato = (vibrato >= 0.0).then_some(vibrato);
+            let legato = known("legato", 0.0)?;
+            let blown = if play == "blown" {
+                Some(crate::synths::Blown {
+                    wander: known("wander", 0.0)?,
+                    wander_above: known("wander_above", 0.0)?,
+                    catch: known("catch", 0.0)?,
+                    vary: known("vary", 0.0)?,
+                    inhale: known("inhale", 0.0)? >= 0.5,
+                    even: known("even", 0.0)?,
+                })
+            } else {
+                None
+            };
+            crate::synths::held_from(file, level, vibrato, legato, blown, options, ctx)
+        }
+        "piano" => crate::synths::piano_from(options, ctx),
+        play => {
+            let growth = known("growth", 1.0)?;
+            crate::synths::struck_from(file, play, level, growth, options, ctx)?
+        }
+    };
+    Ok(V::Note(note))
 }
 
 /// A reed through its bell, from the arguments `take` hands over; kept out of [`Build::call`], whose frame it would otherwise grow.

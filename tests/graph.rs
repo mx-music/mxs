@@ -1278,3 +1278,184 @@ fn sway_drifts_as_the_winds_drift_from_the_same_seed() {
     assert!(traced.iter().any(|x| *x != 0.0));
     assert_eq!(traced, render(rust, &[]));
 }
+
+#[test]
+fn figures_plays_a_table_as_the_voice_that_reads_it_does() {
+    let marimba = Synth::graph(
+        "marimba",
+        mxs::synths::all()
+            .into_iter()
+            .find(|s| s.name() == "marimba")
+            .unwrap()
+            .specs()
+            .to_vec(),
+        vec![Clause {
+            matches: vec![],
+            graph: Graph::call(
+                "figures",
+                vec![Graph::Name("marimba".into())],
+                vec![("play", Graph::Name("kept".into())), ("level", n(1.53))],
+            ),
+        }],
+    )
+    .unwrap();
+    assert_eq!(marimba.tables(), ["marimba.mxf"]);
+    let rust = mxs::synths::all()
+        .into_iter()
+        .find(|s| s.name() == "marimba")
+        .unwrap();
+    let options = [("note", Value::Number(64.0)), ("vel", Value::Number(0.8))];
+    let traced = render(marimba, &options);
+    assert!(traced.iter().any(|x| *x != 0.0));
+    assert_eq!(traced, render(rust, &options));
+
+    let refused = plain(
+        "nothing",
+        Graph::call(
+            "figures",
+            vec![Graph::Name("nothing.mxh".into())],
+            vec![("play", Graph::Name("kept".into())), ("level", n(1.0))],
+        ),
+    );
+    assert_eq!(
+        refused.err().unwrap(),
+        "nothing: mxs has no table nothing.mxh"
+    );
+}
+
+/// mxs's own synth named `name` against a graph of its options playing `graph`, at `options`.
+fn same_as_mxs(name: &str, graph: Graph, options: &[(&str, Value)]) {
+    let rust = mxs::synths::all()
+        .into_iter()
+        .find(|s| s.name() == name)
+        .unwrap();
+    let traced = Synth::graph(
+        name,
+        rust.specs().to_vec(),
+        vec![Clause {
+            matches: vec![],
+            graph,
+        }],
+    )
+    .unwrap();
+    let traced = render(traced, options);
+    assert!(traced.iter().any(|x| *x != 0.0), "{name} is silent");
+    assert_eq!(traced, render(rust, options), "{name}");
+}
+
+#[test]
+fn figures_plays_held_blown_following_and_piano_as_mxs_does() {
+    let figures = |table: &str, play: &str, named: Vec<(&str, Graph)>| {
+        let mut named = named;
+        named.insert(0, ("play", Graph::Name(play.into())));
+        Graph::call("figures", vec![Graph::Name(table.into())], named)
+    };
+    let vel = |v: f64| ("vel", Value::Number(v));
+    same_as_mxs(
+        "cello",
+        figures(
+            "cello",
+            "held",
+            vec![
+                ("level", n(1.0)),
+                ("vibrato", Graph::Option("vibrato".into())),
+                ("legato", Graph::Option("legato".into())),
+            ],
+        ),
+        &[("note", Value::Number(48.0)), vel(0.3)],
+    );
+    same_as_mxs(
+        "flute_figured",
+        figures(
+            "flute",
+            "blown",
+            vec![
+                ("level", n(3.4)),
+                ("wander", n(0.5)),
+                ("wander_above", n(1.5)),
+                ("catch", n(1.0)),
+                ("vary", n(0.6)),
+                ("inhale", Graph::Option("inhale".into())),
+                ("even", n(1.0)),
+            ],
+        ),
+        &[("note", Value::Number(76.0)), vel(1.0)],
+    );
+    for pedal in [0.0, 1.0, 0.4] {
+        same_as_mxs(
+            "piano",
+            figures("piano", "piano", vec![]),
+            &[
+                ("note", Value::Number(60.0)),
+                vel(0.8),
+                ("pedal", Value::Number(pedal)),
+            ],
+        );
+    }
+    let motor = 5.0;
+    let pulse = Graph::call(
+        "sub",
+        vec![
+            n(1.0),
+            Graph::call(
+                "mul",
+                vec![
+                    n(0.25),
+                    Graph::call(
+                        "sub",
+                        vec![
+                            n(1.0),
+                            Graph::call(
+                                "cos",
+                                vec![Graph::call(
+                                    "mul",
+                                    vec![
+                                        n(2.0 * std::f64::consts::PI * motor),
+                                        Graph::call("time", vec![], vec![]),
+                                    ],
+                                    vec![],
+                                )],
+                                vec![],
+                            ),
+                        ],
+                        vec![],
+                    ),
+                ],
+                vec![],
+            ),
+        ],
+        vec![],
+    );
+    let rust = mxs::synths::all()
+        .into_iter()
+        .find(|s| s.name() == "vibraphone")
+        .unwrap();
+    let traced = Synth::graph(
+        "vibraphone",
+        rust.specs().to_vec(),
+        vec![Clause {
+            matches: vec![],
+            graph: figures(
+                "vibraphone",
+                "following",
+                vec![("level", n(14.7)), ("times", pulse)],
+            ),
+        }],
+    )
+    .unwrap();
+    let options = [
+        ("note", Value::Number(65.0)),
+        vel(0.7),
+        ("motor", Value::Number(motor)),
+    ];
+    let (traced, rust) = (render(traced, &options), render(rust, &options));
+    let difference: f64 = traced
+        .iter()
+        .zip(&rust)
+        .map(|(a, b)| ((a - b) as f64).powi(2))
+        .sum();
+    let level: f64 = rust.iter().map(|x| (*x as f64).powi(2)).sum();
+    // The graph works the motor's pulse out in f32, where mxs's vibraphone works it out in f64.
+    let apart = 10.0 * (difference / level).log10();
+    assert!(apart < -60.0, "{apart} dB apart");
+}

@@ -65,6 +65,14 @@ pub(super) fn figures(file: &str) -> &'static Figures {
         .unwrap_or_else(|| panic!("the table {file} is not loaded"))
 }
 
+/// The file of the table named `name`, its file's name with or without its extension, such as `marimba` or `marimba.mxf`.
+pub(crate) fn file(name: &str) -> Option<&'static str> {
+    FILES
+        .iter()
+        .copied()
+        .find(|f| *f == name || f.rsplit_once('.').is_some_and(|(stem, _)| stem == name))
+}
+
 /// The tables the synth named plays, none for a synth that needs none.
 pub(super) fn of(synth: &str) -> &'static [&'static str] {
     SYNTHS

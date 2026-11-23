@@ -41,12 +41,111 @@ mod winds;
 use crate::Family;
 pub(crate) use bowed::bowed_string;
 pub(crate) use common::partials;
+pub(crate) use tables::file as table_file;
+
+/// The files a graph naming the table `name` plays: those of mxs's synth of that name, as the piano plays two, or the one the name gives.
+pub(crate) fn table_files(name: &str) -> Vec<&'static str> {
+    match tables::of(name) {
+        [] => tables::file(name).into_iter().collect(),
+        files => files.to_vec(),
+    }
+}
 pub use tables::load_table;
 pub(crate) use tables::missing as missing_tables;
 pub use winds::sway;
 pub(crate) use winds::{
     Reeded, drifting_swing, fingers, played_jet, reed_through_bell, wind_bands,
 };
+
+/// A struck note from the table in `file`, played as mxs's voices play theirs: `kept`, whose figures carry its loudness, `fitted`, louder by vel to the power `growth`, or `evened`, every note at vel 1 as loud, each at `level`.
+pub(crate) fn struck_from(
+    file: &str,
+    play: &str,
+    level: f64,
+    growth: f64,
+    o: &crate::Options,
+    ctx: &mut crate::Context,
+) -> Result<crate::Note, String> {
+    let figures = tables::figures(file);
+    match play {
+        "kept" => Ok(figures::kept(figures, level, o, ctx)),
+        "fitted" => Ok(figures::fitted(figures, level, growth, o, ctx)),
+        "evened" => Ok(figures::evened(figures, level, o, ctx)),
+        other => Err(format!(
+            "a table plays kept, fitted, evened, following, held, blown or piano, not {other}"
+        )),
+    }
+}
+
+/// A struck note from the table in `file` at `level`, as `kept` gives it, the voice following bend and brightness and multiplied by `times`, as the vibraphone's motor pulses it.
+pub(crate) fn following_from(
+    file: &str,
+    level: f64,
+    times: fundsp::prelude::Net,
+    o: &crate::Options,
+) -> crate::Note {
+    let figures = tables::figures(file);
+    let note = o.number("note");
+    let vel = o.number("vel").clamp(0.0, 1.0);
+    let voice = figures.voice(note, vel);
+    let gain = figures::kept_gain(figures, level, note, vel);
+    let end = voice.silent_after();
+    crate::Note::envelope(voice.following(o) * times * gain as f32, o).within(end)
+}
+
+/// How a wind player plays a held note from a table: the figures of mxs's flute_figured's breath, its seed drawn last.
+#[derive(Clone, Copy)]
+pub(crate) struct Blown {
+    pub wander: f64,
+    pub wander_above: f64,
+    pub catch: f64,
+    pub vary: f64,
+    pub inhale: bool,
+    pub even: f64,
+}
+
+/// A held note from the table in `file`, its pitch following note as it slides, with `vibrato` in place of the recordings' when given, speaking at once from where they settle at `legato` 1.
+/// Bowed, without `blown`, it is `level` at vel and quieter in proportion below the softest recorded; blown, it is `level` throughout, breathed as `blown` sets.
+pub(crate) fn held_from(
+    file: &str,
+    level: f64,
+    vibrato: Option<f64>,
+    legato: f64,
+    blown: Option<Blown>,
+    o: &crate::Options,
+    ctx: &mut crate::Context,
+) -> crate::Note {
+    let figures = tables::figures(file);
+    let breath = blown.map(|b| figures::Breath {
+        wander: b.wander,
+        wander_above: b.wander_above,
+        catch: b.catch,
+        vary: b.vary,
+        inhale: b.inhale,
+        even: b.even,
+        seed: ctx.seed(),
+    });
+    if breath.is_some() {
+        figures::held_note(
+            figures,
+            move |_| level,
+            vibrato,
+            legato,
+            breath,
+            true,
+            o,
+            ctx,
+        )
+    } else {
+        let gain = move |vel: f64| level * (vel / figures.softest()).min(1.0);
+        figures::held_note(figures, gain, vibrato, legato, None, true, o, ctx)
+    }
+}
+
+/// A piano note, as mxs's piano plays it from its tables with the note's options.
+pub(crate) fn piano_from(o: &crate::Options, ctx: &mut crate::Context) -> crate::Note {
+    strings::piano_note(o, ctx)
+}
 
 /// The piano: each harmonic a resonator struck once, with a thump of noise.
 pub fn piano() -> crate::Synth {
