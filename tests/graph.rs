@@ -1459,3 +1459,41 @@ fn figures_plays_held_blown_following_and_piano_as_mxs_does() {
     let apart = 10.0 * (difference / level).log10();
     assert!(apart < -60.0, "{apart} dB apart");
 }
+
+#[test]
+fn figures_plays_a_table_loaded_from_outside_mxs_by_its_name() {
+    let graph = || {
+        Graph::call(
+            "figures",
+            vec![Graph::Name("my_harp".into())],
+            vec![("play", Graph::Name("evened".into())), ("level", n(0.197))],
+        )
+    };
+    assert_eq!(
+        plain("early", graph()).err().unwrap(),
+        "early: mxs has no table my_harp"
+    );
+    mxs::synths::load_table(
+        "my_harp.mxf",
+        include_bytes!("../src/synths/figures/harp.mxf"),
+    )
+    .unwrap();
+    let rust = mxs::synths::all()
+        .into_iter()
+        .find(|s| s.name() == "harp")
+        .unwrap();
+    let mine = Synth::graph(
+        "harp",
+        rust.specs().to_vec(),
+        vec![Clause {
+            matches: vec![],
+            graph: graph(),
+        }],
+    )
+    .unwrap();
+    assert_eq!(mine.tables(), ["my_harp.mxf"]);
+    let options = [("note", Value::Number(60.0)), ("vel", Value::Number(0.7))];
+    let traced = render(mine, &options);
+    assert!(traced.iter().any(|x| *x != 0.0));
+    assert_eq!(traced, render(rust, &options));
+}
