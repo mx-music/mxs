@@ -1,6 +1,6 @@
 # Changelog for mxs v0.6
 
-## Unreleased
+## v0.6.5 (2026-11-23)
 
 ### 1. Enhancements
 
@@ -10,7 +10,6 @@
   * [synths] `guiro` is 12 dB louder at its overtone three times its note, between 4 and 6.3 kHz, as the recorded güiros are
   * [synths] `berimbau` has its wire 7 to 10 dB louder above 6.3 kHz as the stick strikes, fading there as before, and 3 dB louder near 2 kHz, as the recorded strokes are
   * [synths] `cuica` settles at its note: a stroke played alone settled 38 cents over it at the note it comes with and 182 cents over at 79, and the strokes still differ from one to the next as the recorded ones do
-  * [synths] `pandeiro`: the thumb stroke's crack fades over twice as long, and the jingles stroke rings its head 8 dB louder between 250 and 630 Hz, as the recorded strokes do 50 ms in
   * [synths] `triangle` is 4 dB louder between 1.6 and 4 kHz, and a hard stroke a further 4 to 6 dB louder between 1 and 4 kHz, as the recorded triangles are
   * [synths] The pandeiro's thumb, heel and slap are refitted to strokes of MeanRaccoon's "pandeiro A collection" sorted by ear: the jingles answer the hand a moment after it lands, 33 ms after a thumb and 13 ms after a heel or a slap, the slap rings the head's own modes under the hand, and its noise sits near 460 Hz
   * [synths] The pandeiro's head is struck by a plain impulse, so its tones keep the same balance at every note, where a burst of noise in the strike gave each note its own
