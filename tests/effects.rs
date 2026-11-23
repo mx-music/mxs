@@ -1246,3 +1246,168 @@ fn the_distortion_mixed_half_with_the_dry_sound_cancels_none_of_it() {
         assert!(together > -0.5, "{hz} {together}");
     }
 }
+
+/// Both sides of tones, each at a frequency and a pan, through an effect with the options given, for 1.5 seconds.
+fn tones_through(
+    effect: &str,
+    given: &[(&str, f64)],
+    tones: &[(f64, f64)],
+) -> (Vec<f32>, Vec<f32>) {
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[(effect.to_string(), options(given))])
+        .unwrap();
+    let events: Vec<_> = tones
+        .iter()
+        .map(|(hz, pan)| {
+            let note = Event::Note {
+                id: None,
+                synth: "tone".to_string(),
+                options: options(&[("hz", *hz), ("pan", *pan), ("amp", 0.5)]),
+                chain: Some(chain),
+                held: false,
+            };
+            (0.0, note)
+        })
+        .collect();
+    engine.play(&events).unwrap();
+    engine.render(1.5).unwrap()
+}
+
+fn db_between(a: &[f32], b: &[f32]) -> f64 {
+    20.0 * f64::from(rms(a) / rms(b)).log10()
+}
+
+#[test]
+fn width_narrows_the_sound_to_mono_at_side_0_leaves_it_at_1_and_doubles_the_difference_at_2() {
+    let tones = [(440.0, -1.0), (660.0, 0.5)];
+    let (dry_left, dry_right) = tones_through("level", &[], &tones);
+    let apart = |left: &[f32], right: &[f32]| -> Vec<f32> {
+        left.iter().zip(right).map(|(l, r)| l - r).collect()
+    };
+    let added = |left: &[f32], right: &[f32]| -> Vec<f32> {
+        left.iter().zip(right).map(|(l, r)| l + r).collect()
+    };
+    assert!(rms(&apart(&dry_left, &dry_right)) > 0.05);
+
+    let (left, right) = tones_through("width", &[("side", 0.0)], &tones);
+    assert_eq!(left, right);
+    assert!(db_between(&added(&left, &right), &added(&dry_left, &dry_right)).abs() < 0.1);
+
+    for given in [vec![], vec![("side", 1.0)]] {
+        let (left, right) = tones_through("width", &given, &tones);
+        let floor = loudest(&dry_left) * 1e-5;
+        assert!(loudest(&apart(&left, &dry_left)) <= floor);
+        assert!(loudest(&apart(&right, &dry_right)) <= floor);
+    }
+
+    let (left, right) = tones_through("width", &[("side", 2.0)], &tones);
+    let wider = db_between(&apart(&left, &right), &apart(&dry_left, &dry_right));
+    assert!((wider - 6.02).abs() < 0.5, "{wider}");
+    assert!(db_between(&added(&left, &right), &added(&dry_left, &dry_right)).abs() < 0.1);
+}
+
+#[test]
+fn widths_mono_below_puts_what_is_under_its_note_in_the_centre_and_leaves_the_rest() {
+    let tones = [(60.0, -1.0), (2000.0, -1.0)];
+    let (dry_left, dry_right) = tones_through("level", &[], &tones);
+    assert!(partial_db(&dry_right, 60.0, 0.5) < partial_db(&dry_left, 60.0, 0.5) - 30.0);
+
+    let (left, right) = tones_through("width", &[("mono_below", 48.0)], &tones);
+    let low = partial_db(&left, 60.0, 0.5) - partial_db(&right, 60.0, 0.5);
+    assert!(low.abs() < 1.0, "{low}");
+    let high = partial_db(&left, 2000.0, 0.5) - partial_db(&right, 2000.0, 0.5);
+    assert!(high >= 30.0, "{high}");
+    let kept = partial_db(&left, 2000.0, 0.5) - partial_db(&dry_left, 2000.0, 0.5);
+    assert!(kept.abs() < 0.1, "{kept}");
+}
+
+#[test]
+fn widths_side_and_mono_below_glide_to_a_new_value_over_their_slide() {
+    let mut engine = engine();
+    let chain = engine
+        .start_effects(&[("width".to_string(), vec![])])
+        .unwrap();
+    let note = Event::Note {
+        id: None,
+        synth: "steady".to_string(),
+        options: options(&[("pan", -1.0)]),
+        chain: Some(chain),
+        held: false,
+    };
+    let set = Event::Set {
+        target: Target::Effect(chain, 0),
+        options: vec![("side".to_string(), 0.0), ("side_slide".to_string(), 1.0)],
+    };
+    engine.play(&[(0.0, note), (0.5, set)]).unwrap();
+    let (left, right) = engine.render(2.0).unwrap();
+    let share = |at: f64| right[frame(at)] / left[frame(at)];
+    assert!(share(0.4) < 0.01);
+    assert!(share(1.0) > 0.2 && share(1.0) < 0.5, "{}", share(1.0));
+    assert!((share(1.7) - 1.0).abs() < 0.01);
+}
+
+#[test]
+fn a_tremolos_spread_runs_the_right_sides_sweep_that_share_of_half_a_cycle_after_the_lefts() {
+    let levels = |given: &[(&str, f64)]| {
+        let (left, right) = tones_through("tremolo", given, &[(440.0, 0.0)]);
+        let chunks =
+            |side: &[f32]| -> Vec<f32> { side[..frame(1.5)].chunks(480).map(rms).collect() };
+        (chunks(&left), chunks(&right))
+    };
+    let (left, right) = levels(&[("phase", 1.0), ("depth", 1.0), ("spread", 1.0)]);
+    let peak = left.iter().cloned().fold(0.0, f32::max);
+    // The triangle is loudest three quarters into each cycle: the right is there half a second after the left.
+    for (at, loud, quiet) in [
+        (25, &right, &left),
+        (75, &left, &right),
+        (125, &right, &left),
+    ] {
+        assert!(loud[at] > 0.9 * peak, "{at} {}", loud[at]);
+        assert!(quiet[at] < 0.1 * peak, "{at} {}", quiet[at]);
+    }
+
+    let (left, right) = levels(&[("phase", 1.0), ("depth", 1.0), ("spread", 0.5)]);
+    assert!(left[75] > 0.9 * peak && right[100] > 0.9 * peak);
+
+    for given in [vec![], vec![("spread", 0.0)]] {
+        let (left, right) = tones_through("tremolo", &given, &[(440.0, 0.0)]);
+        assert_eq!(left, right);
+        let (plain, _) = tones_through("tremolo", &[], &[(440.0, 0.0)]);
+        assert_eq!(left, plain);
+    }
+}
+
+#[test]
+fn a_slicers_spread_of_1_sounds_one_side_at_a_time() {
+    let both = |given: &[(&str, f64)]| {
+        let mut engine = engine();
+        let chain = engine
+            .start_effects(&[("slicer".to_string(), options(given))])
+            .unwrap();
+        let note = Event::Note {
+            id: None,
+            synth: "steady".to_string(),
+            options: vec![],
+            chain: Some(chain),
+            held: false,
+        };
+        engine.play(&[(0.0, note)]).unwrap();
+        engine.render(2.0).unwrap()
+    };
+    let (left, right) = both(&[("phase", 1.0), ("spread", 1.0)]);
+    let (mut lefts, mut rights, mut both_on) = (0, 0, 0);
+    for (l, r) in left.iter().zip(&right) {
+        both_on += usize::from(*l != 0.0 && *r != 0.0);
+        lefts += usize::from(*l != 0.0);
+        rights += usize::from(*r != 0.0);
+    }
+    assert_eq!(both_on, 0);
+    assert!(
+        lefts > frame(0.9) && rights > frame(0.9),
+        "{lefts} {rights}"
+    );
+
+    let (left, right) = both(&[("phase", 1.0)]);
+    assert_eq!(left, right);
+}

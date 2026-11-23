@@ -60,6 +60,7 @@ pub fn all() -> Vec<Effect> {
         limiter(),
         reverb(),
         phaser(),
+        width(),
     ]
 }
 
@@ -319,22 +320,22 @@ fn slicer() -> Effect {
                 .range(0.0, f64::INFINITY)
                 .doc("How many milliseconds each change takes."),
         )
+        .option(spread())
         .tail(0.0)
         .build(|o, _| {
             let open = (rate_of(o, "phase")
                 | o.follow("pulse_width")
                 | net(dc(1.0))
                 | net(dc(0.0))
-                | eased(o, "phase_offset"))
-                >> net(An(Shifted::new(o.number("phase_offset") as f32, true)));
-            let low = o.follow("amp_min");
-            let level = (open | low | o.follow("amp_max"))
-                >> net(map(|x: &Frame<f32, U3>| x[1] + x[0] * (x[2] - x[1])));
-            let level = (level | o.follow("smooth_ms")) >> net(An(Smooth::new()));
-            (net(multipass::<U2>()) | level)
-                >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> {
-                    [x[0] * x[2], x[1] * x[2]].into()
-                }))
+                | eased(o, "phase_offset")
+                | eased(o, "spread"))
+                >> net(An(Sides::new(o.number("phase_offset") as f32, true)));
+            let level = || {
+                let level = (net(pass()) | o.follow("amp_min") | o.follow("amp_max"))
+                    >> net(map(|x: &Frame<f32, U3>| x[1] + x[0] * (x[2] - x[1])));
+                (level | o.follow("smooth_ms")) >> net(An(Smooth::new()))
+            };
+            (net(multipass::<U2>()) | (open >> (level() | level()))) >> net(map(each_side))
         })
 }
 
@@ -525,6 +526,30 @@ fn sweep(options: &Options, width: Net) -> Net {
         )))
 }
 
+/// The sweep from 0 to 1 for each side, the right the share `spread` of half a cycle after the left.
+fn sweeps(options: &Options, width: Net) -> Net {
+    (rate_of(options, "phase")
+        | width
+        | options.follow("wave")
+        | options.follow("invert_wave")
+        | eased(options, "phase_offset")
+        | eased(options, "spread"))
+        >> net(An(Sides::new(options.number("phase_offset") as f32, false)))
+}
+
+fn spread() -> Spec {
+    Spec::float("spread")
+        .default(0.0)
+        .range(0.0, 1.0)
+        .doc("How far the right side's cycle runs after the left's: 1 is half a cycle, so the sound moves from side to side.")
+}
+
+/// Each side at a level of its own.
+/// Inputs: left, right, the left's level, the right's level.
+fn each_side(x: &Frame<f32, U4>) -> Frame<f32, U2> {
+    [x[0] * x[2], x[1] * x[3]].into()
+}
+
 fn tremolo() -> Effect {
     wave_options(Effect::new("tremolo"), 2.0, 4.0)
         .option(
@@ -533,13 +558,51 @@ fn tremolo() -> Effect {
                 .range(0.0, 1.0)
                 .doc("How far it turns the sound down."),
         )
+        .option(spread())
         .tail(0.0)
         .build(|o, _| {
-            let level = (sweep(o, net(dc(0.5))) | o.follow("depth"))
-                >> net(map(|x: &Frame<f32, U2>| 1.0 - x[1] * x[0]));
-            (net(multipass::<U2>()) | level)
-                >> net(map(|x: &Frame<f32, U3>| -> Frame<f32, U2> {
-                    [x[0] * x[2], x[1] * x[2]].into()
+            let level = || {
+                (net(pass()) | o.follow("depth"))
+                    >> net(map(|x: &Frame<f32, U2>| 1.0 - x[1] * x[0]))
+            };
+            let levels = sweeps(o, net(dc(0.5))) >> (level() | level());
+            (net(multipass::<U2>()) | levels) >> net(map(each_side))
+        })
+}
+
+fn width() -> Effect {
+    Effect::new("width")
+        .option(
+            Spec::float("side")
+                .default(1.0)
+                .range(0.0, 2.0)
+                .doc("How wide the sound is: 0 is mono, 1 is as it came and 2 is twice the difference between its sides."),
+        )
+        .option(
+            Spec::note("mono_below")
+                .default(0.0)
+                .doc("A MIDI note below which everything is put in the centre, off at 0."),
+        )
+        .tail(0.1)
+        .build(|o, _| {
+            // Two low-passes in a row and two high-passes in a row add back up to the whole sound, so the centre keeps its level around the note.
+            let twice = |filter: fn() -> Net| {
+                let once = |sound: Net| {
+                    (sound | cutoff(o, "mono_below") | net(dc(FRAC_1_SQRT_2))) >> filter()
+                };
+                once(once(net(pass())))
+            };
+            let low: fn() -> Net = || net(lowpass::<f32>());
+            let high: fn() -> Net = || net(highpass::<f32>());
+            let centre = net(pass()) ^ (twice(low) & twice(high));
+            let apart = net(pass()) ^ twice(high);
+            let halves = net(map(|x: &Frame<f32, U2>| -> Frame<f32, U2> {
+                [(x[0] + x[1]) * 0.5, (x[0] - x[1]) * 0.5].into()
+            }));
+            (halves >> (centre | apart) | o.follow("side") | o.follow("mono_below"))
+                >> net(map(|x: &Frame<f32, U6>| -> Frame<f32, U2> {
+                    let (centre, apart) = if x[5] > 0.0 { (x[1], x[3]) } else { (x[0], x[2]) };
+                    [centre + x[4] * apart, centre - x[4] * apart].into()
                 }))
         })
 }
@@ -1612,7 +1675,15 @@ impl AudioNode for Lfo {
     }
 
     fn tick(&mut self, input: &Frame<f32, U4>) -> Frame<f32, U1> {
-        let p = self.phase;
+        let level = self.at(self.phase, input);
+        self.phase = (self.phase + input[0].max(0.0) / self.rate).fract();
+        [level].into()
+    }
+}
+
+impl Lfo {
+    /// Its level at a place in its cycle.
+    fn at(&self, p: f32, input: &Frame<f32, U4>) -> f32 {
         let shape = if self.pulse_only {
             1
         } else {
@@ -1639,8 +1710,7 @@ impl AudioNode for Lfo {
         };
         let level = (wave + 1.0) / 2.0;
         let level = if input[3] >= 0.5 { 1.0 - level } else { level };
-        self.phase = (self.phase + input[0].max(0.0) / self.rate).fract();
-        [level * self.level].into()
+        level * self.level
     }
 }
 
@@ -1679,6 +1749,50 @@ impl AudioNode for Shifted {
         }
         self.lfo
             .tick(&[input[0], input[1], input[2], input[3]].into())
+    }
+}
+
+/// A [`Shifted`] read for each side: the left where its cycle is, the right the share its last input gives of half a cycle behind.
+/// Inputs: the Shifted's five, then the share from 0 to 1.
+#[derive(Clone)]
+struct Sides {
+    shifted: Shifted,
+}
+
+impl Sides {
+    fn new(offset: f32, pulse_only: bool) -> Self {
+        Sides {
+            shifted: Shifted::new(offset, pulse_only),
+        }
+    }
+}
+
+impl AudioNode for Sides {
+    const ID: u64 = 0x6d78_0081;
+    type Inputs = U6;
+    type Outputs = U2;
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.shifted.set_sample_rate(sample_rate);
+    }
+
+    fn reset(&mut self) {
+        self.shifted.reset();
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U6>) -> Frame<f32, U2> {
+        let lfo: Frame<f32, U4> = [input[0], input[1], input[2], input[3]].into();
+        let left = self
+            .shifted
+            .tick(&[input[0], input[1], input[2], input[3], input[4]].into())[0];
+        if input[5] <= 0.0 {
+            return [left, left].into();
+        }
+        // The Shifted has moved on a frame, so the place the left was read at is a frame back.
+        let step = input[0].max(0.0) / self.shifted.lfo.rate;
+        let behind = step + 0.5 * input[5].min(1.0);
+        let place = (self.shifted.lfo.phase - behind).rem_euclid(1.0);
+        [left, self.shifted.lfo.at(place, &lfo)].into()
     }
 }
 

@@ -1,5 +1,12 @@
 # Changelog for mxs v0.6
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [effects] Add `width`: `side`, from 0, mono, through 1, the sound as it came, to 2, twice the difference between its sides, and `mono_below`, a MIDI note below which everything is put in the centre, off at 0
+  * [effects] `tremolo` and `slicer` take `spread`, from 0 to 1, the share of half a cycle the right side's cycle runs after the left's, so at 1 the sound moves from side to side; at 0 the samples are as they were
+
 ## v0.6.2 (2026-11-23)
 
 ### 1. Enhancements

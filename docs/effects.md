@@ -1,6 +1,6 @@
 ## The effects
 
-[`level`](#level), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`reverb`](#reverb), [`phaser`](#phaser).
+[`level`](#level), [`echo`](#echo), [`lpf`](#lpf), [`hpf`](#hpf), [`distortion`](#distortion), [`pan`](#pan), [`slicer`](#slicer), [`compressor`](#compressor), [`chorus`](#chorus), [`bitcrusher`](#bitcrusher), [`tremolo`](#tremolo), [`rlpf`](#rlpf), [`bpf`](#bpf), [`flanger`](#flanger), [`wobble`](#wobble), [`ping_pong`](#ping_pong), [`pitch_shift`](#pitch_shift), [`eq`](#eq), [`limiter`](#limiter), [`reverb`](#reverb), [`phaser`](#phaser), [`width`](#width).
 
 ## What every effect takes
 
@@ -62,6 +62,7 @@ An effect that lists one of them among its own, as `phaser` lists `mix`, gives i
 | `amp_min` | a number | 0 | The level while off. |
 | `amp_max` | a number | 1 | The level while on. |
 | `smooth_ms` | milliseconds, 0 or more | 0 | How many milliseconds each change takes. |
+| `spread` | a number, 0 to 1 | 0 | How far the right side's cycle runs after the left's: 1 is half a cycle, so the sound moves from side to side. |
 
 ### `compressor`
 
@@ -98,6 +99,7 @@ An effect that lists one of them among its own, as `phaser` lists `mix`, gives i
 | `invert_wave` | a number, 0 to 1 | 0 | 1 flips the sweep. |
 | `phase_offset` | a number, 0 to 1 | 0 | Where in the sweep it starts. |
 | `depth` | a number, 0 to 1 | 0.5 | How far it turns the sound down. |
+| `spread` | a number, 0 to 1 | 0 | How far the right side's cycle runs after the left's: 1 is half a cycle, so the sound moves from side to side. |
 
 ### `rlpf`
 
@@ -204,4 +206,11 @@ An effect that lists one of them among its own, as `phaser` lists `mix`, gives i
 | `high` | a MIDI note | 108 | The MIDI note its sweep reaches. |
 | `feedback` | a number, 0 to 0.95 | 0 | How much of its sound feeds back, which raises the sound between the notches. |
 | `mix` | a number, 0 to 1 | 0.5 | How much of the turned sound replaces the dry one; the notches are deepest at 0.5. |
+
+### `width`
+
+| Option | Takes | Default | What it does |
+|---|---|---|---|
+| `side` | a number, 0 to 2 | 1 | How wide the sound is: 0 is mono, 1 is as it came and 2 is twice the difference between its sides. |
+| `mono_below` | a MIDI note | 0 | A MIDI note below which everything is put in the centre, off at 0. |
 
