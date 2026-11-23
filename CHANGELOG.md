@@ -11,6 +11,7 @@
   * [synths] `berimbau` has its wire 7 to 10 dB louder above 6.3 kHz as the stick strikes, fading there as before, and 3 dB louder near 2 kHz, as the recorded strokes are
   * [synths] `cuica` settles at its note: a stroke played alone settled 38 cents over it at the note it comes with and 182 cents over at 79, and the strokes still differ from one to the next as the recorded ones do
   * [synths] `pandeiro`: the thumb stroke's crack fades over twice as long, and the jingles stroke rings its head 8 dB louder between 250 and 630 Hz, as the recorded strokes do 50 ms in
+  * [synths] `triangle` is 4 dB louder between 1.6 and 4 kHz, and a hard stroke a further 4 to 6 dB louder between 1 and 4 kHz, as the recorded triangles are
 
 ## v0.6.4 (2026-11-23)
 

@@ -570,7 +570,7 @@ fn triangle() -> Synth {
                     * hit(0.0002, 0.002, -4.0)
                     * vel as f32;
             let bands = [1300.0, 2000.0, 3200.0, 5000.0, 8000.0, 12500.0];
-            let levels = [-40.0, -44.5, -21.5, -15.0, -2.0, -0.5];
+            let levels = [-40.0, -40.0, -17.5, -15.0, -2.0, -0.5];
             let rings = [10.0, 10.0, 9.0, 5.0, 3.0, 1.5];
             let groups = plate(120, 1000.0, 18000.0);
             let lowest = groups[0].iter().sum::<f64>() / groups[0].len() as f64;
@@ -590,7 +590,10 @@ fn triangle() -> Synth {
                 bar = bar + modes(beater.clone(), &f, &l, &r) * hand;
             }
             let hard = (vel - DEFAULT_VEL).max(0.0) / 0.4;
-            let sound = bar >> peak(1300.0, 0.8, hard * 8.0) >> low_shelf(3500.0, hard * 5.0);
+            let sound = bar
+                >> peak(1300.0, 0.8, hard * 12.0)
+                >> peak(3200.0, 0.5, hard * 6.0)
+                >> low_shelf(3500.0, hard * 5.0);
             let level = db(-46.0) * (vel / DEFAULT_VEL).powf(2.6);
             // The bar falls below scsynth's silence threshold well before its 10 s rings run out.
             Note::rings(sound * level as f32, longest.min(held + 12.0))
