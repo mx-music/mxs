@@ -106,6 +106,12 @@ const PANDEIRO_MUTED: [f64; 2] = [1.1225, 0.2];
 /// What a finger pressed on a free head multiplies each mode's level and ring by, as the pressed thumbs and heel strokes of the recordings have them: the lowest mode all but goes, and the head sounds at its second.
 const PANDEIRO_PRESSED: [[f64; 5]; 2] = [[0.9, 1.4, 0.6, 0.8, 1.5], [0.2, 0.77, 1.0, 0.6, 0.8]];
 
+/// How far one stroke strays from the next: the jingles' level in dB, how soon they answer as a share of their time, and each of the head's tones in dB, each the spread of a normal draw.
+const PANDEIRO_STRAYS: [f64; 3] = [1.5, 0.2, 1.0];
+
+/// What every stroke's level is multiplied by, 0.6 dB down, so the strokes that stray loudest peak where every stroke did before they strayed.
+const PANDEIRO_ROOM: f64 = 0.93;
+
 /// The pandeiro, whose `stroke` option picks the stroke; `fixed` makes one of the old names that each played one stroke.
 fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
     let mut decl = Synth::new(name).options(strike_options(49.0)).option(
@@ -120,6 +126,7 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
             "The stroke: the thumb, the heel of the hand, a slap or the fingertips on the jingles.",
         ));
     }
+    let strokes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     decl.build(move |o, ctx| {
         let picked = fixed.unwrap_or_else(|| o.name("stroke"));
         let s = PANDEIRO
@@ -129,17 +136,27 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
         let vel = vel(o, 0.0);
         let freq = hz(o.number("note"));
         let mute = o.number("muted").clamp(0.0, 1.0);
+        // No two strokes land alike: each draws how loud its jingles and each of the head's tones are, and how soon the jingles answer.
+        let stroke = strokes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let turn = stroke.wrapping_mul(0xd6e8_feb8_6659_fd93);
+        let mut draws = Draws::new(ctx.seed() ^ turn);
+        let mut normal = || {
+            (-2.0 * draws.draw().max(1.0e-12).ln()).sqrt()
+                * (std::f64::consts::TAU * draws.draw()).cos()
+        };
+        let noise = |ctx: &mut crate::Context| crate::nodes::white_noise(ctx.seed() ^ turn);
+        let [jingles_stray, answer_stray, head_stray] = PANDEIRO_STRAYS;
         let free = s.modes == PANDEIRO_FREE;
         let pressed = if free {
             freq
         } else {
             freq * PANDEIRO_MUTED[0].powf(mute)
         };
-        let mut head = s.head;
+        let mut head = s.head.map(|level| level * db(head_stray * normal()));
         let mut rings = s.rings.map(|ring| ring * PANDEIRO_MUTED[1].powf(mute));
         if free {
             for mode in 0..5 {
-                head[mode] = s.head[mode] * PANDEIRO_PRESSED[0][mode].powf(mute);
+                head[mode] *= PANDEIRO_PRESSED[0][mode].powf(mute);
                 rings[mode] = s.rings[mode] * PANDEIRO_PRESSED[1][mode].powf(mute);
             }
         }
@@ -148,7 +165,9 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
         let body = (noise(ctx) >> bpf(freq * s.crack[2], s.crack[3]))
             * (hit(0.001, s.crack[1], -4.0) + hit(0.001, s.crack[1] * 4.0, -4.0) * 0.06)
             * s.crack[0] as f32;
-        let shaking = exp_segments(s.shake.0, s.shake.1);
+        let answer = (answer_stray * normal()).exp();
+        let times: Vec<f64> = s.shake.1.iter().map(|seconds| seconds * answer).collect();
+        let shaking = exp_segments(s.shake.0, &times);
         let rattle = noise(ctx) * shaking;
         let disc_ratios = [
             22.24, 24.01, 25.11, 29.26, 32.13, 35.68, 40.93, 45.2, 83.71, 85.83, 87.68, 88.4, 90.2,
@@ -173,10 +192,10 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
                 ))
                 | (hpf(freq * 20.0) * s.jingle[2] as f32));
         let jingles = (discs >> net(map(|x: &Frame<f32, U2>| x[0] + x[1])))
-            * (s.jingle[0] * s.pressed.powf(mute)) as f32;
+            * (s.jingle[0] * s.pressed.powf(mute) * db(jingles_stray * normal())) as f32;
         let bright = (skin + body + jingles) >> high_shelf(2000.0, (vel - DEFAULT_VEL) * 5.0);
         Note::rings(
-            bright * (s.gain * (vel / DEFAULT_VEL).powf(0.75)) as f32,
+            bright * (PANDEIRO_ROOM * s.gain * (vel / DEFAULT_VEL).powf(0.75)) as f32,
             s.length,
         )
     })

@@ -5,6 +5,7 @@
 ### 1. Enhancements
 
   * [synths] `pandeiro`'s `muted` on the thumb, the heel and the fingertips follows the recordings' strokes on a pressed head: the head keeps its pitches, its lowest tone thumps and dies within 50 ms, and it sounds at its second tone, 1.7 times the note, where before every tone rose a whole tone and rang a fifth as long; the thumb's jingles are half as loud under it
+  * [synths] No two strokes of `pandeiro` sound alike: each draws its own noise, how loud its jingles are, how soon they answer and how loud each of the head's tones is, and every stroke is 0.6 dB quieter to leave the loudest of them room
 
 ## v0.6.5 (2026-11-23)
 
