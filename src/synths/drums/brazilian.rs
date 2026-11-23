@@ -31,48 +31,65 @@ pub(super) fn all() -> Vec<Synth> {
 struct Stroke {
     name: &'static str,
     gain: f64,
+    /// The head's modes as ratios of the note: a slap leaves the hand on the head, which rings at other modes than a head left free.
+    modes: [f64; 5],
     head: [f64; 5],
     rings: [f64; 5],
-    crack: [f64; 3],
-    jingle: [f64; 2],
+    /// The hand's noise on the skin: its level, the seconds it lasts, its centre as a ratio of the note, and its width as one over Q.
+    crack: [f64; 4],
+    /// The jingles' level, the seconds they rattle, and how loud their rattle is between the discs' own tones.
+    jingle: [f64; 3],
+    /// The jingles' level over the stroke, as levels and the seconds from each to the next: they answer the hand a moment after it lands.
+    shake: (&'static [f64], &'static [f64]),
     length: f64,
 }
+
+/// The modes of a head left free to ring, as ratios of the note.
+const PANDEIRO_FREE: [f64; 5] = [0.974, 1.652, 2.475, 3.25, 4.13];
 
 const PANDEIRO: [Stroke; 4] = [
     Stroke {
         name: "thumb",
         gain: 0.0507,
-        head: [1.0, 0.5, 0.18, 0.1, 0.05],
-        rings: [0.55, 0.8, 0.6, 0.3, 0.2],
-        crack: [3.0, 0.3, 8.0],
-        jingle: [1.0, 0.5],
+        modes: PANDEIRO_FREE,
+        head: [1.0, 0.16, 0.35, 0.11, 0.11],
+        rings: [0.85, 1.3, 0.69, 0.76, 0.48],
+        crack: [5.5, 0.15, 7.0, 2.0],
+        jingle: [0.75, 0.45, 1.5],
+        shake: (&[0.02, 0.2, 1.0, 0.5, 0.001], &[0.008, 0.02, 0.05, 0.3]),
         length: 1.6,
     },
     Stroke {
         name: "heel",
-        gain: 0.074,
-        head: [0.25, 1.0, 0.45, 0.2, 0.12],
-        rings: [0.12, 0.5, 0.3, 0.2, 0.15],
-        crack: [10.0, 0.15, 8.0],
-        jingle: [3.5, 0.4],
+        gain: 0.023,
+        modes: PANDEIRO_FREE,
+        head: [1.0, 0.2, 2.7, 0.2, 0.36],
+        rings: [2.4, 1.5, 0.8, 0.7, 0.49],
+        crack: [28.0, 0.15, 10.0, 2.0],
+        jingle: [7.5, 0.38, 1.4],
+        shake: (&[0.5, 1.0, 0.45, 0.25, 0.001], &[0.012, 0.028, 0.04, 0.2]),
         length: 1.0,
     },
     Stroke {
         name: "slap",
-        gain: 0.221,
-        head: [0.01, 0.015, 0.015, 0.01, 0.01],
-        rings: [0.6, 0.6, 0.5, 0.4, 0.3],
-        crack: [6.0, 0.13, 5.0],
-        jingle: [1.5, 0.3],
+        gain: 0.19,
+        modes: [0.974, 1.59, 2.17, 2.5, 2.93],
+        head: [0.012, 0.0104, 0.028, 0.0205, 0.049],
+        rings: [0.83, 0.77, 0.57, 0.61, 0.52],
+        crack: [20.0, 0.13, 3.3, 0.6],
+        jingle: [1.5, 0.3, 0.6],
+        shake: (&[0.5, 1.0, 0.45, 0.13, 0.001], &[0.008, 0.03, 0.04, 0.25]),
         length: 0.8,
     },
     Stroke {
         name: "jingles",
-        gain: 0.582,
+        gain: 0.3,
+        modes: PANDEIRO_FREE,
         head: [0.035, 0.025, 0.03, 0.012, 0.003],
         rings: [0.4, 0.4, 0.4, 0.3, 0.1],
-        crack: [1.0, 0.08, 10.0],
-        jingle: [1.0, 0.35],
+        crack: [1.0, 0.08, 10.0, 2.0],
+        jingle: [1.0, 0.35, 0.8],
+        shake: (&[0.001, 1.0, 0.001], &[0.001, 0.35]),
         length: 1.2,
     },
 ];
@@ -107,26 +124,23 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
         let rings = s.rings.map(|ring| ring * PANDEIRO_MUTED[1].powf(mute));
         let stick =
             (impulse_net() + noise(ctx) * hit(0.0005, 0.004, -4.0)) >> lpf(800.0 + vel * 4000.0);
-        let skin = modes(
-            stick,
-            &scaled(&[0.974, 1.652, 2.475, 3.25, 4.13], pressed),
-            &s.head,
-            &rings,
-        );
-        let body = (noise(ctx) >> bpf(freq * s.crack[2], 2.0))
+        let skin = modes(stick, &scaled(&s.modes, pressed), &s.head, &rings);
+        let body = (noise(ctx) >> bpf(freq * s.crack[2], s.crack[3]))
             * (hit(0.001, s.crack[1], -4.0) + hit(0.001, s.crack[1] * 4.0, -4.0) * 0.06)
             * s.crack[0] as f32;
-        let shaking = exp_segments(&[0.001, 1.0, 0.001], &[0.001, s.jingle[1]]);
+        let shaking = exp_segments(s.shake.0, s.shake.1);
         let rattle = noise(ctx) * shaking;
         let disc_ratios = [
-            22.24, 24.01, 25.11, 29.26, 32.13, 35.68, 40.93, 83.71, 85.83, 87.68, 91.32, 92.08,
-            102.31, 106.03,
+            22.24, 24.01, 25.11, 29.26, 32.13, 35.68, 40.93, 45.2, 83.71, 85.83, 87.68, 88.4, 90.2,
+            91.32, 92.08, 98.8, 102.31, 106.03, 109.5, 120.0,
         ];
         let disc_levels = [
-            0.25, 0.15, 0.15, 0.2, 0.25, 0.15, 0.15, 0.85, 1.0, 0.75, 0.55, 0.6, 0.6, 0.8,
+            0.6, 0.36, 0.36, 0.45, 0.4, 0.21, 0.21, 0.28, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85,
+            0.85, 0.85, 0.85, 0.85, 0.85,
         ];
         let disc_rings = [
-            0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08,
+            0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08,
+            0.08, 0.08, 0.08, 0.08, 0.08, 0.08,
         ];
         let rattling = rattle >> (net(pass()) ^ net(pass()));
         let discs = rattling
@@ -137,7 +151,7 @@ fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
                     &disc_levels,
                     &disc_rings,
                 ))
-                | (hpf(freq * 20.0) * 0.3));
+                | (hpf(freq * 20.0) * s.jingle[2] as f32));
         let jingles = (discs >> net(map(|x: &Frame<f32, U2>| x[0] + x[1]))) * s.jingle[0] as f32;
         let bright = (skin + body + jingles) >> high_shelf(2000.0, (vel - DEFAULT_VEL) * 5.0);
         Note::rings(

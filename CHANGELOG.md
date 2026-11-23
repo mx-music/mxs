@@ -12,6 +12,7 @@
   * [synths] `cuica` settles at its note: a stroke played alone settled 38 cents over it at the note it comes with and 182 cents over at 79, and the strokes still differ from one to the next as the recorded ones do
   * [synths] `pandeiro`: the thumb stroke's crack fades over twice as long, and the jingles stroke rings its head 8 dB louder between 250 and 630 Hz, as the recorded strokes do 50 ms in
   * [synths] `triangle` is 4 dB louder between 1.6 and 4 kHz, and a hard stroke a further 4 to 6 dB louder between 1 and 4 kHz, as the recorded triangles are
+  * [synths] The pandeiro's thumb, heel and slap are refitted to strokes of MeanRaccoon's "pandeiro A collection" sorted by ear: the jingles answer the hand a moment after it lands, 33 ms after a thumb and 13 ms after a heel or a slap, the slap rings the head's own modes under the hand, and its noise sits near 460 Hz
 
 ## v0.6.4 (2026-11-23)
 
