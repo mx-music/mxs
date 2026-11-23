@@ -10,6 +10,7 @@
   * [synths] `guiro` is 12 dB louder at its overtone three times its note, between 4 and 6.3 kHz, as the recorded güiros are
   * [synths] `berimbau` has its wire 7 to 10 dB louder above 6.3 kHz as the stick strikes, fading there as before, and 3 dB louder near 2 kHz, as the recorded strokes are
   * [synths] `cuica` settles at its note: a stroke played alone settled 38 cents over it at the note it comes with and 182 cents over at 79, and the strokes still differ from one to the next as the recorded ones do
+  * [synths] `pandeiro`: the thumb stroke's crack fades over twice as long, and the jingles stroke rings its head 8 dB louder between 250 and 630 Hz, as the recorded strokes do 50 ms in
 
 ## v0.6.4 (2026-11-23)
 
