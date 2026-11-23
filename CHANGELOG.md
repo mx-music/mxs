@@ -5,6 +5,7 @@
 ### 1. Enhancements
 
   * [synths] `pandeiro`'s fingertip stroke, `pandeiro_jingles`, is the heel's stroke played lighter, with a little of the hand and the head in it: its jingles answer 13 ms after the fingers land and are 7 dB down after 40 ms and 22 dB down after 80 ms, as the light strokes of jacksonjust's "Loop Pandeiro_127" on Freesound are, and the stroke is 6 dB quieter
+  * [synths] `pandeiro`'s heel stroke, `pandeiro_heel`, is 6 dB quieter, so the heel and the fingertips sit a like distance under the thumb
 
 ## v0.6.6 (2026-11-23)
 

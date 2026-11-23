@@ -49,7 +49,7 @@ cuica 9149b73d4244b4dd
 tamborim 9c09b932336e81f9
 caxixi 0e4f6c82522f7941
 pandeiro_thumb 03d910903c36bf51
-pandeiro_heel 8b561603a03e7811
+pandeiro_heel a34f9d321f779ecd
 pandeiro_slap 552556d5bcb0ddc9
 pandeiro_jingles e5a8e17f9e6a37bd
 tabla 57739fb2bd1d27f5

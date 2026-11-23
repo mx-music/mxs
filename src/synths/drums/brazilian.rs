@@ -64,7 +64,7 @@ const PANDEIRO: [Stroke; 4] = [
     },
     Stroke {
         name: "heel",
-        gain: 0.023,
+        gain: 0.0115,
         modes: PANDEIRO_FREE,
         head: [3.0, 0.93, 1.35, 0.75, 1.71],
         rings: [2.4, 1.5, 0.8, 0.7, 0.49],
