@@ -276,6 +276,10 @@ fn cuica() -> Synth {
             near.sort_by(|a, b| a.0.total_cmp(&b.0));
             let nearest = near[0].0;
             near.retain(|(far, _)| *far <= nearest + behind);
+            // The strokes as near settle around the note, each as far from it as it was from the others when recorded.
+            let mut notes: Vec<f64> = near.iter().map(|(_, at)| RUBS[*at].note).collect();
+            notes.sort_by(f64::total_cmp);
+            let centre = (notes[(notes.len() - 1) / 2] + notes[notes.len() / 2]) / 2.0;
             // No stroke twice running where another is as near.
             let before = last.load(std::sync::atomic::Ordering::Relaxed);
             if near.len() > 1 {
@@ -311,7 +315,7 @@ fn cuica() -> Synth {
                 (-2.0 * draws.draw().max(1.0e-12).ln()).sqrt()
                     * (std::f64::consts::TAU * draws.draw()).cos()
             };
-            let settled = note + CUICA_STRAYS[0] * normal() / 100.0;
+            let settled = note + rub.note - centre + CUICA_STRAYS[0] * normal() / 100.0;
             let [spread, least, most] = CUICA_MOVES;
             let moves = (1.0 + spread * normal()).clamp(least, most);
             let bend = scoop.map_or(0.0, |scoop| scoop - moves * started(rub));
