@@ -809,8 +809,18 @@ fn an_effect_over_both_sides_whose_side_is_multiplied_by_0_plays_the_other() {
     assert_eq!(left, right);
 }
 
+thread_local! {
+    static PANICS_SEEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[test]
 fn an_effect_that_cannot_be_built_is_an_error_naming_it_when_its_chain_starts() {
+    // The hook is global, so it counts only this thread's panics and still runs the one before.
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        PANICS_SEEN.with(|seen| seen.set(seen.get() + 1));
+        previous(info)
+    }));
     let broken = named(
         "delay",
         vec![call("input", vec![])],
@@ -826,6 +836,11 @@ fn an_effect_that_cannot_be_built_is_an_error_naming_it_when_its_chain_starts() 
     assert_eq!(
         error,
         "effect broken could not be built: a delay's max must be known when the note starts"
+    );
+    assert_eq!(
+        PANICS_SEEN.with(|seen| seen.get()),
+        0,
+        "the refusal printed a panic"
     );
     assert!(engine.start_effects(&[]).is_ok());
 }

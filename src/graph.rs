@@ -409,8 +409,10 @@ impl Synth {
             .eval(&clause.graph)
             {
                 Ok(V::Note(note)) => note,
-                Ok(_) => panic!("{owner} ends with neither note_envelope nor rings"),
-                Err(reason) => panic!("{owner}: {reason}"),
+                Ok(_) => {
+                    unwind_refused(format!("{owner} ends with neither note_envelope nor rings"))
+                }
+                Err(reason) => unwind_refused(format!("{owner}: {reason}")),
             }
         });
         synth.tables = Vec::leak(files);
@@ -502,10 +504,10 @@ impl Effect {
                 let sound = build
                     .eval(graph)
                     .and_then(signal)
-                    .unwrap_or_else(|reason| panic!("{owner}: {reason}"));
+                    .unwrap_or_else(|reason| unwind_refused(format!("{owner}: {reason}")));
                 let uses = build.inputs.unwrap_or_default();
                 if sound.inputs() != uses.len() {
-                    panic!("{owner}: its input is taken where it is left out or taken twice, such as in a sound multiplied by 0");
+                    unwind_refused(format!("{owner}: its input is taken where it is left out or taken twice, such as in a sound multiplied by 0"));
                 }
                 fed(&uses, width, sound)
             };
@@ -1639,4 +1641,9 @@ fn envelope(points: V) -> Result<Net, String> {
         }
         *levels.last().unwrap_or(&0.0)
     }))
+}
+
+// Unwinds to the engine's catch_unwind, which turns the reason into an error, without the panic hook printing it.
+fn unwind_refused(reason: String) -> ! {
+    std::panic::resume_unwind(Box::new(reason))
 }
