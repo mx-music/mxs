@@ -6,6 +6,7 @@
 
   * [synths] `ganza`'s up stroke is 10 dB quieter between 4 and 6.3 kHz, as the small shaker of the recordings is; its down stroke and `shaker` have the samples they had
   * [synths] `clave` is 5 dB louder at its overtone 2.72 times its note, between 4 and 6.3 kHz, as the recorded claves are
+  * [synths] `tabla_tas`, and `tabla` playing tas, has its burst of noise at the note 7 dB quieter, so its lowest band starts and fades as the recorded bol does
 
 ## v0.6.4 (2026-11-23)
 
