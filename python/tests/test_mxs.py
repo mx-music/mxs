@@ -41,12 +41,10 @@ class TestEngine(unittest.TestCase):
 
     @unittest.skipUnless(APPLE_SILICON, "the hashes are of Apple silicon")
     def test_the_marimba_file_marimba_py_writes_renders_the_samples_mxs_renders_in_rust(self):
-        writer = os.path.join(ROOT, "notes", "instruments-as-data", "marimba.py")
-        written = subprocess.run([sys.executable, writer], capture_output=True, text=True, check=True).stdout
+        writer = os.path.join(HERE, "..", "examples", "marimba.py")
         with tempfile.TemporaryDirectory() as folder:
+            subprocess.run([sys.executable, writer], cwd=folder, check=True, capture_output=True)
             path = os.path.join(folder, "marimba.json")
-            with open(path, "w") as file:
-                file.write(written)
             engine = mxs.Engine.offline()
             self.assertEqual(engine.load_synth(path), "marimba")
         engine.note(0, "marimba", note=60, vel=0.6)
