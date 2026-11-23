@@ -67,10 +67,10 @@ const tests = {
     check(JSON.stringify(loaded) === JSON.stringify([{ synth: "piano", tables: ["piano.mxf", "piano_pedal.mxf"] }]), JSON.stringify(loaded));
   },
 
-  async "a synth loaded from the marimba file of mxs-00012 plays"(page, fetched) {
+  async "a synth loaded from the marimba file plays"(page, fetched) {
     const loudest = await page.evaluate(async () => {
       const engine = await mxs.offline();
-      const name = await engine.loadSynth(await (await fetch("/notes/instruments-as-data/marimba.json")).text());
+      const name = await engine.loadSynth(await (await fetch("/tests/marimba.json")).text());
       await engine.note(0, name, { note: 72 });
       return peak(engine.render(0.5));
     });

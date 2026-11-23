@@ -1,7 +1,7 @@
 use mxs::graph::{Clause, Graph};
 use mxs::{Effect, Engine, Event, RATE, Spec, Synth, Value};
 
-const MARIMBA: &str = include_str!("../notes/instruments-as-data/marimba.json");
+const MARIMBA: &str = include_str!("marimba.json");
 
 fn n(x: f64) -> Graph {
     Graph::Number(x)
@@ -34,7 +34,7 @@ fn mallet(hz: Graph, corner: f64, slope: Graph) -> Graph {
     )
 }
 
-/// mx's marimba sketch built in Rust, as marimba.py in the notes of mxs-00012 writes it to its file.
+/// mx's marimba sketch built in Rust, as `marimba.json` writes it.
 fn marimba() -> Synth {
     let (note, vel) = (opt("note"), opt("vel"));
     let freq = call("hz", vec![note.clone()]);
@@ -267,7 +267,7 @@ fn the_marimba_file_renders_the_samples_of_the_same_graph_built_in_rust() {
 
 #[test]
 fn the_marimba_file_loads_from_its_path_with_the_options_it_declares() {
-    let synth = Synth::from_json_file("notes/instruments-as-data/marimba.json").unwrap();
+    let synth = Synth::from_json_file("tests/marimba.json").unwrap();
     assert_eq!(synth.name(), "marimba");
     let vel = synth.specs().iter().find(|s| s.name == "vel").unwrap();
     assert_eq!(vel.range, Some((0.05, 1.0)));

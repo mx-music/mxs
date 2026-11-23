@@ -68,7 +68,7 @@ fn main() -> Result<(), mxs::Error> {
 
 `render` returns the left and the right channel as samples at 48 kHz, and `record_output` writes them to a WAV file.
 
-An offline engine also runs in WebAssembly, as `wasm32-unknown-unknown`, with no imports, so a web page or Node can render with it; [the notes on playing in the browser](notes/playing-in-the-browser.md) have a page that plays the piano in an audio worklet.
+An offline engine also runs in WebAssembly, as `wasm32-unknown-unknown`, with no imports, so a web page or Node can render with it.
 There, a sample is loaded from its bytes with `load_sample_bytes`, and a live engine, worker threads, files read by path, MIDI and audio input do not work.
 Built without the default `tables` feature, the module carries none of the instruments' measured tables, and a page loads only those it plays, as [the guide to tables](docs/guide/tables.md) shows.
 
