@@ -339,7 +339,7 @@ fn about(name: &str) -> &'static str {
             "An accordion's right hand: two reeds a few Hz apart, beating, fitted to \"Accordeon master\" by hammondman on Freesound."
         }
         "marimba" => {
-            "A marimba built from its bar's modes and the tube's harmonics, each a resonator struck once, with a mallet whose harder strokes bring out higher overtones and a short tap of the mallet above them."
+            "A marimba built from its bar's modes and the tube's harmonics, each a resonator struck once, with a mallet whose harder strokes bring out higher overtones and a short tap of the mallet above them, measured from the University of Iowa's marimba struck with yarn mallets."
         }
         "vibraphone" => {
             "A vibraphone with its motor, fitted partial by partial to the University of Iowa's vibraphone played with the motor off, from C3 to F6."
