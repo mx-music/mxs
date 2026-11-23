@@ -51,7 +51,7 @@ caxixi 0e4f6c82522f7941
 pandeiro_thumb 03d910903c36bf51
 pandeiro_heel 8b561603a03e7811
 pandeiro_slap 552556d5bcb0ddc9
-pandeiro_jingles 6304364e03657901
+pandeiro_jingles e5a8e17f9e6a37bd
 tabla 57739fb2bd1d27f5
 tabla_na 6d5c2211a362a649
 tabla_tun d0770b1163c5ad6d
