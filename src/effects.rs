@@ -238,14 +238,29 @@ fn distortion() -> Effect {
                 .range(0.0, 1.0)
                 .doc("How hard it drives the sound."),
         )
-        .tail(0.0)
+        .option(
+            Spec::name("curve", &["soft", "hard"])
+                .default("soft")
+                .doc("How it bends the sound: soft rounds it off and hard cuts it off flat; read as the effect starts."),
+        )
+        .option(
+            Spec::note("tone")
+                .default(0.0)
+                .doc("A MIDI note for a low-pass after it, off at 0."),
+        )
+        .tail(0.1)
+        .late(DRIVE_LATE)
         .build(|o, _| {
+            let hard = o.name("curve") == "hard";
             per_channel(|| {
-                (net(pass()) | o.follow("distort"))
-                    >> net(map(|x: &Frame<f32, U2>| {
-                        let drive = 1.0 + x[1].clamp(0.0, 1.0) * 30.0;
-                        (x[0] * drive).tanh() / drive.tanh()
-                    }))
+                let driven = (net(pass()) | o.follow("distort")) >> net(An(Drive::new(hard)));
+                let off = o.follow("tone")
+                    >> net(map(|x: &Frame<f32, U1>| if x[0] > 0.0 { 1.0 } else { 0.0 }));
+                let filtered = net(pass())
+                    ^ ((net(pass()) | cutoff(o, "tone") | net(dc(FRAC_1_SQRT_2)))
+                        >> net(lowpass::<f32>()));
+                ((driven >> filtered) | off)
+                    >> net(map(|x: &Frame<f32, U3>| x[0] + (x[1] - x[0]) * x[2]))
             })
         })
 }
@@ -1152,6 +1167,136 @@ impl AudioNode for Comb {
         };
         self.buffer[self.at] = input[0] + feedback * delayed;
         [delayed].into()
+    }
+}
+
+/// How many taps the distortion's low-pass has, and how many frames its sound comes out late: the filter twice over, at a quarter of a frame a tap.
+const DRIVE_TAPS: usize = 249;
+const DRIVE_LATE: usize = (DRIVE_TAPS - 1) / 4;
+
+/// The low-pass the distortion runs at four times the engine's rate, before and after its curve: a sinc under a Kaiser window, which passes up to 0.43 of the engine's rate and is 70 dB down from half of it, and delays every frequency alike.
+fn drive_taps() -> &'static [f64] {
+    static TAPS: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
+    TAPS.get_or_init(|| {
+        // The modified Bessel function of order 0, by its series.
+        let bessel = |x: f64| {
+            let (mut sum, mut term) = (1.0, 1.0);
+            for k in 1..40 {
+                term *= (x / 2.0 / k as f64).powi(2);
+                sum += term;
+            }
+            sum
+        };
+        let (beta, edge, middle) = (6.76, 0.11625, (DRIVE_TAPS - 1) as f64 / 2.0);
+        let taps: Vec<f64> = (0..DRIVE_TAPS)
+            .map(|n| {
+                let from = n as f64 - middle;
+                let turn = std::f64::consts::TAU * edge * from;
+                let sinc = if from == 0.0 { 1.0 } else { turn.sin() / turn };
+                let window = bessel(beta * (1.0 - (from / middle).powi(2)).sqrt()) / bessel(beta);
+                sinc * window
+            })
+            .collect();
+        let sum: f64 = taps.iter().sum();
+        taps.iter().map(|tap| tap / sum).collect()
+    })
+}
+
+/// The distortion's curve worked out at four times the engine's rate, so the harmonics it adds above half the engine's rate are filtered out before they come back at other pitches.
+/// Between two samples the curve is the mean of itself over the step from one to the other, from its antiderivative, after Parker, Zavalishin and Le Bivic, "Reducing the aliasing of nonlinear waveshaping using continuous-time convolution", 2016.
+/// Its sound comes out `DRIVE_LATE` frames after its input.
+/// Inputs: sound, distort from 0 to 1.
+#[derive(Clone)]
+struct Drive {
+    hard: bool,
+    /// The last sounds in, and the last out of the curve at four times the rate, each written twice over so a run of them is one slice.
+    heard: Vec<f64>,
+    bent: Vec<f64>,
+    at: (usize, usize),
+    before: f64,
+}
+
+impl Drive {
+    const HEARD: usize = DRIVE_TAPS / 4 + 1;
+
+    fn new(hard: bool) -> Self {
+        Drive {
+            hard,
+            heard: vec![0.0; 2 * Self::HEARD],
+            bent: vec![0.0; 2 * DRIVE_TAPS],
+            at: (0, 0),
+            before: 0.0,
+        }
+    }
+
+    fn curve(&self, x: f64) -> f64 {
+        if self.hard {
+            x.clamp(-1.0, 1.0)
+        } else {
+            x.tanh()
+        }
+    }
+
+    /// The curve's antiderivative.
+    fn under(&self, x: f64) -> f64 {
+        let size = x.abs();
+        if self.hard {
+            if size <= 1.0 { x * x / 2.0 } else { size - 0.5 }
+        } else {
+            size + (-2.0 * size).exp().ln_1p() - std::f64::consts::LN_2
+        }
+    }
+}
+
+impl AudioNode for Drive {
+    const ID: u64 = 0x6d78_007f;
+    type Inputs = U2;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        *self = Drive::new(self.hard);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U2>) -> Frame<f32, U1> {
+        let taps = drive_taps();
+        let drive = 1.0 + f64::from(input[1].clamp(0.0, 1.0)) * 30.0;
+        let level = if self.hard { 1.0 } else { drive.tanh() };
+        let (heard, bent) = (Self::HEARD, DRIVE_TAPS);
+        self.at.0 = (self.at.0 + heard - 1) % heard;
+        self.heard[self.at.0] = f64::from(input[0]);
+        self.heard[self.at.0 + heard] = f64::from(input[0]);
+        let mut out = 0.0;
+        for step in 0..4 {
+            // The sound between two frames: every fourth tap from this step's, over the last sounds in, newest first.
+            let recent = &self.heard[self.at.0..self.at.0 + heard];
+            let between: f64 = taps[step..]
+                .iter()
+                .step_by(4)
+                .zip(recent)
+                .map(|(tap, sound)| tap * sound)
+                .sum();
+            let now = drive * 4.0 * between;
+            let moved = now - self.before;
+            let curved = if moved.abs() < 1e-6 {
+                self.curve((now + self.before) / 2.0)
+            } else {
+                (self.under(now) - self.under(self.before)) / moved
+            };
+            self.before = now;
+            self.at.1 = (self.at.1 + bent - 1) % bent;
+            self.bent[self.at.1] = curved / level;
+            self.bent[self.at.1 + bent] = curved / level;
+            // The frame out is the one on this frame's own time, the first of its four.
+            if step == 0 {
+                let recent = &self.bent[self.at.1..self.at.1 + bent];
+                out = taps
+                    .iter()
+                    .zip(recent)
+                    .map(|(tap, sound)| tap * sound)
+                    .sum();
+            }
+        }
+        [out as f32].into()
     }
 }
 

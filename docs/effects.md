@@ -43,6 +43,8 @@ An effect that lists one of them among its own, as `phaser` lists `mix`, gives i
 | Option | Takes | Default | What it does |
 |---|---|---|---|
 | `distort` | a number, 0 to 1 | 0.5 | How hard it drives the sound. |
+| `curve` | one of `soft`, `hard` | `soft` | How it bends the sound: soft rounds it off and hard cuts it off flat; read as the effect starts. |
+| `tone` | a MIDI note | 0 | A MIDI note for a low-pass after it, off at 0. |
 
 ### `pan`
 

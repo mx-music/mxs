@@ -313,6 +313,7 @@ pub struct Effect {
     pub(crate) name: String,
     pub(crate) specs: Vec<Spec>,
     pub(crate) tail: Arc<Tail>,
+    pub(crate) late: usize,
     pub(crate) build: Arc<BuildEffect>,
 }
 
@@ -321,6 +322,7 @@ pub struct EffectDecl {
     name: String,
     specs: Vec<Spec>,
     tail: Arc<Tail>,
+    late: usize,
 }
 
 impl Effect {
@@ -331,6 +333,7 @@ impl Effect {
             name: name.to_string(),
             specs: Vec::new(),
             tail: Arc::new(|_| 1.0),
+            late: 0,
         }
     }
 
@@ -367,6 +370,12 @@ impl EffectDecl {
         self
     }
 
+    /// How many frames after its input the effect's sound comes out, 0 unless given; the dry sound it is mixed with is held back by as many, so the two line up.
+    pub fn late(mut self, frames: usize) -> Self {
+        self.late = frames;
+        self
+    }
+
     /// Gives the effect its sound: `build` returns the net that processes the sound, from the options the effect was started with.
     pub fn build<F>(self, build: F) -> Effect
     where
@@ -376,6 +385,7 @@ impl EffectDecl {
             name: self.name,
             specs: self.specs,
             tail: self.tail,
+            late: self.late,
             build: Arc::new(build),
         }
     }

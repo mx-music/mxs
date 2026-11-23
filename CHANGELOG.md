@@ -4,6 +4,9 @@
 
 ### 1. Enhancements
 
+  * [effects] `distortion` works its curve out at four times the engine's rate and filters what it adds above half the engine's rate, so a high, bright sound driven hard keeps its energy on its harmonics, 50 dB under the sound on a saw at C7 where it was 20 dB under; a low sound has the harmonics it had, and no sample is the same
+  * [effects] `distortion` takes `curve`, `soft`, as it was, or `hard`, which cuts the sound off flat, and `tone`, a MIDI note for a low-pass after it, off at 0
+  * [effects] Add `EffectDecl::late`, the frames after its input an effect's sound comes out, by which the engine holds back the dry sound it mixes it with; `distortion` is 62 frames late
   * [graph] Add `reed`, a reed or the lips blown on a bore and sounding through its bell, with the options mxs's reed and brass winds give theirs, `sway`, the slow random drift of a wind player's pitch and level, and `fingers`, a note as a wind player's fingers hold it through a fast glide; `wind_bands` takes 33 gains, eleven at each of pp, mf and ff, for all of mx's bands
   * [graph] Add `figures`, a note played from one of mxs's tables as its voice plays it: struck, as `kept`, `fitted`, `evened` or `following`, held, as `held` or `blown`, or as the `piano`; a synth naming a table mxs has not is refused when it registers, and a synth's tables are the ones its graph names
 

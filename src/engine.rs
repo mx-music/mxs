@@ -1079,6 +1079,7 @@ impl Engine {
             let (owner, specs) = (registered.owner.clone(), registered.specs.clone());
             let (build, effect_tail) =
                 (registered.item.build.clone(), registered.item.tail.clone());
+            let late = registered.item.late;
             let values = self.check(&owner, &specs, given)?;
             let mut options = Options::new(owner.clone(), specs.clone(), values);
             options.key = Some(tap.clone());
@@ -1117,9 +1118,12 @@ impl Engine {
             }
             let pre = options.follow("pre_amp") >> Net::wrap(Box::new(split::<U2>()));
             let wet = (Net::wrap(Box::new(multipass::<U2>())) * pre) >> wet;
-            let blended = (Net::wrap(Box::new(multipass::<U2>())) ^ wet)
-                | options.follow("mix")
-                | options.follow("amp");
+            let dry = if late == 0 {
+                Net::wrap(Box::new(multipass::<U2>()))
+            } else {
+                Net::wrap(Box::new(An(Held::new(late)) | An(Held::new(late))))
+            };
+            let blended = (dry ^ wet) | options.follow("mix") | options.follow("amp");
             unit = unit >> (blended >> Net::wrap(Box::new(An(Blend))));
             let changing = options.take_controls();
             let follows = |name: &String| changing.contains_key(name);
@@ -3684,6 +3688,39 @@ impl AudioNode for Balance {
             input[1] * (1.0 + pan).min(1.0) * input[3],
         ]
         .into()
+    }
+}
+
+/// A sound held back by a number of frames.
+#[derive(Clone)]
+struct Held {
+    frames: Vec<f32>,
+    at: usize,
+}
+
+impl Held {
+    fn new(frames: usize) -> Self {
+        Held {
+            frames: vec![0.0; frames],
+            at: 0,
+        }
+    }
+}
+
+impl AudioNode for Held {
+    const ID: u64 = 0x6d78_0080;
+    type Inputs = U1;
+    type Outputs = U1;
+
+    fn reset(&mut self) {
+        self.frames.fill(0.0);
+    }
+
+    fn tick(&mut self, input: &Frame<f32, U1>) -> Frame<f32, U1> {
+        let out = self.frames[self.at];
+        self.frames[self.at] = input[0];
+        self.at = (self.at + 1) % self.frames.len();
+        [out].into()
     }
 }
 

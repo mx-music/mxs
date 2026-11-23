@@ -19,6 +19,16 @@ fn engine() -> Engine {
         Synth::new("steady").build(|_, _| Note::rings(Net::wrap(Box::new(dc(0.5))), 3.0)),
     );
     engine.register(
+        Synth::new("saw")
+            .option(Spec::hz("hz").default(440.0))
+            .build(|o, _| {
+                Note::rings(
+                    Net::wrap(Box::new(saw_hz(o.number("hz") as f32))) * 0.5,
+                    2.0,
+                )
+            }),
+    );
+    engine.register(
         Synth::new("tone")
             .option(Spec::hz("hz").default(440.0))
             .build(|o, _| {
@@ -1080,5 +1090,159 @@ fn an_echos_drive_rounds_each_repeat_off_more_than_the_one_before() {
         let (dry, first, last) = (third(1.0), third(3.5), third(8.5));
         assert!(dry < -40.0, "{effect} {dry}");
         assert!(last >= first + 6.0, "{effect} {first} {last}");
+    }
+}
+
+/// A synth of the test engine at `hz` through the distortion with the options given, for two seconds, as the left channel.
+fn distorted(synth: &str, hz: f64, given: &[(&str, Value)]) -> Vec<f32> {
+    let mut engine = engine();
+    let given: Vec<(String, Value)> = given
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.clone()))
+        .collect();
+    let chain = engine
+        .start_effects(&[("distortion".to_string(), given)])
+        .unwrap();
+    let note = Event::Note {
+        id: None,
+        synth: synth.to_string(),
+        options: options(&[("hz", hz)]),
+        chain: Some(chain),
+        held: false,
+    };
+    engine.play(&[(0.0, note)]).unwrap();
+    engine.render(2.0).unwrap().0
+}
+
+/// How far, in dB, the energy that is on no multiple of `hz`, 0 among them, is below the whole sound, over a second from half a second in.
+fn away_from_harmonics(samples: &[f32], hz: f64) -> f64 {
+    let count = RATE as usize;
+    let window: Vec<f64> = (0..count)
+        .map(|n| 0.5 - 0.5 * (std::f64::consts::TAU * n as f64 / count as f64).cos())
+        .collect();
+    let sound: Vec<f64> = samples[frame(0.5)..frame(0.5) + count]
+        .iter()
+        .zip(&window)
+        .map(|(x, w)| f64::from(*x) * w)
+        .collect();
+    let whole: f64 = sound.iter().map(|x| x * x).sum();
+    let (sum, squares): (f64, f64) = window
+        .iter()
+        .fold((0.0, 0.0), |(sum, squares), w| (sum + w, squares + w * w));
+    let on: f64 = (0..=(RATE / 2.0 / hz) as usize)
+        .map(|k| {
+            let turn = std::f64::consts::TAU * k as f64 * hz / RATE;
+            let (re, im) = sound
+                .iter()
+                .enumerate()
+                .fold((0.0, 0.0), |(re, im), (n, x)| {
+                    let angle = turn * n as f64;
+                    (re + x * angle.cos(), im + x * angle.sin())
+                });
+            let both = if k == 0 { 1.0 } else { 2.0 };
+            both * (re * re + im * im) * squares / (sum * sum)
+        })
+        .sum();
+    10.0 * ((whole - on).max(whole * 1e-12) / whole).log10()
+}
+
+#[test]
+fn the_distortion_adds_nothing_away_from_the_notes_harmonics_on_a_high_saw() {
+    let c7 = 2093.0;
+    let dry = distorted("saw", c7, &[("mix", Value::Number(0.0))]);
+    let clean = away_from_harmonics(&dry, c7);
+    assert!(clean < -45.0, "{clean}");
+    for curve in ["soft", "hard"] {
+        for distort in [0.5, 1.0] {
+            let given = [
+                ("distort", Value::Number(distort)),
+                ("curve", Value::from(curve)),
+            ];
+            let away = away_from_harmonics(&distorted("saw", c7, &given), c7);
+            assert!(away <= -40.0, "{curve} {distort} {away}");
+        }
+    }
+}
+
+#[test]
+fn the_soft_distortion_of_a_low_sine_has_the_level_and_harmonics_of_a_tanh_of_it() {
+    let dry = distorted("tone", 110.0, &[("mix", Value::Number(0.0))]);
+    for distort in [0.0, 0.5, 1.0] {
+        let drive = 1.0 + distort as f32 * 30.0;
+        let plain: Vec<f32> = dry
+            .iter()
+            .map(|x| (x * drive).tanh() / drive.tanh())
+            .collect();
+        let wet = distorted("tone", 110.0, &[("distort", Value::Number(distort))]);
+        for harmonic in [1.0, 3.0, 5.0] {
+            let (was, is) = (
+                partial_db(&plain, 110.0 * harmonic, 0.5),
+                partial_db(&wet, 110.0 * harmonic, 0.5),
+            );
+            assert!(
+                (was - is).abs() < 1.0 || was < -80.0,
+                "{distort} {harmonic} {was} {is}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_distortions_tone_cuts_above_its_note_and_is_off_at_0() {
+    let driven = [("distort", Value::Number(0.5))];
+    let toned = [
+        ("distort", Value::Number(0.5)),
+        ("tone", Value::Number(84.0)),
+    ];
+    let open = partial_db(&distorted("saw", 220.0, &driven), 3960.0, 0.5);
+    let cut = partial_db(&distorted("saw", 220.0, &toned), 3960.0, 0.5);
+    assert!(cut <= open - 12.0, "{open} {cut}");
+    let low = (
+        partial_db(&distorted("saw", 220.0, &driven), 220.0, 0.5),
+        partial_db(&distorted("saw", 220.0, &toned), 220.0, 0.5),
+    );
+    assert!((low.0 - low.1).abs() < 1.0, "{low:?}");
+}
+
+#[test]
+fn the_hard_distortion_cuts_a_sine_off_flat_and_an_unknown_curve_is_refused() {
+    let given = [
+        ("distort", Value::Number(1.0)),
+        ("curve", Value::from("hard")),
+    ];
+    let wet = distorted("tone", 440.0, &given);
+    let mut levels: Vec<f32> = wet[frame(0.5)..frame(1.5)]
+        .iter()
+        .map(|x| x.abs())
+        .collect();
+    levels.sort_by(f32::total_cmp);
+    let top = levels[levels.len() / 2];
+    let flat = levels
+        .iter()
+        .filter(|x| (*x - top).abs() < 0.03 * top)
+        .count();
+    assert!(flat as f64 > 0.5 * levels.len() as f64, "{flat}");
+    let soft = distorted("tone", 440.0, &[("distort", Value::Number(1.0))]);
+    assert!(loudest(&soft[frame(0.5)..frame(1.5)]) <= 1.01);
+
+    let mut engine = engine();
+    let warm = vec![("curve".to_string(), Value::from("warm"))];
+    assert!(
+        engine
+            .start_effects(&[("distortion".to_string(), warm)])
+            .is_err()
+    );
+}
+
+#[test]
+fn the_distortion_mixed_half_with_the_dry_sound_cancels_none_of_it() {
+    for hz in [1000.0, 6000.0, 12000.0, 18000.0] {
+        let level = |mix: f64| {
+            let given = [("distort", Value::Number(0.0)), ("mix", Value::Number(mix))];
+            f64::from(rms(&distorted("tone", hz, &given)[frame(0.5)..frame(1.5)]))
+        };
+        let (dry, half, wet) = (level(0.0), level(0.5), level(1.0));
+        let together = 20.0 * (half / ((dry + wet) / 2.0)).log10();
+        assert!(together > -0.5, "{hz} {together}");
     }
 }
