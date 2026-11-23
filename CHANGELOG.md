@@ -1,5 +1,11 @@
 # Changelog for mxs v0.6
 
+## Unreleased
+
+### 1. Enhancements
+
+  * [synths] `ganza`'s up stroke is 10 dB quieter between 4 and 6.3 kHz, as the small shaker of the recordings is; its down stroke and `shaker` have the samples they had
+
 ## v0.6.4 (2026-11-23)
 
 ### 1. Bug fixes

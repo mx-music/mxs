@@ -207,6 +207,8 @@ struct Shake {
     upward: [f64; 11],
     stages: usize,
     dip: f64,
+    /// A notch on the up stroke alone: its frequency over the note's, one over its Q and its depth in dB.
+    up_notch: [f64; 3],
     darken: f64,
     length: f64,
 }
@@ -217,9 +219,10 @@ const GANZA: Shake = Shake {
     down: [
         0.045, 0.72, 2.6, 1.45, -8.0, 0.21, 0.72, 1.0, 1.0, -4.0, 5.0,
     ],
-    upward: [0.025, 0.2, 2.4, 1.4, -12.0, 0.13, 0.2, 1.0, 1.0, -6.0, 5.0],
+    upward: [0.025, 0.2, 2.4, 1.4, -9.0, 0.13, 0.2, 1.0, 1.0, -6.0, 5.0],
     stages: 1,
     dip: 0.75,
+    up_notch: [1.05, 0.4, -18.0],
     darken: 1.0,
     length: 0.26,
 };
@@ -231,6 +234,7 @@ const SHAKER: Shake = Shake {
     upward: [0.15, 0.85, 1.6, 0.6, -11.0, 1.1, 0.85, 1.0, 0.9, -6.0, 5.0],
     stages: 3,
     dip: 0.6,
+    up_notch: [1.0, 1.0, 0.0],
     darken: 0.45,
     length: 1.2,
 };
@@ -256,7 +260,7 @@ fn shake(name: &'static str, s: &'static Shake) -> Synth {
                 * exp_segments(&[1.0, 1.0, 0.001], &[shape[0], shape[1]]);
             let ending = segments(&[1.0, 1.0, 0.0], &[shape[5], 0.04], &[0.0, 0.0]);
             let keep = shape[7] as f32;
-            let mixed = (coloured(&shape, s, freq, vel, ctx) | burst | tail)
+            let mixed = (coloured(&shape, s, freq, vel, up, ctx) | burst | tail)
                 >> net(map(move |x: &Frame<f32, U4>| {
                     x[0] * x[2] * (1.0 - keep) + x[1] * x[3] * keep
                 }));
@@ -268,7 +272,7 @@ fn shake(name: &'static str, s: &'static Shake) -> Synth {
 }
 
 /// The shaker's beads coloured as its design gives: high-passed at a bottom that sinks, dipped, low-passed at a top that falls, brightened by vel, and the same darkened, as two outputs.
-fn coloured(shape: &[f64], s: &Shake, freq: f64, vel: f64, ctx: &mut Context) -> Net {
+fn coloured(shape: &[f64], s: &Shake, freq: f64, vel: f64, up: f64, ctx: &mut Context) -> Net {
     let beads = ((net(dc(4000.0)) >> dust(ctx.seed())) >> decay2(0.0001, 0.001)) * noise(ctx)
         + noise(ctx) * 0.1;
     let lowest = freq * shape[3];
@@ -279,6 +283,12 @@ fn coloured(shape: &[f64], s: &Shake, freq: f64, vel: f64, ctx: &mut Context) ->
         colour = (colour | bottom.clone() | net(dc(1.0))) >> net(highpass::<f32>());
     }
     let dipped = colour >> peak((freq * s.dip).clamp(20.0, 20000.0), 0.5, shape[4]);
+    let [at, q, depth] = s.up_notch;
+    let dipped = if up * depth == 0.0 {
+        dipped
+    } else {
+        dipped >> peak((freq * at).clamp(20.0, 20000.0), q, up * depth)
+    };
     let highest = freq * shape[2];
     let top = exp_segments(&[highest, highest * s.darken], &[shape[1]])
         >> net(map(|x: &Frame<f32, U1>| x[0].clamp(20.0, 20000.0)));
