@@ -17,5 +17,6 @@ hound = "3.5.1"
 
 [profile.release]
 panic = "abort"
+strip = true
 
 [workspace]
