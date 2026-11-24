@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "mxs-audio"
 version = "0.6.7"
 description = "A sound engine with synths fitted to recordings of real instruments"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 
