@@ -49,7 +49,7 @@ class TestEngine(unittest.TestCase):
             self.assertEqual(engine.load_synth(path), "marimba")
         engine.note(0, "marimba", note=60, vel=0.6)
         # tests/files.rs in mxs pins the same hash.
-        self.assertEqual(fnv(*engine.render(1.0)), "8f7f932fe355e35d")
+        self.assertEqual(fnv(*engine.render(1.0)), "aa2f2eeca3b73ad9")
 
     def test_a_note_of_a_synth_that_does_not_exist_raises_naming_it(self):
         engine = mxs.Engine.offline()

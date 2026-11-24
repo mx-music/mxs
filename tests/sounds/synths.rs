@@ -641,3 +641,31 @@ fn the_reed_and_brass_winds_take_their_bores_least_corner_by_name_and_refuse_cut
         assert_eq!(refused.to_string(), format!("{synth} has no option cutoff"));
     }
 }
+
+#[test]
+fn no_marimba_note_peaks_far_from_the_note_a_semitone_below() {
+    let peak = |note: f64, vel: f64| {
+        let mut engine = Engine::offline(RATE);
+        synths::all().into_iter().for_each(|s| engine.register(s));
+        let options = [("note", note), ("vel", vel)];
+        engine
+            .play(&[(0.0, Event::note(None, "marimba", &options))])
+            .unwrap();
+        let (left, right) = engine.render(0.5).unwrap();
+        let top = left
+            .iter()
+            .chain(&right)
+            .fold(0f32, |top, x| top.max(x.abs()));
+        20.0 * (top as f64).log10()
+    };
+    for vel in [0.2, 0.5, 0.8, 1.0] {
+        let peaks: Vec<f64> = (29..=96).map(|note| peak(note as f64, vel)).collect();
+        for (note, pair) in (30..).zip(peaks.windows(2)) {
+            let step = pair[1] - pair[0];
+            assert!(
+                step.abs() <= 3.0,
+                "note {note} at vel {vel} peaks {step:+.1} dB from the note below"
+            );
+        }
+    }
+}
