@@ -3,7 +3,7 @@
 mxs is a sound engine whose synths are fitted to recordings of real instruments.
 This package plays it from Python: an engine live on a sound card or offline, mxs's synths and effects, and synths and effects read from files.
 
-Until the package is on PyPI, install it from this folder with `pip install .`, which needs a Rust toolchain.
+Install it with `pip install mxs-audio` and import it as `mxs`, or build it from mxs's `python` folder with `pip install .`, which needs a Rust toolchain.
 
 ```python
 import mxs

@@ -10,6 +10,9 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 
+[project.urls]
+Repository = "https://github.com/mx-music/mxs"
+
 [tool.maturin]
 module-name = "mxs._mxs"
 python-source = "."
