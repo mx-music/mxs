@@ -28,7 +28,7 @@ mod spec;
 mod synth;
 pub mod synths;
 
-pub use engine::device::{Device, Settings, devices};
+pub use engine::live::{Device, Settings, devices};
 pub use engine::load::Load;
 pub use engine::report::{BANDS, FLOOR, Levels, PartLevels, Report, Reports, Topic, WAVE};
 pub use engine::sample::check as check_sample;
