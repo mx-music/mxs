@@ -2,7 +2,7 @@
 
 use super::figures::{Figures, fitted};
 use crate::DEFAULT_VEL;
-use crate::{Spec, Synth};
+use crate::{Spec, Synth, SynthDecl};
 
 /// Every synth of this family mx ships.
 pub fn all() -> Vec<Synth> {
@@ -10,7 +10,7 @@ pub fn all() -> Vec<Synth> {
 }
 
 fn electric_piano() -> Synth {
-    Synth::new("electric_piano")
+    SynthDecl::new("electric_piano")
         .option(Spec::note("note").default(60.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -32,7 +32,7 @@ fn epiano() -> &'static Figures {
 const EPIANO_LEVEL: f64 = 0.168;
 
 fn electric_guitar() -> Synth {
-    Synth::new("electric_guitar")
+    SynthDecl::new("electric_guitar")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")

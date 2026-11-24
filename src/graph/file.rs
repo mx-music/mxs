@@ -8,41 +8,37 @@ use std::path::Path;
 /// The newest version of the format this mxs reads.
 const VERSION: u64 = 1;
 
-impl Synth {
-    /// A synth read from the text of an `mxs-synth` file, or why it cannot be read, naming the path in the file to what is wrong.
-    pub fn from_json(text: &str) -> Result<Synth, String> {
-        let file = File::parse(text, "mxs-synth")?;
-        let clauses = file
-            .list("clauses")?
-            .iter()
-            .enumerate()
-            .map(|(i, clause)| file.clause(clause, &format!("clauses[{i}]")))
-            .collect::<Result<_, _>>()?;
-        Synth::graph(&file.name, file.specs()?, clauses)
-    }
-
-    /// A synth read from the `mxs-synth` file at `path`.
-    pub fn from_json_file(path: impl AsRef<Path>) -> Result<Synth, String> {
-        read(path.as_ref(), Synth::from_json)
-    }
+/// A synth read from the text of an `mxs-synth` file, or why it cannot be read, naming the path in the file to what is wrong.
+pub fn synth_from_json(text: &str) -> Result<Synth, String> {
+    let file = File::parse(text, "mxs-synth")?;
+    let clauses = file
+        .list("clauses")?
+        .iter()
+        .enumerate()
+        .map(|(i, clause)| file.clause(clause, &format!("clauses[{i}]")))
+        .collect::<Result<_, _>>()?;
+    crate::graph::synth(&file.name, file.specs()?, clauses)
 }
 
-impl Effect {
-    /// An effect read from the text of an `mxs-effect` file, or why it cannot be read, naming the path in the file to what is wrong.
-    pub fn from_json(text: &str) -> Result<Effect, String> {
-        let file = File::parse(text, "mxs-effect")?;
-        let graph = file
-            .top
-            .get("graph")
-            .ok_or("an mxs-effect file needs graph")?;
-        let graph = file.value(graph, "graph", &mut Vec::new())?;
-        Effect::graph(&file.name, file.specs()?, graph)
-    }
+/// A synth read from the `mxs-synth` file at `path`.
+pub fn synth_from_json_file(path: impl AsRef<Path>) -> Result<Synth, String> {
+    read(path.as_ref(), synth_from_json)
+}
 
-    /// An effect read from the `mxs-effect` file at `path`.
-    pub fn from_json_file(path: impl AsRef<Path>) -> Result<Effect, String> {
-        read(path.as_ref(), Effect::from_json)
-    }
+/// An effect read from the text of an `mxs-effect` file, or why it cannot be read, naming the path in the file to what is wrong.
+pub fn effect_from_json(text: &str) -> Result<Effect, String> {
+    let file = File::parse(text, "mxs-effect")?;
+    let graph = file
+        .top
+        .get("graph")
+        .ok_or("an mxs-effect file needs graph")?;
+    let graph = file.value(graph, "graph", &mut Vec::new())?;
+    crate::graph::effect(&file.name, file.specs()?, graph)
+}
+
+/// An effect read from the `mxs-effect` file at `path`.
+pub fn effect_from_json_file(path: impl AsRef<Path>) -> Result<Effect, String> {
+    read(path.as_ref(), effect_from_json)
 }
 
 fn read<T>(path: &Path, from: fn(&str) -> Result<T, String>) -> Result<T, String> {

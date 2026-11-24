@@ -419,7 +419,7 @@ struct Bowed {
 
 /// A bowed string, which pizz: 1 plucks instead.
 fn bowed(name: &'static str, s: Bowed, fit: Fit) -> Synth {
-    let synth = Synth::new(name)
+    let synth = SynthDecl::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -487,7 +487,7 @@ fn plucked(s: &Bowed, freq: f64, vel: f64, soft: f64, pizz: f64) -> (Net, f64) {
 /// A bowed string played from figures fitted to its recordings partial by partial, which pizz: 1 plucks instead.
 /// Its loudness follows the recordings from one velocity to the next, `level` at vel 1, and a note softer than the softest recorded is quieter in proportion.
 fn figured(name: &'static str, s: Bowed, figures: fn() -> &'static Figures, level: f64) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch; a change while the note holds slides to the new one."))
         .option(
             Spec::float("vel")

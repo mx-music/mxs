@@ -90,7 +90,7 @@ pub(crate) fn following_from(
     let voice = figures.voice(note, vel);
     let gain = figures::kept_gain(figures, level, note, vel);
     let end = voice.silent_after();
-    crate::Note::envelope(voice.following(o) * times * gain as f32, o).within(end)
+    crate::Note::envelope(figures::following(voice, o) * times * gain as f32, o).within(end)
 }
 
 /// How a wind player plays a held note from a table: the figures of mxs's flute_figured's breath, its seed drawn last.

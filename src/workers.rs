@@ -1,9 +1,9 @@
 //! Worker threads that fill voices beside the audio thread, each voice into a buffer of its own, so the mixer adds them in the order of the voices whichever thread filled them.
 //! The audio thread hands out a block's voices by a counter it shares with the workers, takes voices itself, and waits only for those a worker has started, so a worker the system runs late slows nothing.
 
-use crate::mixer::Voice;
 use fundsp::prelude::*;
 use std::cell::UnsafeCell;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread::{JoinHandle, Thread};
@@ -16,10 +16,10 @@ pub(crate) const FEWEST: usize = 8;
 /// How long a worker keeps looking for work after a block before it sleeps until woken.
 const SPIN: Duration = Duration::from_micros(200);
 
-/// A voice to fill: where it is, how many frames, and the buffer it fills.
+/// A unit to fill: where it is and how many frames.
 #[derive(Clone, Copy)]
 struct Task {
-    voice: *mut Voice,
+    unit: Option<NonNull<dyn AudioUnit>>,
     frames: usize,
 }
 
@@ -70,11 +70,9 @@ impl Shared {
             unsafe {
                 let task = *self.tasks[next].get();
                 let output = &mut *self.outputs[next].get();
-                (*task.voice).unit.process(
-                    task.frames,
-                    &BufferRef::empty(),
-                    &mut output.buffer_mut(),
-                );
+                let mut unit = task.unit.expect("a task handed out has a unit");
+                unit.as_mut()
+                    .process(task.frames, &BufferRef::empty(), &mut output.buffer_mut());
             }
             self.done.fetch_add(1, Ordering::Release);
         }
@@ -99,7 +97,7 @@ impl Pool {
             tasks: (0..SLOTS)
                 .map(|_| {
                     UnsafeCell::new(Task {
-                        voice: std::ptr::null_mut(),
+                        unit: None,
                         frames: 0,
                     })
                 })
@@ -136,8 +134,8 @@ impl Pool {
         self.count = 0;
     }
 
-    /// Adds a voice to fill for `frames`, and gives the slot its sound will be in, or none when every slot is taken.
-    pub fn add(&mut self, voice: &mut Voice, frames: usize) -> Option<usize> {
+    /// Adds a unit to fill for `frames`, and gives the slot its sound will be in, or none when every slot is taken.
+    pub fn add(&mut self, unit: &mut (dyn AudioUnit + 'static), frames: usize) -> Option<usize> {
         if self.count == SLOTS {
             return None;
         }
@@ -145,7 +143,7 @@ impl Pool {
         // Safety: no generation is handing out tasks between blocks, so no worker reads this one.
         unsafe {
             *self.shared.tasks[slot].get() = Task {
-                voice: voice as *mut Voice,
+                unit: Some(NonNull::from(unit)),
                 frames,
             };
         }

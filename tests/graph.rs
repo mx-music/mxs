@@ -3,7 +3,7 @@ use mxs::graph::{Clause, Graph};
 use mxs::nodes::{
     Draws, decay2, dust, hz, modes, pulses, shape, struck, struck_gliding, white_noise,
 };
-use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, Value};
+use mxs::{Effect, Engine, Event, Note, RATE, Spec, Synth, SynthDecl, Value};
 
 fn n(x: f64) -> Graph {
     Graph::Number(x)
@@ -64,7 +64,7 @@ fn rings(sound: Graph, seconds: f64) -> Graph {
 #[test]
 fn a_traced_mode_sounds_as_the_same_mode_written_in_rust() {
     let level = call("mul", vec![opt("vel"), n(0.5)]);
-    let traced = Synth::graph(
+    let traced = mxs::graph::synth(
         "traced",
         note_specs(),
         vec![Clause {
@@ -73,13 +73,15 @@ fn a_traced_mode_sounds_as_the_same_mode_written_in_rust() {
         }],
     )
     .unwrap();
-    let written = Synth::new("written").options(note_specs()).build(|o, _| {
-        let impulse = Net::wrap(Box::new(impulse::<U1>()));
-        Note::rings(
-            impulse >> struck(hz(o.number("note")), o.number("vel") * 0.5, 0.5),
-            0.8,
-        )
-    });
+    let written = SynthDecl::new("written")
+        .options(note_specs())
+        .build(|o, _| {
+            let impulse = Net::wrap(Box::new(impulse::<U1>()));
+            Note::rings(
+                impulse >> struck(hz(o.number("note")), o.number("vel") * 0.5, 0.5),
+                0.8,
+            )
+        });
     let options = [("note", Value::Number(64.0)), ("vel", Value::Number(0.8))];
     let (a, b) = (render(traced, &options), render(written, &options));
     assert!(a.iter().any(|x| x.abs() > 0.01));
@@ -103,7 +105,7 @@ fn a_mode_whose_level_selects_0_is_left_out() {
             "mix",
             vec![Graph::List(vec![struck_mode(1.0, n(0.5)), above(40.0)])],
         );
-        let with_select = Synth::graph(
+        let with_select = mxs::graph::synth(
             "both",
             note_specs(),
             vec![Clause {
@@ -112,7 +114,7 @@ fn a_mode_whose_level_selects_0_is_left_out() {
             }],
         )
         .unwrap();
-        let alone = Synth::graph(
+        let alone = mxs::graph::synth(
             "alone",
             note_specs(),
             vec![Clause {
@@ -142,7 +144,7 @@ fn a_note_plays_the_clause_its_options_match() {
         graph: rings(struck_mode(ratio, n(0.5)), 0.8),
     };
     let tabla = || {
-        Synth::graph(
+        mxs::graph::synth(
             "tabla",
             specs.clone(),
             vec![clause("na", 1.0), clause("tun", 2.0)],
@@ -165,7 +167,7 @@ fn a_note_envelope_shapes_a_traced_sound_as_it_shapes_one_written_in_rust() {
     };
     let sine = Graph::call("sine", vec![], vec![("hz", call("hz", vec![opt("note")]))]);
     let graph = call("note_envelope", vec![call("gain", vec![sine, opt("vel")])]);
-    let traced = Synth::graph(
+    let traced = mxs::graph::synth(
         "traced",
         specs(),
         vec![Clause {
@@ -174,7 +176,7 @@ fn a_note_envelope_shapes_a_traced_sound_as_it_shapes_one_written_in_rust() {
         }],
     )
     .unwrap();
-    let written = Synth::new("written").options(specs()).build(|o, _| {
+    let written = SynthDecl::new("written").options(specs()).build(|o, _| {
         let freq = Net::wrap(Box::new(dc(hz(o.number("note")) as f32)));
         let mut sine = Net::wrap(Box::new(An(Sine::<f32>::with_phase(0.0))));
         sine.reset();
@@ -195,7 +197,7 @@ fn a_note_envelope_shapes_a_traced_sound_as_it_shapes_one_written_in_rust() {
 #[test]
 fn a_call_outside_the_vocabulary_is_refused_when_the_synth_is_registered() {
     let graph = rings(call("wobble", vec![n(1.0)]), 1.0);
-    let refused = Synth::graph(
+    let refused = mxs::graph::synth(
         "odd",
         note_specs(),
         vec![Clause {
@@ -214,7 +216,7 @@ fn an_option_the_note_leaves_out_takes_its_fallback() {
     let specs = vec![Spec::note("note")];
     let level = call("or_else", vec![opt("note"), n(63.0)]);
     let synth = || {
-        Synth::graph(
+        mxs::graph::synth(
             "drum",
             specs.clone(),
             vec![Clause {
@@ -241,7 +243,7 @@ fn through(effect: Option<Effect>) -> Vec<f32> {
     let mut engine = Engine::offline(RATE);
     let level = call("mul", vec![opt("vel"), n(0.5)]);
     engine.register(
-        Synth::graph(
+        mxs::graph::synth(
             "traced",
             note_specs(),
             vec![Clause {
@@ -275,7 +277,7 @@ fn through(effect: Option<Effect>) -> Vec<f32> {
 fn an_effect_traced_as_a_graph_shapes_each_channel_coming_in() {
     let dry = through(None);
     let halved = through(Some(
-        Effect::graph(
+        mxs::graph::effect(
             "halve",
             vec![],
             call("mul", vec![call("input", vec![]), n(0.5)]),
@@ -283,7 +285,7 @@ fn an_effect_traced_as_a_graph_shapes_each_channel_coming_in() {
         .unwrap(),
     ));
     let doubled = through(Some(
-        Effect::graph(
+        mxs::graph::effect(
             "double",
             vec![],
             call("add", vec![call("input", vec![]), call("input", vec![])]),
@@ -299,7 +301,7 @@ fn an_effect_traced_as_a_graph_shapes_each_channel_coming_in() {
 #[test]
 fn a_synth_that_takes_an_input_is_refused_when_registered() {
     let graph = rings(call("input", vec![]), 0.5);
-    let refused = Synth::graph(
+    let refused = mxs::graph::synth(
         "listens",
         note_specs(),
         vec![Clause {
@@ -321,7 +323,10 @@ fn a_deeply_nested_graph_plays_on_a_thread_with_a_small_stack() {
                 matches: vec![],
                 graph,
             }];
-            render(Synth::graph("deep", note_specs(), clauses).unwrap(), &[])
+            render(
+                mxs::graph::synth("deep", note_specs(), clauses).unwrap(),
+                &[],
+            )
         })
         .unwrap()
         .join()
@@ -358,7 +363,7 @@ fn name(n: &str) -> Graph {
 #[test]
 fn eq_and_ne_compare_an_option_that_takes_names_with_a_name() {
     let picked = |by: fn() -> Graph, shape: &str| {
-        let synth = Synth::graph("picky", shape_specs(), picking(by())).unwrap();
+        let synth = mxs::graph::synth("picky", shape_specs(), picking(by())).unwrap();
         let samples = render(synth, &[("shape", Value::Name(shape.to_string()))]);
         samples.iter().fold(0.0f32, |m, x| m.max(x.abs()))
     };
@@ -372,7 +377,7 @@ fn eq_and_ne_compare_an_option_that_takes_names_with_a_name() {
 
 #[test]
 fn a_name_an_option_does_not_take_is_refused_when_the_synth_is_registered() {
-    let refused = Synth::graph(
+    let refused = mxs::graph::synth(
         "picky",
         shape_specs(),
         picking(call("eq", vec![opt("shape"), name("square")])),
@@ -385,7 +390,7 @@ fn a_name_an_option_does_not_take_is_refused_when_the_synth_is_registered() {
 
 #[test]
 fn other_arithmetic_on_an_option_that_takes_names_is_refused_when_the_synth_is_registered() {
-    let refused = Synth::graph(
+    let refused = mxs::graph::synth(
         "picky",
         shape_specs(),
         picking(call("add", vec![opt("shape"), n(1.0)])),
@@ -401,7 +406,7 @@ fn a_traced_saw_square_triangle_and_pulse_start_at_phase_0() {
     let wave = |name: &str| {
         let freq = call("hz", vec![opt("note")]);
         let sound = Graph::call(name, vec![], vec![("hz", freq)]);
-        let traced = Synth::graph(
+        let traced = mxs::graph::synth(
             name,
             note_specs(),
             vec![Clause {
@@ -415,7 +420,7 @@ fn a_traced_saw_square_triangle_and_pulse_start_at_phase_0() {
     let written = |mut unit: Box<dyn AudioUnit>| {
         unit.set(Setting::phase(0.0));
         unit.reset();
-        let synth = Synth::new("written")
+        let synth = SynthDecl::new("written")
             .options(note_specs())
             .build(move |o, _| {
                 let mut unit = unit.clone();
@@ -431,13 +436,15 @@ fn a_traced_saw_square_triangle_and_pulse_start_at_phase_0() {
     ] {
         assert_eq!(wave(name), written(unit), "{name}");
     }
-    let pulse = Synth::new("written").options(note_specs()).build(|o, _| {
-        let mut wave = pulse();
-        wave.set(Setting::phase(0.0));
-        wave.reset();
-        let freq = dc(hz(o.number("note")) as f32);
-        Note::rings((freq | dc(0.5)) >> Net::wrap(Box::new(wave)), 0.8)
-    });
+    let pulse = SynthDecl::new("written")
+        .options(note_specs())
+        .build(|o, _| {
+            let mut wave = pulse();
+            wave.set(Setting::phase(0.0));
+            wave.reset();
+            let freq = dc(hz(o.number("note")) as f32);
+            Note::rings((freq | dc(0.5)) >> Net::wrap(Box::new(wave)), 0.8)
+        });
     let pulse = render(pulse, &[("note", Value::Number(45.0))]);
     assert_eq!(wave("pulse"), pulse, "pulse");
 }
@@ -446,7 +453,7 @@ fn a_traced_saw_square_triangle_and_pulse_start_at_phase_0() {
 fn through_chain(effects: Vec<Effect>, chain: &[(&str, Vec<(&str, f64)>)]) -> (Vec<f32>, Vec<f32>) {
     let mut engine = Engine::offline(RATE);
     engine.register(
-        Synth::graph(
+        mxs::graph::synth(
             "traced",
             note_specs(),
             vec![Clause {
@@ -495,7 +502,7 @@ fn named(name: &str, args: Vec<Graph>, named: Vec<(&str, Graph)>) -> Graph {
 
 /// An effect that keeps the left side and silences the right.
 fn lefty() -> Effect {
-    Effect::graph(
+    mxs::graph::effect(
         "lefty",
         vec![],
         call("sides", vec![call("left", vec![]), n(0.0)]),
@@ -505,7 +512,7 @@ fn lefty() -> Effect {
 
 #[test]
 fn an_effect_over_both_sides_reaches_one_side_from_the_other() {
-    let swap = Effect::graph(
+    let swap = mxs::graph::effect(
         "swap",
         vec![],
         call("sides", vec![call("right", vec![]), call("left", vec![])]),
@@ -519,7 +526,7 @@ fn an_effect_over_both_sides_reaches_one_side_from_the_other() {
 
 #[test]
 fn an_effect_over_both_sides_adds_them_in_the_order_written() {
-    let side = Effect::graph(
+    let side = mxs::graph::effect(
         "side",
         vec![],
         call(
@@ -540,7 +547,7 @@ fn an_effect_over_both_sides_adds_them_in_the_order_written() {
 
 #[test]
 fn sides_and_inputs_in_the_wrong_place_are_refused_when_the_effect_is_registered() {
-    let refused = |graph: Graph| Effect::graph("wrong", vec![], graph).err().unwrap();
+    let refused = |graph: Graph| mxs::graph::effect("wrong", vec![], graph).err().unwrap();
     assert!(
         refused(call(
             "sides",
@@ -550,7 +557,7 @@ fn sides_and_inputs_in_the_wrong_place_are_refused_when_the_effect_is_registered
     );
     assert!(refused(call("left", vec![])).contains("inside sides"));
     assert!(refused(call("sides", vec![call("left", vec![])])).contains("sides takes the left"));
-    let synth = Synth::graph(
+    let synth = mxs::graph::synth(
         "wrong",
         note_specs(),
         vec![Clause {
@@ -566,14 +573,14 @@ fn an_effect_says_how_long_it_sounds_on_with_tail() {
     let pass = || call("input", vec![]);
     let decay = Spec::beats("decay").default(4.0);
     let effects = vec![
-        Effect::graph("plain", vec![], pass()).unwrap(),
-        Effect::graph(
+        mxs::graph::effect("plain", vec![], pass()).unwrap(),
+        mxs::graph::effect(
             "long",
             vec![],
             named("tail", vec![pass()], vec![("seconds", n(3.0))]),
         )
         .unwrap(),
-        Effect::graph(
+        mxs::graph::effect(
             "ringing",
             vec![decay],
             named("tail", vec![pass()], vec![("option", name("decay"))]),
@@ -594,7 +601,7 @@ fn an_effect_says_how_long_it_sounds_on_with_tail() {
     );
 
     let refused = |tail: Vec<(&str, Graph)>| {
-        Effect::graph("wrong", vec![], named("tail", vec![pass()], tail))
+        mxs::graph::effect("wrong", vec![], named("tail", vec![pass()], tail))
             .err()
             .unwrap()
     };
@@ -613,12 +620,12 @@ fn a_node_given_an_argument_it_does_not_take_is_refused_when_registered() {
         vec![("seconds", n(1.0))],
     );
     assert_eq!(
-        Effect::graph("wrong", vec![], allpass).err().unwrap(),
+        mxs::graph::effect("wrong", vec![], allpass).err().unwrap(),
         "wrong: allpass does not take seconds:"
     );
     let sweep = named("sweep", vec![], vec![("wave", n(1.0))]);
     assert_eq!(
-        Effect::graph("wrong", vec![], sweep).err().unwrap(),
+        mxs::graph::effect("wrong", vec![], sweep).err().unwrap(),
         "wrong: sweep needs length:"
     );
 }
@@ -632,7 +639,7 @@ fn a_sweep_starts_where_its_offset_says_on_each_side() {
             vec![("length", n(0.5)), ("wave", n(3.0)), ("offset", n(offset))],
         )
     };
-    let effect = Effect::graph(
+    let effect = mxs::graph::effect(
         "sweeps",
         vec![],
         call("sides", vec![sweep(0.0), sweep(0.5)]),
@@ -661,7 +668,7 @@ fn a_follower_rises_and_falls_within_its_times() {
         vec![tone],
         vec![("rise", n(0.02)), ("fall", n(0.1))],
     );
-    let effect = Effect::graph("level", vec![], level).unwrap();
+    let effect = mxs::graph::effect("level", vec![], level).unwrap();
     let (left, _) = through_chain(vec![effect], &[("level", vec![])]);
     let at = |seconds: f64| left[(seconds * RATE) as usize];
     assert!(at(0.02) >= 0.9, "{}", at(0.02));
@@ -693,7 +700,7 @@ fn bank(fades: &[f64]) -> Graph {
 }
 
 fn traced(name: &str, graph: Graph) -> Result<Synth, String> {
-    Synth::graph(
+    mxs::graph::synth(
         name,
         note_specs(),
         vec![Clause {
@@ -706,16 +713,18 @@ fn traced(name: &str, graph: Graph) -> Result<Synth, String> {
 #[test]
 fn a_traced_mode_given_lists_strikes_every_mode_with_one_noise_as_modes_in_rust_does() {
     let traced = traced("bank", bank(&[0.4, 0.3, 0.2])).unwrap();
-    let written = Synth::new("bank").options(note_specs()).build(|_, ctx| {
-        let noise = white_noise(ctx.seed());
-        let bank = modes(
-            noise,
-            &[440.0, 1210.0, 2630.0],
-            &[0.3, 0.2, 0.1],
-            &[0.4, 0.3, 0.2],
-        );
-        Note::rings(bank, 0.8)
-    });
+    let written = SynthDecl::new("bank")
+        .options(note_specs())
+        .build(|_, ctx| {
+            let noise = white_noise(ctx.seed());
+            let bank = modes(
+                noise,
+                &[440.0, 1210.0, 2630.0],
+                &[0.3, 0.2, 0.1],
+                &[0.4, 0.3, 0.2],
+            );
+            Note::rings(bank, 0.8)
+        });
     let (a, b) = (render(traced, &[]), render(written, &[]));
     assert!(a.iter().any(|x| x.abs() > 0.01));
     assert_eq!(a, b);
@@ -733,7 +742,7 @@ fn a_mode_given_lists_of_different_lengths_is_refused_when_the_synth_is_register
 fn a_noise_given_a_seed_plays_that_seed_and_leaves_the_note_s_seeds_to_the_rest() {
     let both = Graph::call("add", vec![noise(Some(7.0)), noise(None)], vec![]);
     let traced = traced("seeded", both).unwrap();
-    let written = Synth::new("seeded")
+    let written = SynthDecl::new("seeded")
         .options(note_specs())
         .build(|_, ctx| Note::rings(white_noise(7) + white_noise(ctx.seed()), 0.8));
     let (a, b) = (render(traced, &[]), render(written, &[]));
@@ -743,7 +752,7 @@ fn a_noise_given_a_seed_plays_that_seed_and_leaves_the_note_s_seeds_to_the_rest(
 
 /// One side of the saw through an effect of `graph`, with its options given.
 fn through_graph(specs: Vec<Spec>, graph: Graph, given: Vec<(&str, f64)>) -> (Vec<f32>, Vec<f32>) {
-    let effect = Effect::graph("probe", specs, graph).unwrap();
+    let effect = mxs::graph::effect("probe", specs, graph).unwrap();
     through_chain(vec![effect], &[("probe", given)])
 }
 
@@ -801,8 +810,8 @@ fn an_effect_over_both_sides_whose_side_is_multiplied_by_0_plays_the_other() {
         ],
     );
     let swap = call("sides", vec![call("right", vec![]), call("left", vec![])]);
-    let swap = Effect::graph("swap", vec![], swap).unwrap();
-    let crossed = Effect::graph("crossed", vec![], crossed).unwrap();
+    let swap = mxs::graph::effect("swap", vec![], swap).unwrap();
+    let crossed = mxs::graph::effect("crossed", vec![], crossed).unwrap();
     let chain = [("lefty", vec![]), ("swap", vec![]), ("crossed", vec![])];
     let (left, right) = through_chain(vec![lefty(), swap, crossed], &chain);
     assert!(peak(&right) > 0.01);
@@ -826,7 +835,7 @@ fn an_effect_that_cannot_be_built_is_an_error_naming_it_when_its_chain_starts() 
         vec![call("input", vec![])],
         vec![("seconds", n(0.1)), ("max", call("input", vec![]))],
     );
-    let effect = Effect::graph("broken", vec![], broken).unwrap();
+    let effect = mxs::graph::effect("broken", vec![], broken).unwrap();
     let mut engine = Engine::offline(RATE);
     engine.register_effect(effect);
     let error = engine
@@ -866,16 +875,18 @@ fn a_shared_sound_is_built_once_and_plays_the_same_noise_at_each_use_as_a_clone_
     );
     let shared = Graph::call("share", vec![noise(None)], vec![("through", body)]);
     let traced = traced("shared", shared).unwrap();
-    let written = Synth::new("shared").options(note_specs()).build(|_, ctx| {
-        let noise = white_noise(ctx.seed());
-        let rung = modes(noise.clone(), &[440.0, 1210.0], &[0.3, 0.2], &[0.4, 0.3]);
-        let high = noise
-            >> Net::wrap(Box::new(highpass_hz(
-                3000.0f32,
-                std::f32::consts::FRAC_1_SQRT_2,
-            )));
-        Note::rings(rung + high, 0.8)
-    });
+    let written = SynthDecl::new("shared")
+        .options(note_specs())
+        .build(|_, ctx| {
+            let noise = white_noise(ctx.seed());
+            let rung = modes(noise.clone(), &[440.0, 1210.0], &[0.3, 0.2], &[0.4, 0.3]);
+            let high = noise
+                >> Net::wrap(Box::new(highpass_hz(
+                    3000.0f32,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                )));
+            Note::rings(rung + high, 0.8)
+        });
     let (a, b) = (render(traced, &[]), render(written, &[]));
     assert!(a.iter().any(|x| x.abs() > 0.01));
     for (k, (x, y)) in a.iter().zip(&b).enumerate() {
@@ -896,7 +907,7 @@ fn a_lowpass_and_a_highpass_of_one_pole_sound_as_fundsp_s_lowpole_and_highpole()
         ("highpass", Net::wrap(Box::new(highpole_hz(1000.0f32)))),
     ] {
         let traced = traced("pole", one_pole(name, vec![])).unwrap();
-        let written = Synth::new("pole")
+        let written = SynthDecl::new("pole")
             .options(note_specs())
             .build(move |_, ctx| Note::rings(white_noise(ctx.seed()) >> filter.clone(), 0.8));
         let (a, b) = (render(traced, &[]), render(written, &[]));
@@ -918,7 +929,7 @@ fn a_one_pole_filter_given_a_q_is_refused_when_the_synth_is_registered() {
 #[test]
 fn mod_wraps_a_number_and_a_sound_into_zero_up_to_its_divisor() {
     let synth = |name: &str, sound: Graph| {
-        Synth::graph(
+        mxs::graph::synth(
             name,
             note_specs(),
             vec![Clause {
@@ -950,7 +961,7 @@ fn mod_wraps_a_number_and_a_sound_into_zero_up_to_its_divisor() {
 #[test]
 fn time_given_every_starts_over_at_that_period_on_the_same_sample_as_a_voice_in_rust() {
     let graph = Graph::call("time", vec![], vec![("every", n(0.125))]);
-    let traced = Synth::graph(
+    let traced = mxs::graph::synth(
         "every",
         note_specs(),
         vec![Clause {
@@ -959,10 +970,10 @@ fn time_given_every_starts_over_at_that_period_on_the_same_sample_as_a_voice_in_
         }],
     )
     .unwrap();
-    let rust = Synth::new("every").build(|_, _| Note::rings(shape(|t| t % 0.125), 0.5));
+    let rust = SynthDecl::new("every").build(|_, _| Note::rings(shape(|t| t % 0.125), 0.5));
     assert_eq!(render(traced, &[]), render(rust, &[]));
 
-    let refused = Synth::graph(
+    let refused = mxs::graph::synth(
         "often",
         note_specs(),
         vec![Clause {
@@ -974,7 +985,7 @@ fn time_given_every_starts_over_at_that_period_on_the_same_sample_as_a_voice_in_
 }
 
 fn plain(name: &str, graph: Graph) -> Result<Synth, String> {
-    Synth::graph(
+    mxs::graph::synth(
         name,
         note_specs(),
         vec![Clause {
@@ -987,7 +998,7 @@ fn plain(name: &str, graph: Graph) -> Result<Synth, String> {
 #[test]
 fn clicks_and_struck_play_as_dust_and_decay2_do_in_rust() {
     let clicks = || Graph::call("clicks", vec![], vec![("rate", n(400.0)), ("seed", n(7.0))]);
-    let rust = Synth::new("clicks").build(|_, _| Note::rings(dc(400.0) >> dust(7), 0.5));
+    let rust = SynthDecl::new("clicks").build(|_, _| Note::rings(dc(400.0) >> dust(7), 0.5));
     let traced = render(plain("clicks", clicks()).unwrap(), &[]);
     assert!(traced.iter().filter(|x| **x != 0.0).count() > 100);
     assert_eq!(traced, render(rust, &[]));
@@ -997,7 +1008,7 @@ fn clicks_and_struck_play_as_dust_and_decay2_do_in_rust() {
         vec![clicks()],
         vec![("attack", n(0.0001)), ("fall", n(0.0008))],
     );
-    let rust = Synth::new("struck")
+    let rust = SynthDecl::new("struck")
         .build(|_, _| Note::rings((dc(400.0) >> dust(7)) >> decay2(0.0001, 0.0008), 0.5));
     assert_eq!(
         render(plain("struck", struck_clicks).unwrap(), &[]),
@@ -1036,7 +1047,7 @@ fn mode_given_a_sound_in_hz_glides_as_struck_gliding_does_in_rust() {
             ("fade", Graph::List(vec![n(0.4), n(0.3), n(0.2)])),
         ],
     );
-    let rust = Synth::new("gliding").build(|_, _| {
+    let rust = SynthDecl::new("gliding").build(|_, _| {
         let pitch = || shape(|t| t) * 100.0 + 220.0;
         let one =
             |k: f32, level: f64, fade: f64| (pass() | (pitch() * k)) >> struck_gliding(level, fade);
@@ -1054,7 +1065,7 @@ fn mode_given_a_sound_in_hz_glides_as_struck_gliding_does_in_rust() {
         vec![call("impulse", vec![])],
         vec![("hz", pitch()), ("level", n(1.0)), ("fade", n(0.4))],
     );
-    let rust = Synth::new("alone").build(|_, _| {
+    let rust = SynthDecl::new("alone").build(|_, _| {
         Note::rings(
             impulse::<U1>()
                 >> ((pass() | (shape(|t| t) * 100.0 + 220.0)) >> struck_gliding(1.0, 0.4)),
@@ -1078,7 +1089,7 @@ fn impulse_given_at_period_and_until_plucks_as_the_tanpuras_pulses_do() {
     let fired: Vec<usize> = (0..traced.len()).filter(|&k| traced[k] != 0.0).collect();
     assert_eq!(fired.len(), 3);
     assert_eq!(fired[0], (0.1 * RATE) as usize);
-    let rust = Synth::new("train").build(|_, _| Note::rings(pulses(0.1, 0.15, 0.45), 0.5));
+    let rust = SynthDecl::new("train").build(|_, _| Note::rings(pulses(0.1, 0.15, 0.45), 0.5));
     assert_eq!(traced, render(rust, &[]));
 }
 
@@ -1119,7 +1130,7 @@ fn draw_and_a_drawn_noise_take_the_notes_seed_mixed_with_how_many_notes_came_bef
         ],
         vec![],
     );
-    let traced = Synth::graph(
+    let traced = mxs::graph::synth(
         "drawn",
         note_specs(),
         vec![Clause {
@@ -1129,7 +1140,7 @@ fn draw_and_a_drawn_noise_take_the_notes_seed_mixed_with_how_many_notes_came_bef
     )
     .unwrap();
     let notes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let rust = Synth::new("drawn")
+    let rust = SynthDecl::new("drawn")
         .options(note_specs())
         .build(move |_, ctx| {
             let count = notes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1163,7 +1174,7 @@ fn draw_and_a_drawn_noise_take_the_notes_seed_mixed_with_how_many_notes_came_bef
 
 #[test]
 fn fed_back_sounds_its_input_after_seconds_and_again_feedback_times_each_period() {
-    let echoed = Synth::graph(
+    let echoed = mxs::graph::synth(
         "echoed",
         note_specs(),
         vec![Clause {
@@ -1259,7 +1270,7 @@ fn fed_back_at_a_period_of_the_note_with_its_burst_let_in_once_is_mxs_pluck() {
     ];
     specs.extend(Spec::envelope(0.0, 2.0));
     let graph = c("note_envelope", vec![sound], vec![]);
-    let traced = Synth::graph(
+    let traced = mxs::graph::synth(
         "pluck",
         specs,
         vec![Clause {
@@ -1286,7 +1297,7 @@ fn fed_back_at_a_period_of_the_note_with_its_burst_let_in_once_is_mxs_pluck() {
 #[test]
 fn sway_drifts_as_the_winds_drift_from_the_same_seed() {
     let traced = plain("swaying", Graph::call("sway", vec![], vec![])).unwrap();
-    let rust = Synth::new("swaying")
+    let rust = SynthDecl::new("swaying")
         .options(note_specs())
         .build(|_, ctx| Note::rings(mxs::synths::sway(ctx.seed()), 0.5));
     let traced = render(traced, &[]);
@@ -1296,7 +1307,7 @@ fn sway_drifts_as_the_winds_drift_from_the_same_seed() {
 
 #[test]
 fn figures_plays_a_table_as_the_voice_that_reads_it_does() {
-    let vibraphone = Synth::graph(
+    let vibraphone = mxs::graph::synth(
         "vibraphone",
         mxs::synths::all()
             .into_iter()
@@ -1344,7 +1355,7 @@ fn same_as_mxs(name: &str, graph: Graph, options: &[(&str, Value)]) {
         .into_iter()
         .find(|s| s.name() == name)
         .unwrap();
-    let traced = Synth::graph(
+    let traced = mxs::graph::synth(
         name,
         rust.specs().to_vec(),
         vec![Clause {
@@ -1445,7 +1456,7 @@ fn figures_plays_held_blown_following_and_piano_as_mxs_does() {
         .into_iter()
         .find(|s| s.name() == "vibraphone")
         .unwrap();
-    let traced = Synth::graph(
+    let traced = mxs::graph::synth(
         "vibraphone",
         rust.specs().to_vec(),
         vec![Clause {
@@ -1497,7 +1508,7 @@ fn figures_plays_a_table_loaded_from_outside_mxs_by_its_name() {
         .into_iter()
         .find(|s| s.name() == "harp")
         .unwrap();
-    let mine = Synth::graph(
+    let mine = mxs::graph::synth(
         "harp",
         rust.specs().to_vec(),
         vec![Clause {
@@ -1516,7 +1527,7 @@ fn figures_plays_a_table_loaded_from_outside_mxs_by_its_name() {
 #[test]
 fn a_sweep_is_on_its_beat_after_a_minute() {
     let pulse = named("sweep", vec![], vec![("length", n(0.6)), ("wave", n(1.0))]);
-    let effect = Effect::graph("pulses", vec![], pulse).unwrap();
+    let effect = mxs::graph::effect("pulses", vec![], pulse).unwrap();
     let mut engine = Engine::offline(RATE);
     engine.register_effect(effect);
     engine

@@ -3,7 +3,7 @@
 use super::common::{along, bpf, harmonics, moved_by, net, partials, spread_phases, swell, tilted};
 use crate::DEFAULT_VEL;
 use crate::nodes::{db, hz, pink_noise, segments, white_noise};
-use crate::{Note, Spec, Synth};
+use crate::{Note, Spec, Synth, SynthDecl};
 use fundsp::prelude::*;
 
 /// Every synth of this family mx ships.
@@ -12,7 +12,7 @@ pub fn all() -> Vec<Synth> {
 }
 
 fn organ() -> Synth {
-    Synth::new("organ")
+    SynthDecl::new("organ")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("loud").default(0.0).range(0.0, 1.0).doc(
@@ -82,7 +82,7 @@ fn organ() -> Synth {
 }
 
 fn harmonium() -> Synth {
-    Synth::new("harmonium")
+    SynthDecl::new("harmonium")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -135,7 +135,7 @@ fn harmonium() -> Synth {
 
 /// An accordion's right hand: two reeds a few Hz apart, beating, with the harmonium's bands of harmonics and noise refitted to hammondman's "Accordeon master".
 fn accordion() -> Synth {
-    Synth::new("accordion")
+    SynthDecl::new("accordion")
         .option(Spec::note("note").default(60.0).doc("The pitch."))
         .option(Spec::float("vel").default(DEFAULT_VEL).range(0.0, 1.0).doc("How hard the bellows are pressed."))
         .option(Spec::float("detune").default(ACCORDION_DETUNE).range(0.0, 20.0).doc("How many Hz the second reed sounds above the first, which beat that many times a second; 0 sounds one reed."))

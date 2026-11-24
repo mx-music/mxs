@@ -6,7 +6,7 @@ use super::{
 };
 use crate::DEFAULT_VEL;
 use crate::nodes::{between, db, exp_segments, hit, hz, modes, segments};
-use crate::{Context, Note, Spec, Synth};
+use crate::{Context, Note, Spec, Synth, SynthDecl};
 use fundsp::prelude::*;
 
 /// The synths of this file.
@@ -29,7 +29,7 @@ pub(super) fn all() -> Vec<Synth> {
 }
 
 fn kick() -> Synth {
-    Synth::new("kick")
+    SynthDecl::new("kick")
         .option(Spec::note("note").default(34.0).doc("The drum's pitch."))
         .option(
             Spec::float("vel")
@@ -61,7 +61,7 @@ fn kick() -> Synth {
 }
 
 fn snare() -> Synth {
-    Synth::new("snare")
+    SynthDecl::new("snare")
         .options(strike_options(55.0))
         .option(
             Spec::float("snares")
@@ -169,7 +169,7 @@ fn snare() -> Synth {
 }
 
 fn clap() -> Synth {
-    Synth::new("clap")
+    SynthDecl::new("clap")
         .option(Spec::note("note").default(60.0).doc("The clap's pitch."))
         .build(|o, ctx| {
             let freq = hz(o.number("note"));
@@ -183,7 +183,7 @@ fn clap() -> Synth {
 }
 
 fn crash() -> Synth {
-    Synth::new("crash")
+    SynthDecl::new("crash")
         .options(strike_options(60.0))
         .option(
             Spec::beats("sustain")
@@ -287,7 +287,7 @@ const RIDE_BELL_RINGS: [f64; 13] = [
 ];
 
 fn ride() -> Synth {
-    Synth::new("ride")
+    SynthDecl::new("ride")
         .options(strike_options(60.0))
         .option(
             Spec::beats("sustain")
@@ -393,7 +393,7 @@ fn hat(
     length: f64,
     pedal: bool,
 ) -> Synth {
-    let mut decl = Synth::new(name).options(strike_options(92.0)).option(
+    let mut decl = SynthDecl::new(name).options(strike_options(92.0)).option(
         Spec::beats("release")
             .default(0.05)
             .range(0.0, f64::INFINITY)
@@ -471,7 +471,7 @@ const LOW_TOM: Tom = Tom {
 };
 
 fn tom(name: &'static str, note: f64, t: &'static Tom) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .options(strike_options(note))
         .build(move |o, ctx| {
             let vel = vel(o, 0.0);
@@ -506,7 +506,7 @@ fn tom(name: &'static str, note: f64, t: &'static Tom) -> Synth {
 }
 
 fn rimshot() -> Synth {
-    Synth::new("rimshot")
+    SynthDecl::new("rimshot")
         .option(Spec::note("note").default(74.0).doc("The rim's pitch."))
         .build(|o, ctx| {
             let freq = hz(o.number("note"));
@@ -672,7 +672,7 @@ fn fitted_net(
 }
 
 fn fitted(name: &'static str, env: &'static str, d: &'static Fitted) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .options(strike_options(d.note))
         .build(move |o, ctx| {
             let vel = vel(o, 0.0);

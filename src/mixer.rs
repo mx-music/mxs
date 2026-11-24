@@ -666,7 +666,7 @@ impl Mixer {
                         let (from, to) = span(voice, now, end);
                         voice.slot = None;
                         if to > from && voice.input.is_none() {
-                            voice.slot = pool.add(voice, to - from);
+                            voice.slot = pool.add(voice.unit.as_mut(), to - from);
                         }
                     }
                     pool.fill();

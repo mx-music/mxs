@@ -14,10 +14,10 @@ A synth is a name, the options it declares, and a function that builds one note'
 ```rust
 use fundsp::prelude::*;
 use mxs::nodes::{db, hz, modes};
-use mxs::{Engine, Event, Note, RATE, Spec, Synth};
+use mxs::{Engine, Event, Note, RATE, Spec, SynthDecl};
 
 fn main() -> Result<(), mxs::Error> {
-    let plate = Synth::new("plate")
+    let plate = SynthDecl::new("plate")
         .doc("A metal plate struck with a hard mallet.")
         .option(Spec::note("note").default(60.0).doc("The pitch."))
         .option(Spec::float("vel").default(0.6).range(0.0, 1.0).doc("How hard the plate is struck."))
@@ -88,10 +88,10 @@ This synth follows its pitch and its filter:
 
 ```rust
 use fundsp::prelude::*;
-use mxs::{Engine, Event, Note, RATE, Spec, Synth, Target};
+use mxs::{Engine, Event, Note, RATE, Spec, SynthDecl, Target};
 
 fn main() -> Result<(), mxs::Error> {
-    let lead = Synth::new("lead")
+    let lead = SynthDecl::new("lead")
         .option(Spec::note("note").default(57.0).doc("The pitch."))
         .option(Spec::hz("cutoff").default(1200.0).range(20.0, 20_000.0).doc("Where the low-pass cuts."))
         .options(Spec::envelope(1.0, 0.2))
@@ -148,15 +148,15 @@ The [`nodes`] module adds the ones the crate's synths are made of.
 
 ## An effect in Rust
 
-An effect is declared the same way, with [`Effect::new`].
+An effect is declared the same way, with [`EffectDecl::new`](crate::EffectDecl::new).
 Its build function returns a unit with two inputs and two outputs, the left and the right channel.
 
 ```rust
 use fundsp::prelude::*;
-use mxs::{Effect, Engine, Event, RATE, Spec, Value, synths};
+use mxs::{EffectDecl, Engine, Event, RATE, Spec, Value, synths};
 
 fn main() -> Result<(), mxs::Error> {
-    let dull = Effect::new("dull")
+    let dull = EffectDecl::new("dull")
         .option(Spec::hz("cutoff").default(800.0).range(20.0, 20_000.0).doc("Where it cuts."))
         .tail(0.1)
         .build(|options, _ctx| {
@@ -196,7 +196,7 @@ This one is `rings(mode(impulse(), hz: hz(note), level: vel * 0.5, fade: 0.5), s
 
 ```rust
 use mxs::graph::{Clause, Graph};
-use mxs::{Engine, Event, RATE, Spec, Synth};
+use mxs::{Engine, Event, RATE, Spec, SynthDecl};
 
 fn main() -> Result<(), String> {
     let option = |name: &str| Graph::Option(name.to_string());
@@ -218,7 +218,7 @@ fn main() -> Result<(), String> {
         Spec::note("note").default(60.0),
         Spec::float("vel").default(0.6).range(0.0, 1.0),
     ];
-    let bar = Synth::graph("bar", specs, vec![Clause { matches: vec![], graph: note }])?;
+    let bar = mxs::graph::synth("bar", specs, vec![Clause { matches: vec![], graph: note }])?;
 
     let mut engine = Engine::offline(RATE);
     engine.register(bar);
@@ -231,12 +231,12 @@ fn main() -> Result<(), String> {
 
 - A synth has one or more clauses. A note is built from the first clause whose `matches` its options meet, which is how one synth has several ways of being played.
 - A graph ends in `rings` or in `note_envelope`, which say how the note ends, as [`Note::rings`] and [`Note::envelope`] do.
-- [`Synth::graph`] refuses a call that is not in the vocabulary when the synth is made, and names it.
-- [`Effect::graph`] builds an effect the same way. Its graph is one channel's sound, with `input` standing for that channel coming in.
+- [`graph::synth`](crate::graph::synth) refuses a call that is not in the vocabulary when the synth is made, and names it.
+- [`graph::effect`](crate::graph::effect) builds an effect the same way. Its graph is one channel's sound, with `input` standing for that channel coming in.
 
 ### From a file
 
-A program in another language writes the same graph as a JSON file, in the format the [`graph`] module describes, and [`Synth::from_json`] or [`Synth::from_json_file`] reads it.
+A program in another language writes the same graph as a JSON file, in the format the [`graph`] module describes, and [`graph::synth_from_json`](crate::graph::synth_from_json) or [`graph::synth_from_json_file`](crate::graph::synth_from_json_file) reads it.
 This file is the synth above:
 
 ```rust
@@ -259,7 +259,7 @@ fn main() -> Result<(), String> {
         }}
       ], "named": {"seconds": 0.8}}}]
     }"#;
-    let bar = Synth::from_json(file)?;
+    let bar = mxs::graph::synth_from_json(file)?;
 
     let mut engine = Engine::offline(RATE);
     engine.register(bar);
@@ -271,7 +271,7 @@ fn main() -> Result<(), String> {
 ```
 
 A mistake in the file is refused with the path to it, such as `clauses[0].graph.args[0]: lowpass needs hz`.
-[`Effect::from_json`] reads an effect's file, whose format is `mxs-effect` and which has one `graph` in place of `clauses`.
+[`graph::effect_from_json`](crate::graph::effect_from_json) reads an effect's file, whose format is `mxs-effect` and which has one `graph` in place of `clauses`.
 
 [The guide to events][events] shows the caller's side: how notes of a synth are started, changed and let go.
 

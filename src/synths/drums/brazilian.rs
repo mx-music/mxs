@@ -8,7 +8,7 @@ use crate::DEFAULT_VEL;
 use crate::nodes::{
     Draws, db, exp_segments, harmonic_tone, hit, hz, modes, perc, shape, struck, white_noise,
 };
-use crate::{Note, Spec, Synth};
+use crate::{Note, Spec, Synth, SynthDecl};
 use fundsp::math::rnd1;
 use fundsp::prelude::*;
 use std::f64::consts::PI;
@@ -114,7 +114,7 @@ const PANDEIRO_ROOM: f64 = 0.93;
 
 /// The pandeiro, whose `stroke` option picks the stroke; `fixed` makes one of the old names that each played one stroke.
 fn pandeiro(name: &str, fixed: Option<&'static str>) -> Synth {
-    let mut decl = Synth::new(name).options(strike_options(49.0)).option(
+    let mut decl = SynthDecl::new(name).options(strike_options(49.0)).option(
         Spec::float("muted")
             .default(0.0)
             .range(0.0, 1.0)
@@ -222,7 +222,7 @@ const SURDO_HIGH: [[f64; 6]; 4] = [
 ];
 
 fn surdo() -> Synth {
-    Synth::new("surdo")
+    SynthDecl::new("surdo")
         .options(strike_options(36.31))
         .option(
             Spec::float("muted")
@@ -293,7 +293,7 @@ const CUICA_LEVEL: f64 = 0.042;
 fn cuica() -> Synth {
     let strokes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let last = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(usize::MAX));
-    Synth::new("cuica")
+    SynthDecl::new("cuica")
         .options(strike_options(CUICA_NOTE))
         .option(
             Spec::beats("sustain")
@@ -434,7 +434,7 @@ const TAMBORIM: [[f64; 13]; 3] = [
 const TAMBORIM_CRACK: f64 = -12.0;
 
 fn tamborim() -> Synth {
-    Synth::new("tamborim")
+    SynthDecl::new("tamborim")
         .options(strike_options(72.03))
         .build(move |o, ctx| {
             let vel = vel(o, 0.0);
@@ -472,7 +472,7 @@ const CAXIXI_PEAK: f64 = 8.0;
 
 fn caxixi() -> Synth {
     let shakes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-    Synth::new("caxixi")
+    SynthDecl::new("caxixi")
         .option(
             Spec::float("vel")
                 .default(DEFAULT_VEL)
@@ -546,7 +546,7 @@ const WIRE_FIT: [f64; 7] = [-10.0, -15.8, -12.9, -14.3, -7.0, -6.6, -12.8];
 /// The berimbau: the string's partials struck by the stick, swung by the gourd, over the wire's close modes and the stick's thud.
 /// Its `note` is the open string's pitch and its `vel` how hard the stick strikes; `coin` presses the wire, `buzz` loosens it and `gourd` swings the gourd.
 pub fn berimbau() -> Synth {
-    Synth::new("berimbau")
+    SynthDecl::new("berimbau")
         .option(
             Spec::note("note")
                 .default(39.11)

@@ -1,5 +1,5 @@
 use fundsp::prelude::*;
-use mxs::{Engine, Event, Note, Origin, RATE, Synth, Tempo};
+use mxs::{Engine, Event, Note, Origin, RATE, Synth, SynthDecl, Tempo};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SAVED: AtomicUsize = AtomicUsize::new(0);
@@ -165,7 +165,7 @@ fn a_buffer_trailing_its_recording_plays_all_of_it() {
 }
 
 fn tone() -> Synth {
-    Synth::new("tone").build(|_, _| Note::rings(sine_hz::<f32>(440.0) * 0.3, 3.0))
+    SynthDecl::new("tone").build(|_, _| Note::rings(sine_hz::<f32>(440.0) * 0.3, 3.0))
 }
 
 #[test]

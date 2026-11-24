@@ -1,5 +1,5 @@
 use fundsp::prelude::*;
-use mxs::{Engine, Error, Event, Note, RATE, Spec, Synth, Target, Value, effects};
+use mxs::{Engine, Error, Event, Note, RATE, Spec, SynthDecl, Target, Value, effects};
 
 fn engine() -> Engine {
     let mut engine = Engine::offline(RATE);
@@ -7,10 +7,10 @@ fn engine() -> Engine {
         .into_iter()
         .for_each(|e| engine.register_effect(e));
     engine.register(
-        Synth::new("steady").build(|_, _| Note::rings(Net::wrap(Box::new(dc(0.5))), 3.0)),
+        SynthDecl::new("steady").build(|_, _| Note::rings(Net::wrap(Box::new(dc(0.5))), 3.0)),
     );
     engine.register(
-        Synth::new("tone")
+        SynthDecl::new("tone")
             .option(Spec::hz("hz").default(440.0))
             .option(Spec::seconds("length").default(2.0))
             .build(|o, _| {

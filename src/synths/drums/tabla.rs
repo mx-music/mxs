@@ -4,7 +4,7 @@ use super::super::common::moved_by;
 use super::{amps, high_shelf, impulse_net, lpf, net, noise, scaled, vel};
 use crate::DEFAULT_VEL;
 use crate::nodes::{db, exp_segments, hz, modes, segments, struck_gliding};
-use crate::{Note, Spec, Synth};
+use crate::{Note, Spec, Synth, SynthDecl};
 use fundsp::prelude::*;
 
 /// The synths of this file, each of the bols alone besides the tabla.
@@ -129,7 +129,7 @@ const BOLS: [Bol; 6] = [
 /// The tabla, whose `bol` option picks the stroke; `fixed` makes one of the old names that each played one stroke.
 /// Each stroke has its own default note, so a note given to the tabla is the stroke's pitch, as with the old names.
 fn tabla(name: &str, fixed: Option<&'static str>) -> Synth {
-    let mut decl = Synth::new(name).option(
+    let mut decl = SynthDecl::new(name).option(
         Spec::float("vel")
             .default(DEFAULT_VEL)
             .range(0.0, 1.0)

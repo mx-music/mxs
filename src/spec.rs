@@ -1,5 +1,8 @@
 //! The options a synth or an effect takes, each declared with its kind, default, range and documentation.
 
+use crate::error::Error;
+use std::collections::HashMap;
+
 /// An option's value: a number, or a name from the values its declaration lists.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -225,4 +228,63 @@ impl Spec {
             },
         }
     }
+}
+
+/// The values to play, each given value checked against its declaration and held to its range, and the names of the options that had to be held.
+pub(crate) fn checked(
+    owner: &str,
+    specs: &[Spec],
+    given: &[(String, Value)],
+) -> Result<(HashMap<String, Value>, Vec<String>), Error> {
+    let mut values = HashMap::new();
+    let mut held_names = Vec::new();
+    for (name, value) in given {
+        let spec = specs.iter().find(|s| &s.name == name);
+        let slide = name
+            .strip_suffix("_slide")
+            .filter(|base| specs.iter().any(|s| s.name == *base));
+        let (value, held) = match (spec, slide) {
+            (Some(spec), _) => spec.check(value),
+            (None, Some(_)) => match value {
+                Value::Number(x) if *x >= 0.0 => Ok((value.clone(), false)),
+                _ => Err("takes seconds from 0 up".to_string()),
+            },
+            (None, None) => {
+                return Err(Error::UnknownOption {
+                    owner: owner.to_string(),
+                    option: name.clone(),
+                });
+            }
+        }
+        .map_err(|reason| Error::BadValue {
+            owner: owner.to_string(),
+            option: name.clone(),
+            reason,
+        })?;
+        if held {
+            held_names.push(name.clone());
+        }
+        values.insert(name.clone(), value);
+    }
+    if let Some(missing) = specs
+        .iter()
+        .find(|s| s.required && !values.contains_key(&s.name))
+    {
+        return Err(Error::MissingOption {
+            owner: owner.to_string(),
+            option: missing.name.clone(),
+        });
+    }
+    Ok((values, held_names))
+}
+
+/// The warning that an option's value was held to its range.
+pub(crate) fn held_warning(owner: &str, specs: &[Spec], name: &str) -> String {
+    let range = specs
+        .iter()
+        .find(|s| s.name == name)
+        .and_then(|s| s.range)
+        .unwrap_or((0.0, 0.0));
+    let (low, high) = range;
+    format!("{owner}'s option {name} was held to its range, {low} to {high}")
 }

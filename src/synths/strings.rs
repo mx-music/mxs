@@ -8,7 +8,7 @@ use crate::DEFAULT_VEL;
 use crate::nodes::{
     db, decay2, hit, hz, modes, pulses, segment_at, shape, struck_gliding, white_noise,
 };
-use crate::{Note, Options, Spec, Synth, Value};
+use crate::{Note, Options, Spec, Synth, SynthDecl, Value};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
 
@@ -27,7 +27,7 @@ pub fn all() -> Vec<Synth> {
 }
 
 fn guitar() -> Synth {
-    Synth::new("guitar")
+    SynthDecl::new("guitar")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -49,7 +49,7 @@ fn guitar_figures() -> &'static Figures {
 const GUITAR_LEVEL: f64 = 3.2;
 
 fn electric_bass() -> Synth {
-    Synth::new("electric_bass")
+    SynthDecl::new("electric_bass")
         .option(Spec::note("note").default(33.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -71,7 +71,7 @@ fn ebass() -> &'static Figures {
 const EBASS_LEVEL: f64 = 0.544;
 
 fn deep_bass() -> Synth {
-    Synth::new("deep_bass")
+    SynthDecl::new("deep_bass")
         .option(Spec::note("note").default(33.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -104,7 +104,7 @@ fn plucked(
     body: &'static [f64],
     courses: &'static [f64],
 ) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -246,7 +246,7 @@ fn sitar() -> Synth {
 }
 
 fn tanpura() -> Synth {
-    Synth::new("tanpura")
+    SynthDecl::new("tanpura")
         .option(
             Spec::note("note")
                 .default(52.0)
@@ -344,7 +344,7 @@ fn tanpura() -> Synth {
 /// The piano: the Steinway B of the Versilian Community Sample Library played from figures fitted partial by partial to its recordings, with the pedal and without.
 /// Its options are `note`, `vel` for how hard the key is struck, `pedal` for the sustain pedal, `aftersound` for the fade in two stages, `uneven` and `instrument` for the differences of the keys not recorded, and `knock` for the hammer's knock.
 pub fn piano() -> Synth {
-    Synth::new("piano")
+    SynthDecl::new("piano")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")
@@ -400,7 +400,7 @@ pub(super) fn piano_note(options: &Options, ctx: &mut crate::Context) -> Note {
         .map(|(down, share)| {
             let (voice, gain) = piano_voice(options, down);
             let end = voice.silent_after();
-            (voice.sound() * (gain * share) as f32, end)
+            (super::figures::sound(voice) * (gain * share) as f32, end)
         })
         .reduce(|(a, x), (b, y)| (a + b, x.max(y)))
         .expect("a piano note has a voice");
@@ -565,10 +565,10 @@ pub fn parts(given: &[(&str, f64)]) -> Result<(PianoParts, Vec<String>), crate::
         .iter()
         .map(|(name, x)| (name.to_string(), Value::Number(*x)))
         .collect();
-    let (values, held) = crate::engine::checked("piano", &specs, &given)?;
+    let (values, held) = crate::spec::checked("piano", &specs, &given)?;
     let warnings = held
         .iter()
-        .map(|name| crate::engine::held_warning("piano", &specs, name))
+        .map(|name| crate::spec::held_warning("piano", &specs, name))
         .collect();
     let options = Options::new("piano".into(), specs.into(), values);
     Ok((piano_parts(&options), warnings))

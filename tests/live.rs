@@ -2,8 +2,8 @@
 
 use fundsp::prelude::*;
 use mxs::{
-    Engine, Error, Event, Note, Origin, Pass, Report, Settings, Spec, Synth, Target, Tempo, Topic,
-    synths,
+    Engine, Error, Event, Note, Origin, Pass, Report, Settings, Spec, Synth, SynthDecl, Target,
+    Tempo, Topic, synths,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,7 +23,7 @@ fn live(buffer: u32) -> Engine {
 
 /// A silent synth that holds the audio thread for 20 ms once, 50 ms into its note.
 fn stall() -> Synth {
-    Synth::new("stall").build(|_, _| {
+    SynthDecl::new("stall").build(|_, _| {
         let stalled = Arc::new(AtomicBool::new(false));
         let sound = envelope(move |t: f32| {
             if t > 0.05 && !stalled.swap(true, Ordering::Relaxed) {
@@ -127,7 +127,7 @@ fn ten_minutes_of_piano_reach_the_sound_card_with_no_buffer_late() {
 
 /// A synth whose sound is its `level` option, held, for a second.
 fn level() -> Synth {
-    Synth::new("level")
+    SynthDecl::new("level")
         .option(Spec::float("level").default(1.0).range(0.0, 2.0))
         .build(|options, _| Note::rings(options.follow("level"), 1.0))
 }
@@ -240,7 +240,7 @@ fn a_change_handed_over_right_after_a_note_reaches_it() {
 #[ignore]
 fn a_note_whose_voice_takes_longer_to_build_than_it_was_given_starts_late_and_is_counted() {
     let mut engine = live(512);
-    engine.register(Synth::new("slow").build(|_, _| {
+    engine.register(SynthDecl::new("slow").build(|_, _| {
         std::thread::sleep(Duration::from_millis(50));
         Note::rings(dc(0.5), 1.0)
     }));
@@ -265,7 +265,7 @@ fn a_note_whose_voice_takes_longer_to_build_than_it_was_given_starts_late_and_is
 fn a_sound_of_three_channels_is_left_out_and_named_while_the_rest_of_its_batch_plays() {
     let mut engine = live(512);
     engine.register(level());
-    engine.register(Synth::new("three").build(|_, _| Note::rings(dc((0.0, 0.0, 0.0)), 1.0)));
+    engine.register(SynthDecl::new("three").build(|_, _| Note::rings(dc((0.0, 0.0, 0.0)), 1.0)));
     let at = engine.now() + 0.1;
     let batch = [
         (at, Event::note(None, "three", &[])),
@@ -427,7 +427,7 @@ fn reports_left_untaken_for_ten_seconds_cost_no_buffer_and_the_next_says_how_man
 
 /// A level of 0.25 from the note's first frame, for 10 ms.
 fn click() -> Synth {
-    Synth::new("click").build(|_, _| Note::rings(dc(0.25), 0.01))
+    SynthDecl::new("click").build(|_, _| Note::rings(dc(0.25), 0.01))
 }
 
 /// The frames at which sound starts after at least 1 ms of silence.

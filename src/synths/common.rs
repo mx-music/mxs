@@ -2,7 +2,7 @@
 
 use crate::DEFAULT_VEL;
 use crate::nodes::{db, hz, segments};
-use crate::{Options, Spec, Synth};
+use crate::{Options, Spec, SynthDecl};
 use fundsp::prelude::*;
 use std::f64::consts::PI;
 
@@ -114,7 +114,7 @@ impl AudioNode for Partials {
 }
 
 pub(super) fn struck(name: &str, release: f64) -> crate::SynthDecl {
-    Synth::new(name)
+    SynthDecl::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")

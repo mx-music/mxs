@@ -877,7 +877,7 @@ pub(crate) struct Fit {
 
 /// A wind's options: those every wind takes, then for fitting each band's gain, the level, the breath and its rise, in place of those fitted for the note's vel.
 fn wind_options(name: &str, vibrato: f64, vibrato_doc: &str) -> SynthDecl {
-    let mut synth = Synth::new(name)
+    let mut synth = SynthDecl::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch; a change while the note holds slurs to the new one."))
         .option(Spec::float("vel").default(DEFAULT_VEL).range(0.0, 1.0).doc("How hard it is blown; a change while the note holds swells or fades it."))
         .option(Spec::float("vibrato").default(vibrato).range(0.0, 2.0).doc(vibrato_doc))
@@ -1092,7 +1092,7 @@ fn flute_figures() -> &'static super::figures::Figures {
 
 /// A flute played from figures fitted to its recordings partial by partial, a change of note a slur to the new note's figures, its loudness following vel as the recordings' loudest partial does.
 fn flute_figured() -> Synth {
-    Synth::new("flute_figured")
+    SynthDecl::new("flute_figured")
         .option(
             Spec::note("note")
                 .default(72.0)

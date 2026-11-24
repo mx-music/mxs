@@ -1,6 +1,6 @@
 //! mxs for Python: an engine, live or offline, with mxs's synths and effects and those read from files.
 
-use engine::{Effect, Event, Settings, Synth, Target, Value, effects, synths};
+use engine::{Event, Settings, Target, Value, effects, synths};
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -114,7 +114,7 @@ impl Engine {
 
     /// Registers the synth in the `mxs-synth` file at `path`, and returns its name.
     fn load_synth(&mut self, path: &str) -> PyResult<String> {
-        let synth = Synth::from_json_file(path).map_err(raise)?;
+        let synth = engine::graph::synth_from_json_file(path).map_err(raise)?;
         let name = synth.name().to_string();
         self.engine.register(synth);
         Ok(name)
@@ -122,7 +122,7 @@ impl Engine {
 
     /// Registers the effect in the `mxs-effect` file at `path`, and returns its name.
     fn load_effect(&mut self, path: &str) -> PyResult<String> {
-        let effect = Effect::from_json_file(path).map_err(raise)?;
+        let effect = engine::graph::effect_from_json_file(path).map_err(raise)?;
         let name = effect.name().to_string();
         self.engine.register_effect(effect);
         Ok(name)

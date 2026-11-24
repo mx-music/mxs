@@ -173,13 +173,13 @@ fn answer(engine: &mut Engine, request: &Json) -> Result<Json, String> {
             Ok(chain.into())
         }
         "load_synth" => {
-            let synth = Synth::from_json(&text("text")?)?;
+            let synth = engine::graph::synth_from_json(&text("text")?)?;
             let name = synth.name().to_string();
             engine.register(synth);
             Ok(name.into())
         }
         "load_effect" => {
-            let effect = Effect::from_json(&text("text")?)?;
+            let effect = engine::graph::effect_from_json(&text("text")?)?;
             let name = effect.name().to_string();
             engine.register_effect(effect);
             Ok(name.into())

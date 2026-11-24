@@ -32,7 +32,7 @@
 use crate::nodes::hz;
 use crate::options::Options;
 use crate::spec::Spec;
-use crate::synth::Effect;
+use crate::synth::{Effect, EffectDecl};
 use fundsp::prelude::*;
 use std::f32::consts::{FRAC_PI_4, TAU};
 
@@ -91,13 +91,13 @@ fn q_of(options: &Options, name: &str) -> Net {
 }
 
 fn level() -> Effect {
-    Effect::new("level")
+    EffectDecl::new("level")
         .tail(0.0)
         .build(|_, _| net(multipass::<U2>()))
 }
 
 fn reverb() -> Effect {
-    Effect::new("reverb")
+    EffectDecl::new("reverb")
         .option(
             Spec::float("size")
                 .default(20.0)
@@ -164,7 +164,7 @@ fn worn(effect: crate::synth::EffectDecl) -> crate::synth::EffectDecl {
 }
 
 fn echo() -> Effect {
-    worn(Effect::new("echo"))
+    worn(EffectDecl::new("echo"))
         .option(
             Spec::beats("phase")
                 .default(0.25)
@@ -199,7 +199,7 @@ fn echo() -> Effect {
 }
 
 fn lpf() -> Effect {
-    Effect::new("lpf")
+    EffectDecl::new("lpf")
         .option(
             Spec::note("cutoff")
                 .default(100.0)
@@ -215,7 +215,7 @@ fn lpf() -> Effect {
 }
 
 fn hpf() -> Effect {
-    Effect::new("hpf")
+    EffectDecl::new("hpf")
         .option(
             Spec::note("cutoff")
                 .default(100.0)
@@ -233,7 +233,7 @@ fn hpf() -> Effect {
 const FRAC_1_SQRT_2: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
 fn distortion() -> Effect {
-    Effect::new("distortion")
+    EffectDecl::new("distortion")
         .option(
             Spec::float("distort")
                 .default(0.5)
@@ -268,7 +268,7 @@ fn distortion() -> Effect {
 }
 
 fn pan() -> Effect {
-    Effect::new("pan")
+    EffectDecl::new("pan")
         .option(
             Spec::float("pan")
                 .default(0.0)
@@ -286,7 +286,7 @@ fn pan() -> Effect {
 }
 
 fn slicer() -> Effect {
-    Effect::new("slicer")
+    EffectDecl::new("slicer")
         .option(
             Spec::beats("phase")
                 .default(0.25)
@@ -371,7 +371,7 @@ fn rate_of(options: &Options, name: &str) -> Net {
 }
 
 fn compressor() -> Effect {
-    Effect::new("compressor")
+    EffectDecl::new("compressor")
         .option(
             Spec::float("threshold")
                 .default(-18.0)
@@ -413,7 +413,7 @@ fn compressor() -> Effect {
 }
 
 fn chorus() -> Effect {
-    Effect::new("chorus")
+    EffectDecl::new("chorus")
         .option(
             Spec::beats("phase")
                 .default(0.25)
@@ -447,7 +447,7 @@ fn chorus() -> Effect {
 }
 
 fn bitcrusher() -> Effect {
-    Effect::new("bitcrusher")
+    EffectDecl::new("bitcrusher")
         .option(
             Spec::hz("sample_rate")
                 .default(10_000.0)
@@ -552,7 +552,7 @@ fn each_side(x: &Frame<f32, U4>) -> Frame<f32, U2> {
 }
 
 fn tremolo() -> Effect {
-    wave_options(Effect::new("tremolo"), 2.0, 4.0)
+    wave_options(EffectDecl::new("tremolo"), 2.0, 4.0)
         .option(
             Spec::float("depth")
                 .default(0.5)
@@ -572,7 +572,7 @@ fn tremolo() -> Effect {
 }
 
 fn width() -> Effect {
-    Effect::new("width")
+    EffectDecl::new("width")
         .option(
             Spec::float("side")
                 .default(1.0)
@@ -614,7 +614,7 @@ fn gain_of(options: &Options, name: &str) -> Net {
 }
 
 fn eq() -> Effect {
-    Effect::new("eq")
+    EffectDecl::new("eq")
         .option(
             Spec::note("low_at")
                 .default(36.0)
@@ -669,7 +669,7 @@ fn eq() -> Effect {
 pub const LIMITER_LOOK_AHEAD: f64 = 0.005;
 
 fn limiter() -> Effect {
-    Effect::new("limiter")
+    EffectDecl::new("limiter")
         .option(
             Spec::float("ceiling")
                 .default(-1.0)
@@ -690,7 +690,7 @@ fn limiter() -> Effect {
 }
 
 fn rlpf() -> Effect {
-    Effect::new("rlpf")
+    EffectDecl::new("rlpf")
         .option(
             Spec::note("cutoff")
                 .default(100.0)
@@ -714,7 +714,7 @@ fn rlpf() -> Effect {
 const WAH_FLOOR: f32 = 40.0;
 
 fn wah() -> Effect {
-    Effect::new("wah")
+    EffectDecl::new("wah")
         .option(
             Spec::note("cutoff_min")
                 .default(60.0)
@@ -765,7 +765,7 @@ fn wah() -> Effect {
 }
 
 fn bpf() -> Effect {
-    Effect::new("bpf")
+    EffectDecl::new("bpf")
         .option(
             Spec::note("centre")
                 .default(100.0)
@@ -789,7 +789,7 @@ fn bpf() -> Effect {
 }
 
 fn flanger() -> Effect {
-    wave_options(Effect::new("flanger"), 4.0, 4.0)
+    wave_options(EffectDecl::new("flanger"), 4.0, 4.0)
         .option(
             Spec::float("stereo_invert_wave")
                 .default(0.0)
@@ -851,7 +851,7 @@ fn flanger() -> Effect {
 }
 
 fn phaser() -> Effect {
-    wave_options(Effect::new("phaser"), 3.0, 4.0)
+    wave_options(EffectDecl::new("phaser"), 3.0, 4.0)
         .option(
             Spec::float("stereo_invert_wave")
                 .default(0.0)
@@ -964,7 +964,7 @@ impl AudioNode for Phaser {
 }
 
 fn wobble() -> Effect {
-    wave_options(Effect::new("wobble"), 0.0, 0.5)
+    wave_options(EffectDecl::new("wobble"), 0.0, 0.5)
         .option(
             Spec::float("pulse_width")
                 .default(0.5)
@@ -1014,7 +1014,7 @@ fn wobble() -> Effect {
 }
 
 fn ping_pong() -> Effect {
-    worn(Effect::new("ping_pong"))
+    worn(EffectDecl::new("ping_pong"))
         .option(
             Spec::beats("phase")
                 .default(0.25)
@@ -1056,7 +1056,7 @@ fn ping_pong() -> Effect {
 }
 
 fn pitch_shift() -> Effect {
-    Effect::new("pitch_shift")
+    EffectDecl::new("pitch_shift")
         .option(
             Spec::float("pitch")
                 .default(0.0)

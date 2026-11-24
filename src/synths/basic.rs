@@ -3,7 +3,7 @@
 use super::common::{moved_by, tilted};
 use crate::DEFAULT_VEL;
 use crate::nodes::{db, hz, segments, white_noise};
-use crate::{Note, Options, Spec, Synth};
+use crate::{Note, Options, Spec, Synth, SynthDecl};
 use fundsp::prelude::*;
 
 pub fn all() -> Vec<Synth> {
@@ -76,7 +76,7 @@ fn filter_options(cutoff: f64) -> [Spec; 2] {
 }
 
 fn wave(name: &str, cutoff: f64, release: f64) -> crate::SynthDecl {
-    Synth::new(name)
+    SynthDecl::new(name)
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .options(filter_options(cutoff))
         .options(Spec::envelope(0.0, release))
@@ -144,7 +144,7 @@ fn noise() -> Synth {
 }
 
 fn fm() -> Synth {
-    Synth::new("fm")
+    SynthDecl::new("fm")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("divisor")
@@ -171,7 +171,7 @@ fn fm() -> Synth {
 }
 
 fn pluck() -> Synth {
-    Synth::new("pluck")
+    SynthDecl::new("pluck")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::seconds("ring")
@@ -223,7 +223,7 @@ fn supersaw() -> Synth {
 }
 
 fn acid() -> Synth {
-    Synth::new("acid")
+    SynthDecl::new("acid")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::note("cutoff")
@@ -258,7 +258,7 @@ fn acid() -> Synth {
 }
 
 fn brass() -> Synth {
-    Synth::new("brass")
+    SynthDecl::new("brass")
         .option(Spec::note("note").default(52.0).doc("The pitch."))
         .option(
             Spec::float("vel")

@@ -5,14 +5,13 @@ use crate::options::{Context, Options};
 use crate::spec::Spec;
 use fundsp::prelude::*;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub(crate) type BuildNote = dyn Fn(&Options, &mut Context) -> Note + Send + Sync;
 type BuildEffect = dyn Fn(&Options, &mut Context) -> Net + Send + Sync;
 type Tail = dyn Fn(&Options) -> f64 + Send + Sync;
 
 /// A synth: a name, its options, and how it builds one note's sound.
-/// [`Synth::new`] starts declaring one in Rust, and [`Synth::graph`] builds one from data; [the guide to building a synth](crate::guide::building) shows both.
+/// [`SynthDecl::new`] starts declaring one in Rust, and [`graph::synth`](crate::graph::synth) builds one from data; [the guide to building a synth](crate::guide::building) shows both.
 #[derive(Clone)]
 pub struct Synth {
     pub(crate) name: String,
@@ -97,16 +96,6 @@ pub struct SynthDecl {
 }
 
 impl Synth {
-    /// Starts declaring a synth that notes play by `name`; declare its options, then `build` it.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(name: &str) -> SynthDecl {
-        SynthDecl {
-            name: name.to_string(),
-            doc: String::new(),
-            specs: Vec::new(),
-        }
-    }
-
     /// The name notes play the synth by.
     pub fn name(&self) -> &str {
         &self.name
@@ -141,6 +130,15 @@ impl Synth {
 }
 
 impl SynthDecl {
+    /// Starts declaring a synth that notes play by `name`; declare its options, then `build` it.
+    pub fn new(name: &str) -> SynthDecl {
+        SynthDecl {
+            name: name.to_string(),
+            doc: String::new(),
+            specs: Vec::new(),
+        }
+    }
+
     /// What the synth is, for whoever chooses one.
     pub fn doc(mut self, doc: &str) -> Self {
         self.doc = doc.to_string();
@@ -184,62 +182,6 @@ pub struct Note {
     pub(crate) release: Option<(Shared, f64)>,
     /// Above 0 while the envelope holds at the end of its decay until it is let go.
     pub(crate) held: Option<Shared>,
-}
-
-/// What the engine gives a voice built ready as its note starts: the note and vel it plays, whether it is held, and its pedal, 0 or 1.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Given {
-    pub note: f64,
-    pub vel: f64,
-    pub held: bool,
-    pub pedal: f64,
-    pub pressure: f64,
-}
-
-/// The hold the engine keeps on a voice built ready: what it is given, written before it starts, and how many seconds a note given that lasts and takes to fall silent once let go.
-pub(crate) struct Ready {
-    note: AtomicU64,
-    vel: AtomicU64,
-    held: AtomicBool,
-    pedal: AtomicU64,
-    pressure: AtomicU64,
-    lasts: Box<dyn Fn(Given) -> (f64, f64) + Send + Sync>,
-}
-
-impl Ready {
-    pub(crate) fn new(lasts: impl Fn(Given) -> (f64, f64) + Send + Sync + 'static) -> Arc<Ready> {
-        Arc::new(Ready {
-            note: AtomicU64::new(f64::NAN.to_bits()),
-            vel: AtomicU64::new(0),
-            held: AtomicBool::new(false),
-            pedal: AtomicU64::new(0),
-            pressure: AtomicU64::new(0),
-            lasts: Box::new(lasts),
-        })
-    }
-
-    /// Gives the voice what it plays, before the engine sends it on, and says how many seconds it lasts and takes to fall silent once let go.
-    pub(crate) fn give(&self, given: Given) -> (f64, f64) {
-        self.note.store(given.note.to_bits(), Ordering::Relaxed);
-        self.vel.store(given.vel.to_bits(), Ordering::Relaxed);
-        self.held.store(given.held, Ordering::Relaxed);
-        self.pedal.store(given.pedal.to_bits(), Ordering::Relaxed);
-        self.pressure
-            .store(given.pressure.to_bits(), Ordering::Relaxed);
-        (self.lasts)(given)
-    }
-
-    /// What was given, or `None` before anything is.
-    pub(crate) fn given(&self) -> Option<Given> {
-        let note = f64::from_bits(self.note.load(Ordering::Relaxed));
-        (!note.is_nan()).then(|| Given {
-            note,
-            vel: f64::from_bits(self.vel.load(Ordering::Relaxed)),
-            held: self.held.load(Ordering::Relaxed),
-            pedal: f64::from_bits(self.pedal.load(Ordering::Relaxed)),
-            pressure: f64::from_bits(self.pressure.load(Ordering::Relaxed)),
-        })
-    }
 }
 
 impl Note {
@@ -307,7 +249,7 @@ impl Note {
 }
 
 /// An effect: a name, its options, how long it sounds on after its input stops, and how it builds a stereo sound from a stereo input.
-/// [`Effect::new`] starts declaring one, as [the guide to building a synth](crate::guide::building) shows.
+/// [`EffectDecl::new`] starts declaring one, as [the guide to building a synth](crate::guide::building) shows.
 #[derive(Clone)]
 pub struct Effect {
     pub(crate) name: String,
@@ -326,17 +268,6 @@ pub struct EffectDecl {
 }
 
 impl Effect {
-    /// Starts declaring an effect that chains use by `name`; declare its options, then `build` it.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(name: &str) -> EffectDecl {
-        EffectDecl {
-            name: name.to_string(),
-            specs: Vec::new(),
-            tail: Arc::new(|_| 1.0),
-            late: 0,
-        }
-    }
-
     /// The name chains use the effect by.
     pub fn name(&self) -> &str {
         &self.name
@@ -349,6 +280,16 @@ impl Effect {
 }
 
 impl EffectDecl {
+    /// Starts declaring an effect that chains use by `name`; declare its options, then `build` it.
+    pub fn new(name: &str) -> EffectDecl {
+        EffectDecl {
+            name: name.to_string(),
+            specs: Vec::new(),
+            tail: Arc::new(|_| 1.0),
+            late: 0,
+        }
+    }
+
     /// Declares one option.
     pub fn option(mut self, spec: Spec) -> Self {
         self.specs.push(spec);

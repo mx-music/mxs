@@ -227,7 +227,7 @@ fn marimba() -> Synth {
         Spec::float("decay_level").default(-1.0),
         Spec::float("sustain_level").default(1.0),
     ];
-    Synth::graph(
+    mxs::graph::synth(
         "marimba",
         specs,
         vec![Clause {
@@ -252,7 +252,7 @@ fn render(synth: Synth, note: f64, vel: f64) -> (Vec<f32>, Vec<f32>) {
 #[test]
 fn the_marimba_file_renders_the_samples_of_the_same_graph_built_in_rust() {
     for (note, vel) in [(36.0, 0.3), (52.0, 0.55), (68.0, 0.8), (84.0, 1.0)] {
-        let read = render(Synth::from_json(MARIMBA).unwrap(), note, vel);
+        let read = render(mxs::graph::synth_from_json(MARIMBA).unwrap(), note, vel);
         let built = render(marimba(), note, vel);
         assert!(
             read.0.iter().any(|s| s.abs() > 0.001),
@@ -267,7 +267,7 @@ fn the_marimba_file_renders_the_samples_of_the_same_graph_built_in_rust() {
 
 #[test]
 fn the_marimba_file_loads_from_its_path_with_the_options_it_declares() {
-    let synth = Synth::from_json_file("tests/marimba.json").unwrap();
+    let synth = mxs::graph::synth_from_json_file("tests/marimba.json").unwrap();
     assert_eq!(synth.name(), "marimba");
     let vel = synth.specs().iter().find(|s| s.name == "vel").unwrap();
     assert_eq!(vel.range, Some((0.05, 1.0)));
@@ -283,7 +283,7 @@ fn file(body: &str) -> String {
 }
 
 fn refused(text: &str) -> String {
-    match Synth::from_json(text) {
+    match mxs::graph::synth_from_json(text) {
         Ok(_) => panic!("the file was read: {text}"),
         Err(reason) => reason,
     }
@@ -355,7 +355,7 @@ fn an_effect_file_is_not_read_as_a_synth() {
 
 fn through(effect: Effect) -> Vec<f32> {
     let mut engine = Engine::offline(RATE);
-    engine.register(Synth::from_json(MARIMBA).unwrap());
+    engine.register(mxs::graph::synth_from_json(MARIMBA).unwrap());
     let name = effect.name().to_string();
     engine.register_effect(effect);
     let chain = engine.start_effects(&[(name, vec![])]).unwrap();
@@ -379,7 +379,7 @@ fn an_effect_file_of_a_lowpass_filters_a_chain_as_the_same_effect_built_in_rust(
     let text = r#"{"format": "mxs-effect", "version": 1, "name": "dark",
         "options": [{"name": "hz", "kind": "hz", "default": 400, "range": [20, 20000]}],
         "graph": {"call": "lowpass", "args": [{"call": "input"}], "named": {"hz": {"option": "hz"}}}}"#;
-    let built = Effect::graph(
+    let built = mxs::graph::effect(
         "dark",
         vec![Spec::hz("hz").default(400.0).range(20.0, 20000.0)],
         Graph::call(
@@ -389,10 +389,10 @@ fn an_effect_file_of_a_lowpass_filters_a_chain_as_the_same_effect_built_in_rust(
         ),
     )
     .unwrap();
-    let read = through(Effect::from_json(text).unwrap());
+    let read = through(mxs::graph::effect_from_json(text).unwrap());
     assert!(read.iter().any(|s| s.abs() > 0.001));
     assert!(read == through(built));
-    let dry = render(Synth::from_json(MARIMBA).unwrap(), 72.0, 0.6).0;
+    let dry = render(mxs::graph::synth_from_json(MARIMBA).unwrap(), 72.0, 0.6).0;
     let energy = |s: &[f32]| s.iter().map(|x| x * x).sum::<f32>();
     assert!(energy(&read) < energy(&dry[..read.len()]) * 0.9);
 }
@@ -413,7 +413,7 @@ fn fnv(samples: impl Iterator<Item = f32>) -> u64 {
 #[test]
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 fn the_marimba_file_renders_middle_c_to_the_samples_the_python_package_checks() {
-    let (left, right) = render(Synth::from_json(MARIMBA).unwrap(), 60.0, 0.6);
+    let (left, right) = render(mxs::graph::synth_from_json(MARIMBA).unwrap(), 60.0, 0.6);
     let second = RATE as usize;
     let hash = fnv(left[..second].iter().chain(&right[..second]).copied());
     assert_eq!(format!("{hash:016x}"), "3406ffda23b0932d");
@@ -428,7 +428,7 @@ fn mxs_s_marimba_renders_as_the_marimba_file_to_within_60_db() {
             .unwrap()
     };
     for (note, vel) in [(36.0, 0.3), (52.0, 0.55), (68.0, 0.8), (84.0, 1.0)] {
-        let file = render(Synth::from_json(MARIMBA).unwrap(), note, vel).0;
+        let file = render(mxs::graph::synth_from_json(MARIMBA).unwrap(), note, vel).0;
         let ours = render(shipped(), note, vel).0;
         let power = |xs: &[f32]| xs.iter().map(|x| (*x as f64).powi(2)).sum::<f64>();
         let apart: Vec<f32> = file.iter().zip(&ours).map(|(a, b)| a - b).collect();

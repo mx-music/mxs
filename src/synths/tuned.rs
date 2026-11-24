@@ -126,7 +126,7 @@ fn vibraphone() -> Synth {
             let voice = vibraphone_figures().voice(note, vel);
             let gain = kept_gain(vibraphone_figures(), VIBRAPHONE_LEVEL, note, vel);
             let end = voice.silent_after();
-            Note::envelope(voice.following(o) * pulse * gain as f32, o).within(end)
+            Note::envelope(super::figures::following(voice, o) * pulse * gain as f32, o).within(end)
         })
 }
 

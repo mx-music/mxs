@@ -1,12 +1,10 @@
 //! MIDI inputs played on parts inside the engine: each message becomes notes in the block being filled, with no caller in between.
 
-use super::{
-    Book, Draft, Engine, Error, Event, Hand, Item, Make, Out, SoundDraft, checked, held_warning,
-};
+use super::{Book, Draft, Engine, Error, Event, Hand, Item, Make, Out, SoundDraft};
 use crate::keys::Keyboard;
 use crate::options::Options;
 use crate::report::{Hub, Report};
-use crate::spec::{Spec, Value};
+use crate::spec::{Spec, Value, checked, held_warning};
 use crate::synth::Synth;
 use midir::{MidiInput, MidiInputConnection};
 use std::collections::HashSet;
@@ -158,8 +156,7 @@ impl Shared {
                 self.hub.warn(self.now(), held_warning(owner, specs, &name));
             }
         }
-        let mut options = Options::new(owner.clone(), specs.clone(), values);
-        options.held = held;
+        let options = Options::new(owner.clone(), specs.clone(), values).holding(held);
         Some(SoundDraft {
             id,
             at,

@@ -2,17 +2,19 @@
 
 use crate::clock::Timing;
 use crate::device::{self, Format, Range, Settings};
+use crate::error::Error;
 use crate::listen::Listening;
 use crate::load::{Load, Meter};
 use crate::mixer::{
     CAPACITY, Chain, Change, Command, Garbage, Heard, INPUTS, Input, Kept, Listened, Listener,
     Mixer, Out, PartChange, Recorder, Voice, Voices,
 };
-use crate::options::{Context, Control, Options};
+use crate::options::{Context, Control, Controls, Options};
+use crate::ready::{Given, Ready};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
 use crate::sample::{Grains, Player, SampleData, Samples, Stretcher};
-use crate::spec::{Kind, Spec, Value};
-use crate::synth::{BuildNote, Effect, Given, Note, Ready, Synth};
+use crate::spec::{Kind, Spec, Value, checked, held_warning};
+use crate::synth::{BuildNote, Effect, Note, Synth};
 use crate::time::{Tempo, TempoMap};
 use crate::workers::{Pool, performance_cores};
 use cpal::traits::{DeviceTrait, StreamTrait};
@@ -217,97 +219,6 @@ impl Event {
     }
 }
 
-/// What went wrong when the engine was asked to do something; its `Display` says it in a sentence.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Error {
-    /// No synth is registered by this name.
-    UnknownSynth(String),
-    /// No effect is registered by this name.
-    UnknownEffect(String),
-    /// No sample was loaded under this id.
-    UnknownSample(u64),
-    /// No effect chain was started under this id.
-    UnknownChain(u64),
-    /// A change named a send that [`Engine::send`] has not made, from one chain into another.
-    UnknownSend(u64, u64),
-    /// A send, a route or a key would make a chain feed itself; the chains of the loop are named, the first the one that would feed itself.
-    FeedsItself(Vec<String>),
-    /// A chain was given more sends than it holds.
-    TooManySends(u64),
-    /// No part was started under this name.
-    UnknownPart(String),
-    /// A part of this name was started and not stopped.
-    PartExists(String),
-    /// A sound was given an option its declaration does not list.
-    UnknownOption {
-        /// The synth, effect or player it was given to.
-        owner: String,
-        /// The option's name.
-        option: String,
-    },
-    /// An option was given a value its declaration does not accept.
-    BadValue {
-        /// The synth, effect or player it was given to.
-        owner: String,
-        /// The option's name.
-        option: String,
-        /// Why the value is refused, worded to follow the option's name.
-        reason: String,
-    },
-    /// A required option was left out.
-    MissingOption {
-        /// The synth, effect or player that needs it.
-        owner: String,
-        /// The option's name.
-        option: String,
-    },
-    /// A synth or an effect made a sound of neither 1 nor 2 channels.
-    BadSound {
-        /// The synth or effect that made it.
-        owner: String,
-        /// How many channels the sound had.
-        outputs: usize,
-    },
-    /// An effect could not be built from the options it was given.
-    CannotBuild {
-        /// The effect.
-        owner: String,
-        /// Why it could not be built.
-        reason: String,
-    },
-    /// A sample could not be loaded or is not usable; the reason.
-    Sample(String),
-    /// A device could not be used; the reason.
-    Device(String),
-    /// The sound card has no input of this number, counted from 0.
-    UnknownInput(usize),
-    /// No analysis runs under this id.
-    UnknownAnalysis(u64),
-    /// A recording could not start or finish; the reason.
-    Record(String),
-    /// More events are waiting than the engine can take.
-    Busy,
-    /// The call needs a live engine, and this one renders offline.
-    Offline,
-    /// The call needs an offline engine, and this one plays live.
-    Live,
-    /// The engine failed while filling audio, and has to be started again.
-    Failed,
-    /// The output device of this name went away, and the engine has to be started again.
-    DeviceLost(String),
-    /// The synth of this name builds each note for its note and vel alone, so no voice of it can be kept ready.
-    CannotKeepReady(String),
-    /// A MIDI input could not be played; the reason.
-    Midi(String),
-    /// The synth plays measured tables, and these files of them are not loaded, in a build of mxs without the `tables` feature.
-    TablesNotLoaded {
-        /// The synth played.
-        synth: String,
-        /// The files of its tables not loaded yet.
-        tables: Vec<String>,
-    },
-}
-
 /// Refuses a synth whose tables are not loaded.
 pub(crate) fn tables_loaded(synth: &Synth) -> Result<(), Error> {
     let missing = crate::synths::missing_tables(synth.tables());
@@ -319,87 +230,6 @@ pub(crate) fn tables_loaded(synth: &Synth) -> Result<(), Error> {
         tables: missing.into_iter().map(str::to_string).collect(),
     })
 }
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::UnknownSynth(name) => write!(f, "no synth named {name}"),
-            Error::UnknownEffect(name) => write!(f, "no effect named {name}"),
-            Error::UnknownSample(id) => write!(f, "no sample loaded as {id}"),
-            Error::UnknownChain(id) => write!(f, "no effect chain {id}"),
-            Error::UnknownSend(from, to) => write!(f, "no send from chain {from} into chain {to}"),
-            Error::FeedsItself(chains) => {
-                let first = &chains[0];
-                write!(f, "chain {first} would feed itself")?;
-                match &chains[1..] {
-                    [] => Ok(()),
-                    [through @ .., last] if !through.is_empty() => {
-                        let through = through.join(", ");
-                        write!(f, ", through {through} and {last}")
-                    }
-                    through => {
-                        let last = &through[0];
-                        write!(f, ", through {last}")
-                    }
-                }
-            }
-            Error::TooManySends(chain) => {
-                let most = crate::mixer::SENDS;
-                write!(f, "chain {chain} has {most} sends, the most a chain holds")
-            }
-            Error::UnknownPart(name) => write!(f, "no part named {name}"),
-            Error::PartExists(name) => write!(f, "a part named {name} is already started"),
-            Error::UnknownOption { owner, option } => write!(f, "{owner} has no option {option}"),
-            Error::BadValue {
-                owner,
-                option,
-                reason,
-            } => write!(f, "{owner}'s option {option} {reason}"),
-            Error::MissingOption { owner, option } => {
-                write!(f, "{owner} needs the option {option}")
-            }
-            Error::BadSound { owner, outputs } => {
-                write!(f, "{owner} made a sound of {outputs} channels, not 1 or 2")
-            }
-            Error::CannotBuild { owner, reason } => {
-                write!(f, "effect {owner} could not be built: {reason}")
-            }
-            Error::Sample(reason) => write!(f, "{reason}"),
-            Error::Device(reason) => write!(f, "{reason}"),
-            Error::UnknownInput(input) => {
-                let number = input + 1;
-                write!(f, "the sound card has no input {number}")
-            }
-            Error::UnknownAnalysis(id) => write!(f, "no analysis runs as {id}"),
-            Error::Record(reason) => write!(f, "{reason}"),
-            Error::Busy => write!(f, "the engine has more events waiting than it can take"),
-            Error::Offline => write!(f, "this engine renders offline and has no output"),
-            Error::Live => write!(f, "this engine plays live and cannot render"),
-            Error::Failed => write!(
-                f,
-                "the engine failed while filling audio, and has to be started again"
-            ),
-            Error::DeviceLost(name) => write!(
-                f,
-                "the output device {name} went away, and the engine has to be started again"
-            ),
-            Error::TablesNotLoaded { synth, tables } => {
-                let tables = tables.join(" and ");
-                write!(
-                    f,
-                    "the {synth}'s tables are not loaded: load {tables} first"
-                )
-            }
-            Error::CannotKeepReady(name) => write!(
-                f,
-                "{name} builds each note for its note and vel alone, so no voice of it can be kept ready"
-            ),
-            Error::Midi(reason) => write!(f, "{reason}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 struct Registered<T> {
     item: T,
@@ -414,7 +244,7 @@ struct Sound {
     beat: Option<f64>,
     start: f64,
     end: f64,
-    controls: HashMap<String, Control>,
+    controls: Controls,
     release: Option<(Shared, f64)>,
 }
 
@@ -1081,17 +911,11 @@ impl Engine {
                 (registered.item.build.clone(), registered.item.tail.clone());
             let late = registered.item.late;
             let values = self.check(&owner, &specs, given)?;
-            let mut options = Options::new(owner.clone(), specs.clone(), values);
-            options.key = Some(tap.clone());
-            let timed = |spec: &&Spec| spec.kind == Kind::Beats;
+            let mut options =
+                Options::new(owner.clone(), specs.clone(), values).keyed_by(tap.clone());
             let mut given = Vec::new();
             if beats {
-                for spec in specs.iter().filter(timed) {
-                    let value = options.values.get(&spec.name).or(spec.default.as_ref());
-                    if let Some(Value::Number(beats)) = value {
-                        given.push((spec.name.clone(), *beats));
-                    }
-                }
+                given = options.beats();
                 options.in_beats(60.0 / bpm);
             }
             let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1126,7 +950,7 @@ impl Engine {
             let blended = (dry ^ wet) | options.follow("mix") | options.follow("amp");
             unit = unit >> (blended >> Net::wrap(Box::new(An(Blend))));
             let changing = options.take_controls();
-            let follows = |name: &String| changing.contains_key(name);
+            let follows = |name: &String| changing.follows(name);
             let index = controls.len();
             followers.extend(
                 given
@@ -1137,7 +961,7 @@ impl Engine {
             in_beats.push(
                 specs
                     .iter()
-                    .filter(timed)
+                    .filter(|spec| spec.kind == Kind::Beats)
                     .map(|spec| spec.name.clone())
                     .filter(follows)
                     .collect(),
@@ -1231,7 +1055,10 @@ impl Engine {
             .count()
             >= crate::mixer::SENDS
         {
-            return Err(Error::TooManySends(from));
+            return Err(Error::TooManySends {
+                chain: from,
+                most: crate::mixer::SENDS,
+            });
         }
         book.feed(from, to)?;
         let spec = Spec::float("level").default(level);
@@ -1239,7 +1066,11 @@ impl Engine {
         let mut unit = options.follow("level");
         unit.set_sample_rate(self.rate);
         unit.allocate();
-        let control = options.take_controls().remove("level").expect("followed");
+        let control = options
+            .take_controls()
+            .get("level")
+            .expect("followed")
+            .clone();
         let send = crate::mixer::Send {
             from,
             to,
@@ -2073,8 +1904,7 @@ impl Engine {
             registered.item.build.clone(),
         );
         let values = self.check(&owner, &specs, given)?;
-        let mut options = Options::new(owner, specs, values);
-        options.held = held;
+        let options = Options::new(owner, specs, values).holding(held);
         Ok(SoundDraft {
             id,
             at,
@@ -2234,7 +2064,7 @@ struct Built {
     unit: Net,
     /// Seconds the sound lasts.
     lasts: f64,
-    controls: HashMap<String, Control>,
+    controls: Controls,
     release: Option<(Shared, f64)>,
     /// Above 0 while the note's envelope holds until it is let go.
     held: Option<Shared>,
@@ -2294,7 +2124,7 @@ struct Book {
     garbage: rtrb::Consumer<Garbage>,
     sounds: HashMap<u64, Sound>,
     ids: HashMap<u64, u64>,
-    chains: HashMap<u64, Vec<HashMap<String, Control>>>,
+    chains: HashMap<u64, Vec<Controls>>,
     /// The level of each send, by the chain it is from and the chain it goes into.
     sends: HashMap<(u64, u64), Control>,
     /// The chain each routed chain plays into in place of the main output.
@@ -2447,9 +2277,7 @@ impl Book {
         }
         // A note that follows these reads them from its first sample.
         for name in READY_OPTIONS {
-            if let Some(control) = built.controls.get(name) {
-                control.target.set(sound.options.number(name) as f32);
-            }
+            built.controls.set(name, sound.options.number(name) as f32);
         }
         built.id = sound.id;
         built.at = sound.at;
@@ -2844,7 +2672,7 @@ impl Book {
     }
 
     fn changes(&self, at: f64, target: &Target, options: &[(String, f64)]) -> Vec<Change> {
-        let controls: Vec<&HashMap<String, Control>> = match target {
+        let controls: Vec<&Controls> = match target {
             Target::Sounds(ids) => ids
                 .iter()
                 .filter_map(|id| self.ids.get(id))
@@ -2877,7 +2705,7 @@ impl Book {
         }
         for controls in controls {
             for (name, (value, slide)) in &by_option {
-                if let Some(control) = controls.get(*name) {
+                if let Some(control) = controls.get(name) {
                     changes.push(Change {
                         at: self.frames(at),
                         control: control.clone(),
@@ -3744,69 +3572,10 @@ impl AudioNode for Blend {
     }
 }
 
-/// The values to play, each given value checked against its declaration and held to its range, and the names of the options that had to be held.
-pub(crate) fn checked(
-    owner: &str,
-    specs: &[Spec],
-    given: &[(String, Value)],
-) -> Result<(HashMap<String, Value>, Vec<String>), Error> {
-    let mut values = HashMap::new();
-    let mut held_names = Vec::new();
-    for (name, value) in given {
-        let spec = specs.iter().find(|s| &s.name == name);
-        let slide = name
-            .strip_suffix("_slide")
-            .filter(|base| specs.iter().any(|s| s.name == *base));
-        let (value, held) = match (spec, slide) {
-            (Some(spec), _) => spec.check(value),
-            (None, Some(_)) => match value {
-                Value::Number(x) if *x >= 0.0 => Ok((value.clone(), false)),
-                _ => Err("takes seconds from 0 up".to_string()),
-            },
-            (None, None) => {
-                return Err(Error::UnknownOption {
-                    owner: owner.to_string(),
-                    option: name.clone(),
-                });
-            }
-        }
-        .map_err(|reason| Error::BadValue {
-            owner: owner.to_string(),
-            option: name.clone(),
-            reason,
-        })?;
-        if held {
-            held_names.push(name.clone());
-        }
-        values.insert(name.clone(), value);
-    }
-    if let Some(missing) = specs
-        .iter()
-        .find(|s| s.required && !values.contains_key(&s.name))
-    {
-        return Err(Error::MissingOption {
-            owner: owner.to_string(),
-            option: missing.name.clone(),
-        });
-    }
-    Ok((values, held_names))
-}
-
-/// The warning that an option's value was held to its range.
-pub(crate) fn held_warning(owner: &str, specs: &[Spec], name: &str) -> String {
-    let range = specs
-        .iter()
-        .find(|s| s.name == name)
-        .and_then(|s| s.range)
-        .unwrap_or((0.0, 0.0));
-    let (low, high) = range;
-    format!("{owner}'s option {name} was held to its range, {low} to {high}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Synth;
+    use crate::SynthDecl;
 
     /// What the voices of `synth` kept ready are given as they are taken.
     fn kept(engine: &Engine, synth: &str) -> Vec<Arc<Ready>> {
@@ -3852,7 +3621,7 @@ mod tests {
     #[test]
     fn a_panic_while_filling_audio_silences_the_engine_and_is_reported() {
         let mut engine = Engine::offline(48_000.0);
-        engine.register(Synth::new("broken").build(|_, _| {
+        engine.register(SynthDecl::new("broken").build(|_, _| {
             let breaks =
                 map(|_: &Frame<f32, U0>| -> f32 { panic!("on purpose while filling audio") });
             Note::rings(breaks, 1.0)

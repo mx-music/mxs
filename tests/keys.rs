@@ -1,9 +1,9 @@
 use mxs::keys::{Keyboard, choose_input};
-use mxs::{Engine, Event, Note, RATE, Spec, Synth, synths};
+use mxs::{Engine, Event, Note, RATE, Spec, Synth, SynthDecl, synths};
 
 /// A synth whose sound is its note times its vel, which a key holds and lets go over a release of 0.1 seconds.
 fn tone() -> Synth {
-    Synth::new("tone")
+    SynthDecl::new("tone")
         .option(Spec::note("note").default(60.0))
         .option(Spec::float("vel").default(0.5).range(0.0, 1.0))
         .options(Spec::envelope(1.0, 0.1))

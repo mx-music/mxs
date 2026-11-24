@@ -1,6 +1,6 @@
 use fundsp::prelude::*;
 use mxs::nodes::white_noise;
-use mxs::{Engine, Event, Note, RATE, Spec, Synth, Target, Value, effects};
+use mxs::{Engine, Event, Note, RATE, Spec, SynthDecl, Target, Value, effects};
 
 fn engine() -> Engine {
     let mut engine = Engine::offline(RATE);
@@ -8,28 +8,29 @@ fn engine() -> Engine {
         .into_iter()
         .for_each(|e| engine.register_effect(e));
     engine.register(
-        Synth::new("click").build(|_, _| Note::rings(Net::wrap(Box::new(impulse::<U1>())), 0.001)),
+        SynthDecl::new("click")
+            .build(|_, _| Note::rings(Net::wrap(Box::new(impulse::<U1>())), 0.001)),
     );
     engine.register(
-        Synth::new("hiss")
+        SynthDecl::new("hiss")
             .option(Spec::seconds("length").default(1.0))
             .build(|o, ctx| Note::rings(white_noise(ctx.seed()) * 0.25, o.number("length"))),
     );
     engine.register(
-        Synth::new("steady").build(|_, _| Note::rings(Net::wrap(Box::new(dc(0.5))), 3.0)),
+        SynthDecl::new("steady").build(|_, _| Note::rings(Net::wrap(Box::new(dc(0.5))), 3.0)),
     );
     engine.register(
-        Synth::new("level")
+        SynthDecl::new("level")
             .option(Spec::seconds("length").default(1.0))
             .build(|o, _| Note::rings(Net::wrap(Box::new(dc(0.5))), o.number("length"))),
     );
     engine.register(
-        Synth::new("counted")
+        SynthDecl::new("counted")
             .option(Spec::seconds("length").default(1.0))
             .build(|o, _| Note::rings(Net::wrap(Box::new(An(Counted(0)))), o.number("length"))),
     );
     engine.register(
-        Synth::new("saw")
+        SynthDecl::new("saw")
             .option(Spec::hz("hz").default(440.0))
             .build(|o, _| {
                 Note::rings(
@@ -39,7 +40,7 @@ fn engine() -> Engine {
             }),
     );
     engine.register(
-        Synth::new("tone")
+        SynthDecl::new("tone")
             .option(Spec::hz("hz").default(440.0))
             .build(|o, _| {
                 Note::rings(
@@ -448,7 +449,7 @@ fn limited(
 ) -> (Vec<f32>, Vec<f32>) {
     let mut engine = engine();
     engine.register(
-        Synth::new("burst")
+        SynthDecl::new("burst")
             .build(|_, _| Note::rings(Net::wrap(Box::new(sine_hz::<f32>(1000.0))) * 4.0, 0.05)),
     );
     let chain = engine
@@ -656,7 +657,7 @@ fn the_compressor_lowers_what_is_over_its_threshold_by_its_ratio_and_raises_it_b
 #[test]
 fn the_compressor_as_it_comes_keeps_the_shape_of_a_low_notes_cycle() {
     let mut engine = engine();
-    engine.register(Synth::new("low").build(|_, _| {
+    engine.register(SynthDecl::new("low").build(|_, _| {
         let first = Net::wrap(Box::new(sine_hz::<f32>(41.0))) * 0.8;
         let third = Net::wrap(Box::new(sine_hz::<f32>(123.0))) * 0.2;
         Note::rings(first + third, 3.0)

@@ -6,7 +6,7 @@ use super::{
 };
 use crate::DEFAULT_VEL;
 use crate::nodes::{Draws, between, db, decay2, dust, exp_segments, hit, hz, modes, segments};
-use crate::{Context, Note, Spec, Synth};
+use crate::{Context, Note, Spec, Synth, SynthDecl};
 use fundsp::prelude::*;
 
 /// The synths of this file.
@@ -36,7 +36,7 @@ pub(super) fn all() -> Vec<Synth> {
 }
 
 fn cowbell() -> Synth {
-    Synth::new("cowbell")
+    SynthDecl::new("cowbell")
         .options(strike_options(70.07))
         .option(
             Spec::float("muted")
@@ -109,7 +109,7 @@ fn cowbell() -> Synth {
 }
 
 fn clave() -> Synth {
-    Synth::new("clave")
+    SynthDecl::new("clave")
         .options(strike_options(95.2))
         .build(|o, ctx| {
             let vel = vel(o, 0.05);
@@ -178,7 +178,7 @@ const HIGH_AGOGO: Agogo = Agogo {
 };
 
 fn agogo(name: &'static str, a: &'static Agogo) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .options(strike_options(a.note))
         .build(move |o, ctx| {
             let vel = vel(o, 0.0);
@@ -240,7 +240,7 @@ const SHAKER: Shake = Shake {
 };
 
 fn shake(name: &'static str, s: &'static Shake) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .options(strike_options(s.note))
         .option(
             Spec::float("up")
@@ -380,7 +380,7 @@ const HIGH_CONGA: Conga = Conga {
 };
 
 fn conga(name: &'static str, c: &'static Conga) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .options(strike_options(c.note))
         .option(
             Spec::float("mute")
@@ -458,7 +458,7 @@ fn conga(name: &'static str, c: &'static Conga) -> Synth {
 }
 
 fn timbale(name: &'static str, note: f64) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .option(Spec::note("note").default(note).doc("The drum's pitch."))
         .build(|o, ctx| {
             let freq = hz(o.number("note"));
@@ -480,7 +480,7 @@ fn timbale(name: &'static str, note: f64) -> Synth {
 }
 
 fn timbale_shell() -> Synth {
-    Synth::new("timbale_shell")
+    SynthDecl::new("timbale_shell")
         .option(Spec::note("note").default(93.0).doc("The shell's pitch."))
         .build(|o, ctx| {
             let freq = hz(o.number("note"));
@@ -496,7 +496,7 @@ fn timbale_shell() -> Synth {
 }
 
 fn guiro() -> Synth {
-    Synth::new("guiro")
+    SynthDecl::new("guiro")
         .options(strike_options(93.29))
         .option(
             Spec::beats("sustain")
@@ -547,7 +547,7 @@ fn guiro() -> Synth {
 }
 
 fn triangle() -> Synth {
-    Synth::new("triangle")
+    SynthDecl::new("triangle")
         .options(strike_options(69.0))
         .option(
             Spec::beats("sustain")
@@ -601,7 +601,7 @@ fn triangle() -> Synth {
 }
 
 fn tambourine(name: &'static str, shaken: bool) -> Synth {
-    let mut decl = Synth::new(name).options(strike_options(69.0));
+    let mut decl = SynthDecl::new(name).options(strike_options(69.0));
     if shaken {
         decl = decl.option(
             Spec::beats("sustain")
@@ -655,7 +655,7 @@ fn tambourine(name: &'static str, shaken: bool) -> Synth {
 }
 
 fn cabasa() -> Synth {
-    Synth::new("cabasa")
+    SynthDecl::new("cabasa")
         .options(strike_options(96.0))
         .option(
             Spec::float("rub")
@@ -699,7 +699,7 @@ fn cabasa() -> Synth {
 }
 
 fn cajon() -> Synth {
-    Synth::new("cajon")
+    SynthDecl::new("cajon")
         .options(strike_options(40.0))
         .option(
             Spec::float("slap")
@@ -836,7 +836,7 @@ const HIGH_BONGO: Bongo = Bongo {
 };
 
 fn bongo(name: &'static str, b: &'static Bongo) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .options(strike_options(b.note))
         .option(
             Spec::float("muted")

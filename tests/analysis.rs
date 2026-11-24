@@ -1,5 +1,5 @@
 use fundsp::prelude::*;
-use mxs::{Engine, Event, Note, Origin, RATE, Report, Synth, Topic};
+use mxs::{Engine, Event, Note, Origin, RATE, Report, Synth, SynthDecl, Topic};
 use std::time::Duration;
 
 /// A mono 32-bit float WAV file of `samples` at the engine's rate.
@@ -174,7 +174,7 @@ fn an_interval_of_20_ms_reports_every_20_ms_of_engine_time() {
 }
 
 fn tone() -> Synth {
-    Synth::new("tone").build(|_, _| Note::rings(sine_hz::<f32>(330.0) * 0.3, 2.0))
+    SynthDecl::new("tone").build(|_, _| Note::rings(sine_hz::<f32>(330.0) * 0.3, 2.0))
 }
 
 #[test]

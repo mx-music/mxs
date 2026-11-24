@@ -2,7 +2,7 @@
 //! Each plays a quiet note on the default output for about a second before moving it to BlackHole 2ch, and sets the default output back when it ends.
 
 use fundsp::prelude::*;
-use mxs::{Engine, Event, Note, Report, Settings, Source, Synth, Topic, synths};
+use mxs::{Engine, Event, Note, Report, Settings, Source, Synth, SynthDecl, Topic, synths};
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime};
@@ -50,7 +50,7 @@ fn engine(settings: &Settings) -> Engine {
 }
 
 fn click() -> Synth {
-    Synth::new("click").build(|_, _| Note::rings(dc(0.25), 0.01))
+    SynthDecl::new("click").build(|_, _| Note::rings(dc(0.25), 0.01))
 }
 
 /// An engine that plays to BlackHole 2ch and records what reaches it.

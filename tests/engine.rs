@@ -1,6 +1,9 @@
 use fundsp::prelude::*;
 use mxs::nodes::{hz, mode, white_noise};
-use mxs::{Effect, Engine, Error, Event, Note, RATE, Source, Spec, Synth, Target, Value, synths};
+use mxs::{
+    EffectDecl, Engine, Error, Event, Note, RATE, Source, Spec, Synth, SynthDecl, Target, Value,
+    synths,
+};
 
 fn engine() -> Engine {
     let mut engine = Engine::offline(RATE);
@@ -10,7 +13,7 @@ fn engine() -> Engine {
 
 /// A synth whose sound is its `level` option, held, for a second.
 fn level() -> Synth {
-    Synth::new("level")
+    SynthDecl::new("level")
         .option(Spec::float("level").default(1.0).range(0.0, 2.0))
         .build(|options, _| Note::rings(options.follow("level"), 1.0))
 }
@@ -31,7 +34,7 @@ fn a_synth_of_ones_own_registers_and_renders_the_same_samples_on_every_run() {
     let render = || {
         let mut engine = engine();
         engine.register(
-            Synth::new("plate")
+            SynthDecl::new("plate")
                 .option(Spec::note("note").default(60.0))
                 .option(Spec::float("vel").default(0.6).range(0.0, 1.0))
                 .build(|options, ctx| {
@@ -120,7 +123,7 @@ fn a_value_outside_its_range_is_held_to_it_and_reported_once() {
 fn a_named_option_takes_only_its_names() {
     let mut engine = engine();
     engine.register(
-        Synth::new("bol")
+        SynthDecl::new("bol")
             .option(Spec::name("bol", &["na", "tun"]).default("na"))
             .build(|options, _| {
                 Note::rings(
@@ -157,7 +160,7 @@ fn a_named_option_takes_only_its_names() {
 #[test]
 fn every_note_of_a_batch_of_3000_sounds() {
     let mut engine = engine();
-    engine.register(Synth::new("click").build(|_, _| Note::rings(dc(1.0), 0.001)));
+    engine.register(SynthDecl::new("click").build(|_, _| Note::rings(dc(1.0), 0.001)));
     let clicks: Vec<_> = (0..3000)
         .map(|i| (i as f64 * 0.002, Event::note(None, "click", &[])))
         .collect();
@@ -302,7 +305,7 @@ fn notes_play_through_their_effect_chain_until_it_stops() {
     let mut engine = engine();
     engine.register(level());
     engine.register_effect(
-        Effect::new("double")
+        EffectDecl::new("double")
             .tail(0.5)
             .build(|_, _| Net::wrap(Box::new(multipass::<U2>() * 2.0))),
     );
@@ -380,7 +383,7 @@ fn a_loaded_sample_plays_at_its_rate_within_its_span() {
 #[test]
 fn a_synth_that_panics_while_filling_audio_fails_the_engine_until_it_is_started_again() {
     let mut engine = engine();
-    engine.register(Synth::new("broken").build(|_, _| {
+    engine.register(SynthDecl::new("broken").build(|_, _| {
         let breaks = map(|_: &Frame<f32, U0>| -> f32 { panic!("on purpose while filling audio") });
         Note::rings(breaks, 1.0)
     }));
@@ -496,7 +499,7 @@ fn a_recording_writes_its_source_apart_from_the_main_output_until_it_stops() {
 
 /// A synth of white noise, so a gap or a repeated block in a recording of it shows.
 fn noise() -> Synth {
-    Synth::new("noise").build(|_, ctx| Note::rings(white_noise(ctx.seed()) * 0.5, 3600.0))
+    SynthDecl::new("noise").build(|_, ctx| Note::rings(white_noise(ctx.seed()) * 0.5, 3600.0))
 }
 
 #[test]
@@ -589,7 +592,7 @@ fn sounding_counts_notes_until_they_end_and_not_live_input() {
 
 /// A struck resonator that dies away over 5 seconds, so each note is quieter than the one after it.
 fn ping() -> Synth {
-    Synth::new("ping").build(|_, _| {
+    SynthDecl::new("ping").build(|_, _| {
         Note::rings(
             Net::wrap(Box::new(impulse::<U1>())) >> mode(440.0, 0.0, 1.0, 5.0),
             5.0,
@@ -713,7 +716,7 @@ fn an_offline_engine_has_no_system_clock_to_play_at() {
 fn a_released_note_falls_silent_over_its_release_from_where_it_is() {
     let mut engine = engine();
     engine.register(
-        Synth::new("held")
+        SynthDecl::new("held")
             .options(Spec::envelope(60.0, 0.1))
             .build(|o, _| Note::envelope(dc(1.0f32), o)),
     );
@@ -772,7 +775,7 @@ fn an_offline_engine_says_the_share_of_time_its_buffers_took_and_counts_none_lat
 fn an_offline_engine_refuses_a_batch_with_a_sound_of_three_channels_and_plays_none_of_it() {
     let mut engine = engine();
     engine.register(level());
-    engine.register(Synth::new("three").build(|_, _| Note::rings(dc((0.0, 0.0, 0.0)), 1.0)));
+    engine.register(SynthDecl::new("three").build(|_, _| Note::rings(dc((0.0, 0.0, 0.0)), 1.0)));
     let batch = [
         (0.0, Event::note(None, "level", &[])),
         (0.0, Event::note(None, "three", &[])),

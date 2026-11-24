@@ -1,5 +1,5 @@
 use mxs::graph::{Clause, Graph};
-use mxs::{Engine, Event, RATE, Synth};
+use mxs::{Engine, Event, RATE};
 
 fn n(x: f64) -> Graph {
     Graph::Number(x)
@@ -16,7 +16,7 @@ fn sine(hz: f64) -> Graph {
 /// The note `sound` makes for `seconds`, at its own level: the engine plays a note in the middle at 1 / √2 on each side.
 fn sound(sound: Graph, seconds: f64) -> Vec<f32> {
     let graph = call("rings", vec![sound], vec![("seconds", n(seconds + 1.0))]);
-    let synth = Synth::graph(
+    let synth = mxs::graph::synth(
         "shaped",
         vec![],
         vec![Clause {

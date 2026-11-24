@@ -1,6 +1,6 @@
 //! The sound card side of a live engine: which devices there are, and how one is asked to run.
 
-use crate::engine::Error;
+use crate::error::Error;
 use cpal::traits::{DeviceTrait, HostTrait};
 
 /// An output or input device, with every channel count, sample rate and buffer size it supports.

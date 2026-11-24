@@ -1,7 +1,7 @@
 use fundsp::prelude::*;
 use mxs::{
-    Engine, Error, Event, Note, Pass, RATE, Report, Spec, Synth, Target, Tempo, Topic, Value,
-    effects, synths,
+    Engine, Error, Event, Note, Pass, RATE, Report, Spec, Synth, SynthDecl, Target, Tempo, Topic,
+    Value, effects, synths,
 };
 
 fn engine() -> Engine {
@@ -12,19 +12,19 @@ fn engine() -> Engine {
         .for_each(|e| engine.register_effect(e));
     engine.register(click());
     engine.register(held());
-    engine.register(Synth::new("level").build(|_, _| Note::rings(dc(0.25), 8.0)));
+    engine.register(SynthDecl::new("level").build(|_, _| Note::rings(dc(0.25), 8.0)));
     engine.start_part("lead", &[]).unwrap();
     engine
 }
 
 /// A level of 0.25 from the note's first frame, for 10 ms.
 fn click() -> Synth {
-    Synth::new("click").build(|_, _| Note::rings(dc(0.25), 0.01))
+    SynthDecl::new("click").build(|_, _| Note::rings(dc(0.25), 0.01))
 }
 
 /// A level that falls silent over a release of one beat.
 fn held() -> Synth {
-    Synth::new("held")
+    SynthDecl::new("held")
         .options(Spec::envelope(0.0, 1.0))
         .build(|options, _| Note::envelope(dc(0.25), options))
 }

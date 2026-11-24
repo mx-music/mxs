@@ -1,7 +1,7 @@
 //! Synths and effects described as data: each a graph of calls on the note's options, which the engine builds into a sound when a note starts, with no compiling.
 //! An option is read once, when the note starts; arithmetic on options and numbers is worked out then, and a node whose level works out to 0 is left out.
 //!
-//! [`Synth::graph`] and [`Effect::graph`] build from a [`Graph`], a tree of calls to the functions listed here.
+//! [`synth`] and [`effect`] build from a [`Graph`], a tree of calls to the functions listed here.
 //! A program that lets its users write synths, in a language of its own or in a file, turns what they wrote into a `Graph`.
 //! [The guide to building a synth](crate::guide::building) has a program that does.
 //!
@@ -108,7 +108,7 @@
 //!
 //! # Files
 //!
-//! [`Synth::from_json`] and [`Effect::from_json`] read a synth or an effect from a JSON file, and [`Synth::from_json_file`] and [`Effect::from_json_file`] from its path, so a program in any language can write one.
+//! [`graph::synth_from_json`](crate::graph::synth_from_json) and [`graph::effect_from_json`](crate::graph::effect_from_json) read a synth or an effect from a JSON file, and [`graph::synth_from_json_file`](crate::graph::synth_from_json_file) and [`graph::effect_from_json_file`](crate::graph::effect_from_json_file) from its path, so a program in any language can write one.
 //!
 //! ```json
 //! {
@@ -137,8 +137,10 @@
 
 mod file;
 
+pub use file::{effect_from_json, effect_from_json_file, synth_from_json, synth_from_json_file};
+
 use crate::nodes::{self, db, hz};
-use crate::{Context, Effect, Kind, Note, Options, Spec, Synth, Value};
+use crate::{Context, Effect, EffectDecl, Kind, Note, Options, Spec, Synth, SynthDecl, Value};
 use fundsp::prelude::*;
 
 /// A value of a graph: a number, a name such as a noise's colour, one of the note's options, a list, or a call of the vocabulary.
@@ -357,41 +359,42 @@ fn needs(name: &str) -> &'static [&'static str] {
         .map_or(&[], |(_, keys)| keys)
 }
 
-impl Synth {
-    /// A synth whose note is built from the first of `clauses` whose matches its options meet, or is silent when none does.
-    pub fn graph(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth, String> {
-        for clause in &clauses {
-            known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
-            named_options(&clause.graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
-            for table in tables_in(&clause.graph) {
-                if crate::synths::table_file(&table).is_none() {
-                    return Err(format!("{name}: mxs has no table {table}"));
-                }
-            }
-            let mut mixes = Vec::new();
-            mixes_in(&clause.graph, &mut mixes);
-            if mixes.windows(2).any(|pair| pair[0] != pair[1]) {
-                return Err(format!(
-                    "{name}: each draw and drawn noise of a note takes the same mix"
-                ));
-            }
-            if ["input", "left", "right", "sides", "tail"]
-                .iter()
-                .any(|node| calls(&clause.graph, node))
-            {
-                return Err(format!("{name}: a synth has no input; an effect takes one"));
+/// A synth whose note is built from the first of `clauses` whose matches its options meet, or is silent when none does.
+pub fn synth(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth, String> {
+    for clause in &clauses {
+        known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
+        named_options(&clause.graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
+        for table in tables_in(&clause.graph) {
+            if crate::synths::table_file(&table).is_none() {
+                return Err(format!("{name}: mxs has no table {table}"));
             }
         }
-        let owner = name.to_string();
-        let mut files: Vec<&'static str> = clauses
+        let mut mixes = Vec::new();
+        mixes_in(&clause.graph, &mut mixes);
+        if mixes.windows(2).any(|pair| pair[0] != pair[1]) {
+            return Err(format!(
+                "{name}: each draw and drawn noise of a note takes the same mix"
+            ));
+        }
+        if ["input", "left", "right", "sides", "tail"]
             .iter()
-            .flat_map(|clause| tables_in(&clause.graph))
-            .flat_map(|table| crate::synths::table_files(&table))
-            .collect();
-        files.sort_unstable();
-        files.dedup();
-        let notes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let mut synth = Synth::new(name).options(specs).build(move |options, ctx| {
+            .any(|node| calls(&clause.graph, node))
+        {
+            return Err(format!("{name}: a synth has no input; an effect takes one"));
+        }
+    }
+    let owner = name.to_string();
+    let mut files: Vec<&'static str> = clauses
+        .iter()
+        .flat_map(|clause| tables_in(&clause.graph))
+        .flat_map(|table| crate::synths::table_files(&table))
+        .collect();
+    files.sort_unstable();
+    files.dedup();
+    let notes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let mut synth = SynthDecl::new(name)
+        .options(specs)
+        .build(move |options, ctx| {
             let count = notes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let Some(clause) = clauses
                 .iter()
@@ -416,108 +419,105 @@ impl Synth {
                 Err(reason) => unwind_refused(format!("{owner}: {reason}")),
             }
         });
-        synth.tables = Vec::leak(files);
-        Ok(synth)
-    }
+    synth.tables = Vec::leak(files);
+    Ok(synth)
 }
 
-impl Effect {
-    /// An effect built from a graph: `graph` is one channel's sound, its `input` that channel coming in, and it is built once for each channel.
-    /// A graph that is `sides(left, right)` is built once, each side from `left()` and `right()`, and one wrapped in `tail` sounds on for that long after its input stops.
-    pub fn graph(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, String> {
-        known(&graph).map_err(|reason| format!("{name}: {reason}"))?;
-        named_options(&graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
-        let refuse = |reason: String| format!("{name}: {reason}");
-        let (graph, tail) = match graph {
-            Graph::Call { name, args, named } if name == "tail" => {
-                let [inner] = <[Graph; 1]>::try_from(args)
-                    .map_err(|_| refuse("tail takes the effect's graph".to_string()))?;
-                let tail = match named.as_slice() {
-                    [(key, Graph::Number(seconds))] if key == "seconds" && *seconds >= 0.0 => {
-                        Tail::Seconds(*seconds)
-                    }
-                    [(key, Graph::Name(option))] if key == "option" => {
-                        if !specs.iter().any(|s| &s.name == option) {
-                            return Err(refuse(format!(
-                                "tail names {option}, which is not an option"
-                            )));
-                        }
-                        Tail::Option(option.clone())
-                    }
-                    _ => {
-                        return Err(refuse(
-                            "tail takes seconds:, a number from 0 up, or option:, an option's name"
-                                .to_string(),
-                        ));
-                    }
-                };
-                (inner, Some(tail))
-            }
-            graph => (graph, None),
-        };
-        let sides = match graph {
-            Graph::Call { name, args, .. } if name == "sides" => {
-                let pair = <[Graph; 2]>::try_from(args)
-                    .map_err(|_| refuse("sides takes the left sound and the right".to_string()))?;
-                pair.to_vec()
-            }
-            graph => vec![graph],
-        };
-        for side in &sides {
-            if calls(side, "sides") || calls(side, "tail") {
-                return Err(refuse(
-                    "sides and tail go around the whole graph, tail outermost".to_string(),
-                ));
-            }
-            let other: &[&str] = if sides.len() == 2 {
-                &["input"]
-            } else {
-                &["left", "right"]
-            };
-            if other.iter().any(|node| calls(side, node)) {
-                return Err(refuse(if sides.len() == 2 {
-                    "an effect over both sides takes left() and right(), not input()".to_string()
-                } else {
-                    "left() and right() go in an effect over both sides, inside sides".to_string()
-                }));
-            }
-        }
-        let owner = name.to_string();
-        let decl = specs
-            .into_iter()
-            .fold(Effect::new(name), |decl, spec| decl.option(spec));
-        let decl = match tail {
-            Some(Tail::Seconds(seconds)) => decl.tail(seconds),
-            Some(Tail::Option(option)) => decl.tail_from(move |o| o.number(&option).abs()),
-            None => decl,
-        };
-        Ok(decl.build(move |options, ctx| {
-            let width = sides.len();
-            let mut side = |graph: &Graph| -> Net {
-                let mut build = Build {
-                    options,
-                    ctx,
-                    count: 0,
-                    drawn: None,
-                    inputs: Some(Vec::new()),
-                    sides: width,
-                };
-                let sound = build
-                    .eval(graph)
-                    .and_then(signal)
-                    .unwrap_or_else(|reason| unwind_refused(format!("{owner}: {reason}")));
-                let uses = build.inputs.unwrap_or_default();
-                if sound.inputs() != uses.len() {
-                    unwind_refused(format!("{owner}: its input is taken where it is left out or taken twice, such as in a sound multiplied by 0"));
+/// An effect built from a graph: `graph` is one channel's sound, its `input` that channel coming in, and it is built once for each channel.
+/// A graph that is `sides(left, right)` is built once, each side from `left()` and `right()`, and one wrapped in `tail` sounds on for that long after its input stops.
+pub fn effect(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, String> {
+    known(&graph).map_err(|reason| format!("{name}: {reason}"))?;
+    named_options(&graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
+    let refuse = |reason: String| format!("{name}: {reason}");
+    let (graph, tail) = match graph {
+        Graph::Call { name, args, named } if name == "tail" => {
+            let [inner] = <[Graph; 1]>::try_from(args)
+                .map_err(|_| refuse("tail takes the effect's graph".to_string()))?;
+            let tail = match named.as_slice() {
+                [(key, Graph::Number(seconds))] if key == "seconds" && *seconds >= 0.0 => {
+                    Tail::Seconds(*seconds)
                 }
-                fed(&uses, width, sound)
+                [(key, Graph::Name(option))] if key == "option" => {
+                    if !specs.iter().any(|s| &s.name == option) {
+                        return Err(refuse(format!(
+                            "tail names {option}, which is not an option"
+                        )));
+                    }
+                    Tail::Option(option.clone())
+                }
+                _ => {
+                    return Err(refuse(
+                        "tail takes seconds:, a number from 0 up, or option:, an option's name"
+                            .to_string(),
+                    ));
+                }
             };
-            match sides.as_slice() {
-                [left, right] => side(left) ^ side(right),
-                _ => side(&sides[0]) | side(&sides[0]),
-            }
-        }))
+            (inner, Some(tail))
+        }
+        graph => (graph, None),
+    };
+    let sides = match graph {
+        Graph::Call { name, args, .. } if name == "sides" => {
+            let pair = <[Graph; 2]>::try_from(args)
+                .map_err(|_| refuse("sides takes the left sound and the right".to_string()))?;
+            pair.to_vec()
+        }
+        graph => vec![graph],
+    };
+    for side in &sides {
+        if calls(side, "sides") || calls(side, "tail") {
+            return Err(refuse(
+                "sides and tail go around the whole graph, tail outermost".to_string(),
+            ));
+        }
+        let other: &[&str] = if sides.len() == 2 {
+            &["input"]
+        } else {
+            &["left", "right"]
+        };
+        if other.iter().any(|node| calls(side, node)) {
+            return Err(refuse(if sides.len() == 2 {
+                "an effect over both sides takes left() and right(), not input()".to_string()
+            } else {
+                "left() and right() go in an effect over both sides, inside sides".to_string()
+            }));
+        }
     }
+    let owner = name.to_string();
+    let decl = specs
+        .into_iter()
+        .fold(EffectDecl::new(name), |decl, spec| decl.option(spec));
+    let decl = match tail {
+        Some(Tail::Seconds(seconds)) => decl.tail(seconds),
+        Some(Tail::Option(option)) => decl.tail_from(move |o| o.number(&option).abs()),
+        None => decl,
+    };
+    Ok(decl.build(move |options, ctx| {
+        let width = sides.len();
+        let mut side = |graph: &Graph| -> Net {
+            let mut build = Build {
+                options,
+                ctx,
+                count: 0,
+                drawn: None,
+                inputs: Some(Vec::new()),
+                sides: width,
+            };
+            let sound = build
+                .eval(graph)
+                .and_then(signal)
+                .unwrap_or_else(|reason| unwind_refused(format!("{owner}: {reason}")));
+            let uses = build.inputs.unwrap_or_default();
+            if sound.inputs() != uses.len() {
+                unwind_refused(format!("{owner}: its input is taken where it is left out or taken twice, such as in a sound multiplied by 0"));
+            }
+            fed(&uses, width, sound)
+        };
+        match sides.as_slice() {
+            [left, right] => side(left) ^ side(right),
+            _ => side(&sides[0]) | side(&sides[0]),
+        }
+    }))
 }
 
 // A graph nests as deep as the music written for it, and the BEAM runs these on a scheduler's small stack, so each level grows the stack when it runs low.

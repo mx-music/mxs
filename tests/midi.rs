@@ -4,7 +4,9 @@
 use fundsp::prelude::*;
 use midir::os::unix::VirtualOutput;
 use midir::{MidiOutput, MidiOutputConnection};
-use mxs::{Engine, Error, Note, RATE, Report, Reports, Settings, Spec, Synth, Topic, synths};
+use mxs::{
+    Engine, Error, Note, RATE, Report, Reports, Settings, Spec, Synth, SynthDecl, Topic, synths,
+};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -26,7 +28,7 @@ fn live() -> Engine {
 
 /// A sine `times` the note's pitch, at its vel, held while its key is down and let go over 0.1 seconds.
 fn tone(name: &str, times: f32) -> Synth {
-    Synth::new(name)
+    SynthDecl::new(name)
         .option(Spec::note("note").default(60.0))
         .option(Spec::float("vel").default(0.5).range(0.0, 1.0))
         .options(Spec::envelope(1.0, 0.1))

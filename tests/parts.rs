@@ -1,5 +1,7 @@
 use fundsp::prelude::*;
-use mxs::{Engine, Error, Event, Note, RATE, Report, Spec, Synth, Topic, Value, effects, synths};
+use mxs::{
+    Engine, Error, Event, Note, RATE, Report, Spec, Synth, SynthDecl, Topic, Value, effects, synths,
+};
 
 fn engine() -> Engine {
     let mut engine = Engine::offline(RATE);
@@ -13,7 +15,7 @@ fn engine() -> Engine {
 
 /// A sine at `hz` that peaks at 0.25, held for three seconds.
 fn tone() -> Synth {
-    Synth::new("tone")
+    SynthDecl::new("tone")
         .option(Spec::float("hz").default(440.0).range(20.0, 20_000.0))
         .build(|options, _| Note::rings(sine_hz::<f32>(options.number("hz") as f32) * 0.25, 3.0))
 }

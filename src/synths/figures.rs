@@ -5,7 +5,7 @@
 
 use super::common::{effort, followed_effort, pressed};
 use crate::nodes::hz;
-use crate::synth::{Given, Ready};
+use crate::ready::{Given, Ready};
 use crate::{Context, Note, Options};
 use fundsp::prelude::*;
 use std::collections::HashMap;
@@ -537,7 +537,7 @@ pub(super) fn strike_among(
         let (mut voice, mut working) = (Voice::empty(), Voice::empty());
         let gain = recipe.play(note, vel, &mut voice, &mut working);
         let end = voice.silent_after();
-        let sound = voice.struck(1.0, None, expressions) * gain as f32;
+        let sound = struck(voice, 1.0, None, expressions) * gain as f32;
         return Note::envelope(sound, o).within(end);
     }
     let all: Vec<&Figures> = choices.iter().map(|(figures, _)| *figures).collect();
@@ -564,7 +564,7 @@ pub(super) fn strike_among(
         recipes: choices.into_iter().map(|(_, recipe)| recipe).collect(),
         working,
     };
-    Note::envelope(voice.struck(gain, Some(refill), expressions), o).within(end)
+    Note::envelope(struck(voice, gain, Some(refill), expressions), o).within(end)
 }
 
 /// Which of `count` choices a pedal of 0 or 1 picks.
@@ -826,36 +826,41 @@ impl Voice {
             })
             .fold(0.1, f64::max)
     }
+}
 
-    /// The voice as a sound, each partial a sine and each band of noise its filters' output.
-    pub fn sound(self) -> Net {
-        self.struck(1.0, None, None)
-    }
+/// The voice as a sound, each partial a sine and each band of noise its filters' output.
+pub(super) fn sound(voice: Voice) -> Net {
+    struck(voice, 1.0, None, None)
+}
 
-    /// The voice as a sound that follows the bend and brightness of the note's options while it sounds.
-    pub(super) fn following(self, o: &Options) -> Net {
-        self.struck(1.0, None, Some(o.follow("bend") | o.follow("brightness")))
-    }
+/// The voice as a sound that follows the bend and brightness of the note's options while it sounds.
+pub(super) fn following(voice: Voice, o: &Options) -> Net {
+    struck(
+        voice,
+        1.0,
+        None,
+        Some(o.follow("bend") | o.follow("brightness")),
+    )
+}
 
-    // The voice as a sound at `gain`, which fills itself again as it starts when given a refill, and follows the bend and brightness of `expressions` when given them.
-    fn struck(self, gain: f64, refill: Option<Refill>, expressions: Option<Net>) -> Net {
-        let mut node = Struck {
-            voice: self,
-            rate: DEFAULT_SR,
-            sines: vec![],
-            bands: vec![],
-            warm: vec![],
-            sample: 0,
-            gain: gain as f32,
-            refill,
-            wanted: (0.0, 0.5),
-            applied: (0.0, 0.5),
-            lowest: 0.0,
-        };
-        node.set_sample_rate(DEFAULT_SR);
-        let plain = || Net::wrap(Box::new(dc((0.0, 0.5))));
-        expressions.unwrap_or_else(plain) >> Net::wrap(Box::new(An(node)))
-    }
+// The voice as a sound at `gain`, which fills itself again as it starts when given a refill, and follows the bend and brightness of `expressions` when given them.
+fn struck(voice: Voice, gain: f64, refill: Option<Refill>, expressions: Option<Net>) -> Net {
+    let mut node = Struck {
+        voice,
+        rate: DEFAULT_SR,
+        sines: vec![],
+        bands: vec![],
+        warm: vec![],
+        sample: 0,
+        gain: gain as f32,
+        refill,
+        wanted: (0.0, 0.5),
+        applied: (0.0, 0.5),
+        lowest: 0.0,
+    };
+    node.set_sample_rate(DEFAULT_SR);
+    let plain = || Net::wrap(Box::new(dc((0.0, 0.5))));
+    expressions.unwrap_or_else(plain) >> Net::wrap(Box::new(An(node)))
 }
 
 /// What a voice built ready fills itself again with: the hold the engine gives its note through, its instrument's recipes by pedal, and a voice for the recipe to work in.
@@ -2136,7 +2141,7 @@ mod build_time {
             ("note".to_string(), Value::Number(note)),
             ("vel".to_string(), Value::Number(0.7)),
         ];
-        let (values, _) = crate::engine::checked(&synth.name, &synth.specs, &given).unwrap();
+        let (values, _) = crate::spec::checked(&synth.name, &synth.specs, &given).unwrap();
         let options = Options::new(
             synth.name.as_str().into(),
             synth.specs.clone().into(),
@@ -2214,8 +2219,8 @@ mod build_time {
 #[cfg(test)]
 mod ready {
     use crate::options::{Context, Options};
+    use crate::ready::Given;
     use crate::spec::Value;
-    use crate::synth::Given;
     use fundsp::prelude::*;
 
     fn options(synth: &crate::Synth, note: f64, vel: f64) -> Options {
@@ -2223,7 +2228,7 @@ mod ready {
             ("note".to_string(), Value::Number(note)),
             ("vel".to_string(), Value::Number(vel)),
         ];
-        let (values, _) = crate::engine::checked(&synth.name, &synth.specs, &given).unwrap();
+        let (values, _) = crate::spec::checked(&synth.name, &synth.specs, &given).unwrap();
         Options::new(
             synth.name.as_str().into(),
             synth.specs.clone().into(),
@@ -2296,9 +2301,7 @@ mod ready {
                 // As the engine does, a held note's note and vel are set where it follows them.
                 let controls = plain.take_controls();
                 for (option, value) in [("note", note), ("vel", vel)] {
-                    if let Some(control) = controls.get(option) {
-                        control.target.set(value as f32);
-                    }
+                    controls.set(option, value as f32);
                 }
                 // A second and a half, past where a breath's wander comes in.
                 let frames = 72_000;

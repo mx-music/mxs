@@ -8,12 +8,12 @@
 
 use fundsp::prelude::*;
 use mxs::nodes::{db, hz, modes};
-use mxs::{Engine, Error, Event, Note, RATE, Spec, Synth, Target};
+use mxs::{Engine, Error, Event, Note, RATE, Spec, Synth, SynthDecl, Target};
 use std::time::Duration;
 
 /// A metal plate: four resonators set ringing by one impulse, the higher ones fading sooner.
 fn plate() -> Synth {
-    Synth::new("plate")
+    SynthDecl::new("plate")
         .doc("A metal plate struck with a hard mallet.")
         .option(Spec::note("note").default(60.0).doc("The pitch."))
         .option(
@@ -37,7 +37,7 @@ fn plate() -> Synth {
 
 /// A sawtooth under a low-pass filter, whose pitch and cutoff a caller can change while a note sounds.
 fn lead() -> Synth {
-    Synth::new("lead")
+    SynthDecl::new("lead")
         .doc("A sawtooth lead that slides.")
         .option(Spec::note("note").default(57.0).doc("The pitch."))
         .option(

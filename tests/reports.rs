@@ -1,5 +1,5 @@
 use fundsp::prelude::*;
-use mxs::{Engine, Event, Levels, Note, RATE, Report, Reports, Synth, Topic, synths};
+use mxs::{Engine, Event, Levels, Note, RATE, Report, Reports, Synth, SynthDecl, Topic, synths};
 
 fn engine() -> Engine {
     let mut engine = Engine::offline(RATE);
@@ -11,7 +11,7 @@ fn engine() -> Engine {
 /// A sine at 440 Hz that peaks at -12 dB in each channel once it is placed in the centre, held for two seconds.
 fn tone() -> Synth {
     let peak = 10f32.powf(-12.0 / 20.0) * std::f32::consts::SQRT_2;
-    Synth::new("tone").build(move |_, _| Note::rings(sine_hz::<f32>(440.0) * peak, 2.0))
+    SynthDecl::new("tone").build(move |_, _| Note::rings(sine_hz::<f32>(440.0) * peak, 2.0))
 }
 
 fn db(level: f32) -> f32 {

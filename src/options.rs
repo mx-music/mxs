@@ -9,11 +9,11 @@ use std::sync::{Arc, Mutex};
 pub struct Options {
     pub(crate) owner: Arc<str>,
     pub(crate) specs: Arc<[Spec]>,
-    pub(crate) values: HashMap<String, Value>,
-    pub(crate) controls: Mutex<HashMap<String, Control>>,
-    pub(crate) held: bool,
+    values: HashMap<String, Value>,
+    controls: Mutex<HashMap<String, Control>>,
+    held: bool,
     /// Where an effect reads the chain its chain is keyed by.
-    pub(crate) key: Option<Arc<KeyTap>>,
+    key: Option<Arc<KeyTap>>,
 }
 
 /// The block a chain is keyed by: both sides of the output of the chain that keys it, which the mixer writes before the keyed chain plays.
@@ -100,9 +100,34 @@ impl Options {
         }
     }
 
+    /// The same options, for a note that sounds until it is let go when `held`.
+    pub(crate) fn holding(mut self, held: bool) -> Self {
+        self.held = held;
+        self
+    }
+
+    /// The same options, for an effect whose chain is keyed through `tap`.
+    pub(crate) fn keyed_by(mut self, tap: Arc<KeyTap>) -> Self {
+        self.key = Some(tap);
+        self
+    }
+
     /// Whether the note sounds until it is let go, its sustain left unread, as [`Event::held`](crate::Event::held) starts it.
     pub fn held(&self) -> bool {
         self.held
+    }
+
+    /// Each option declared in beats, with the beats it was given or its default.
+    pub(crate) fn beats(&self) -> Vec<(String, f64)> {
+        let mut beats = Vec::new();
+        for spec in self.specs.iter().filter(|spec| spec.kind == Kind::Beats) {
+            if let Some(Value::Number(given)) =
+                self.values.get(&spec.name).or(spec.default.as_ref())
+            {
+                beats.push((spec.name.clone(), *given));
+            }
+        }
+        beats
     }
 
     /// Turns the options given in beats into seconds, each beat lasting `per_beat` seconds: those declared in beats, their defaults too, and every `_slide`.
@@ -218,8 +243,32 @@ impl Options {
         }
     }
 
-    pub(crate) fn take_controls(&self) -> HashMap<String, Control> {
-        std::mem::take(&mut self.controls.lock().unwrap())
+    /// The options the built sound follows, which the engine changes while it plays; taking them leaves none.
+    pub(crate) fn take_controls(&self) -> Controls {
+        Controls(std::mem::take(&mut self.controls.lock().unwrap()))
+    }
+}
+
+/// The options a sound follows while it plays, each by the control the engine changes it through.
+#[derive(Default)]
+pub(crate) struct Controls(HashMap<String, Control>);
+
+impl Controls {
+    /// Whether the sound follows `name`.
+    pub(crate) fn follows(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    /// The control the sound follows `name` through.
+    pub(crate) fn get(&self, name: &str) -> Option<&Control> {
+        self.0.get(name)
+    }
+
+    /// Sets `name` to `value` at once, when the sound follows it.
+    pub(crate) fn set(&self, name: &str, value: f32) {
+        if let Some(control) = self.0.get(name) {
+            control.target.set(value);
+        }
     }
 }
 
@@ -228,7 +277,7 @@ pub struct Context {
     owner: Arc<str>,
     count: u64,
     /// Whether the note is built to be kept ready, and the hold on it once built so.
-    ready: (bool, Option<Arc<crate::synth::Ready>>),
+    ready: (bool, Option<Arc<crate::ready::Ready>>),
 }
 
 impl Context {
@@ -252,12 +301,12 @@ impl Context {
         self.ready.0
     }
 
-    pub(crate) fn built_ready(&mut self, hold: Arc<crate::synth::Ready>) {
+    pub(crate) fn built_ready(&mut self, hold: Arc<crate::ready::Ready>) {
         self.ready.1 = Some(hold);
     }
 
     /// The hold on the note built, when it was built ready.
-    pub(crate) fn take_ready(&mut self) -> Option<Arc<crate::synth::Ready>> {
+    pub(crate) fn take_ready(&mut self) -> Option<Arc<crate::ready::Ready>> {
         self.ready.1.take()
     }
 
