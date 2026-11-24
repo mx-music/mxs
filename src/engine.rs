@@ -343,10 +343,16 @@ impl Engine {
         let (returning, garbage) = rtrb::RingBuffer::new(CAPACITY);
         let clock = Arc::new(AtomicU64::new(0));
         let voices = Voices::new(VOICES);
-        let mut mixer = Mixer::new(receiving, returning, clock.clone(), voices.clone(), None);
         let hub = Hub::new();
         let (tap, tapped) = report::tap(hub.clone(), rate);
-        mixer.report_to(tap);
+        let mixer = Mixer::new(
+            receiving,
+            returning,
+            clock.clone(),
+            voices.clone(),
+            None,
+            tap,
+        );
         let mut engine = Engine::with(
             rate,
             commands,
@@ -370,16 +376,16 @@ impl Engine {
         let (feed, frames) = rtrb::RingBuffer::new(CAPACITY * channels);
         let clock = Arc::new(AtomicU64::new(0));
         let voices = Voices::new(VOICES);
-        let mut mixer = Mixer::new(
+        let hub = Hub::new();
+        let (tap, tapped) = report::tap(hub.clone(), rate);
+        let mixer = Mixer::new(
             receiving,
             returning,
             clock.clone(),
             voices.clone(),
             Some(Input { frames, channels }),
+            tap,
         );
-        let hub = Hub::new();
-        let (tap, tapped) = report::tap(hub.clone(), rate);
-        mixer.report_to(tap);
         let output = Output::Offline(Box::new(mixer));
         let mut engine = Engine::with(
             rate,
@@ -593,7 +599,7 @@ impl Engine {
 
     /// Seconds from rendering a frame to the device playing it, as the device gives it.
     pub fn latency(&self) -> Option<f64> {
-        self.timing().and_then(|t| t.latency)
+        self.timing().and_then(|t| t.latency())
     }
 
     /// The engine's seconds at which it renders the system time `at`, however far the two clocks have drifted apart; a live engine knows it, an offline one does not.
@@ -2464,7 +2470,7 @@ impl Book {
             let bpm = self.map.bpm_at(beat);
             let system = self.timing.as_ref().and_then(|timing| {
                 let timing = timing.lock().unwrap_or_else(|e| e.into_inner());
-                let heard = timing.system(seconds)? + timing.latency.unwrap_or(0.0);
+                let heard = timing.heard(seconds)?;
                 Some(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(heard.max(0.0)))
             });
             self.hub.keep(Report::Beat {
@@ -2810,10 +2816,10 @@ fn report(engine: &Engine, mut tapped: Tapped) -> JoinHandle<()> {
                     .filter(|_| hub.wants(Topic::Clock))
                     .and_then(|timing| {
                         let timing = timing.lock().unwrap_or_else(|e| e.into_inner());
-                        Some((timing.system(now)?, timing.latency.unwrap_or(0.0)))
+                        Some((timing.heard(now)?, timing.latency().unwrap_or(0.0)))
                     });
-                if let Some((filled, delay)) = read {
-                    let offset = filled + delay - now;
+                if let Some((heard, delay)) = read {
+                    let offset = heard - now;
                     let moved = mapped.is_none_or(|(sent, at)| {
                         (offset - sent).abs() > 0.002 || at.elapsed() >= Duration::from_secs(1)
                     });
@@ -2821,8 +2827,7 @@ fn report(engine: &Engine, mut tapped: Tapped) -> JoinHandle<()> {
                         mapped = Some((offset, Instant::now()));
                         hub.send(Report::Clock {
                             seconds: now,
-                            system: SystemTime::UNIX_EPOCH
-                                + Duration::from_secs_f64(filled + delay),
+                            system: SystemTime::UNIX_EPOCH + Duration::from_secs_f64(heard),
                             delay,
                         });
                     }
@@ -3069,10 +3074,9 @@ fn open(
     };
     let inputs = input.as_ref().map_or(0, |i| i.channels);
     let frames = clock.clone();
-    let mut mixer = Mixer::new(commands, garbage, clock, voices, input);
     let following = hub.clone();
     let (tap, tapped) = report::tap(hub, chosen.rate as f64);
-    mixer.report_to(tap);
+    let mixer = Mixer::new(commands, garbage, clock, voices, input, tap);
     let timing = Arc::new(Mutex::new(Timing::new(chosen.rate as f64)));
     let live = Live {
         mixer,
@@ -3210,7 +3214,7 @@ fn follow(hub: Arc<Hub>, timing: Arc<Mutex<Timing>>, frames: Arc<AtomicU64>, rat
         }
         let mut held = timing.lock().unwrap_or_else(|e| e.into_inner());
         held.restart();
-        let delay_ms = held.latency.map(|seconds| seconds * 1000.0);
+        let delay_ms = held.latency().map(|seconds| seconds * 1000.0);
         drop(held);
         let seconds = frames.load(Ordering::Acquire) as f64 / rate;
         let device = device::output(&cpal::default_host(), None).ok();

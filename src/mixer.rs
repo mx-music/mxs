@@ -384,7 +384,7 @@ pub(crate) struct Mixer {
     now: u64,
     clock: Arc<AtomicU64>,
     limit: Arc<Voices>,
-    reports: Option<Tap>,
+    reports: Tap,
 }
 
 impl Mixer {
@@ -394,6 +394,7 @@ impl Mixer {
         clock: Arc<AtomicU64>,
         limit: Arc<Voices>,
         input: Option<Input>,
+        reports: Tap,
     ) -> Self {
         Mixer {
             commands,
@@ -416,7 +417,7 @@ impl Mixer {
             now: clock.load(Ordering::Acquire),
             clock,
             limit,
-            reports: None,
+            reports,
         }
     }
 
@@ -425,11 +426,6 @@ impl Mixer {
         if let Some(old) = self.pool.replace(pool) {
             let _ = self.garbage.push(Garbage::Pool(old));
         }
-    }
-
-    /// Copies what `render` fills into `tap`, for the levels reports of a live engine.
-    pub fn report_to(&mut self, tap: Tap) {
-        self.reports = Some(tap);
     }
 
     /// Fills `left` and `right` with the next frames.
@@ -453,9 +449,7 @@ impl Mixer {
             self.block(&mut left[done..done + n], &mut right[done..done + n]);
             done += n;
         }
-        if let Some(tap) = &mut self.reports {
-            tap.push(first, left, right);
-        }
+        self.reports.push(first, left, right);
     }
 
     pub fn receive(&mut self) {
@@ -632,7 +626,7 @@ impl Mixer {
             }
         }
         let solo = self.chains.iter().any(|c| c.heard.soloed);
-        let levels = self.reports.as_ref().map(|tap| tap.every());
+        let levels = self.reports.every();
 
         self.keep_to_the_limit(end);
 
@@ -780,7 +774,7 @@ impl Mixer {
                         listener.sound.set_f32(1, k, r);
                     }
                 }
-                if let Some(Some(every)) = levels {
+                if let Some(every) = levels {
                     let (frames, peak, squares) = &mut chain.played;
                     *frames += 1;
                     *peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
@@ -796,13 +790,11 @@ impl Mixer {
                             squares: *squares,
                         };
                         chain.played = (0, [0.0; 2], [0.0; 2]);
-                        if let Some(tap) = &mut self.reports {
-                            tap.part(span);
-                        }
+                        self.reports.part(span);
                     }
                 }
             }
-            if levels == Some(None) {
+            if levels.is_none() {
                 chain.played = (0, [0.0; 2], [0.0; 2]);
             }
             let (key, out) = (chain.key, chain.out);

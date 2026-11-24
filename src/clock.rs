@@ -14,7 +14,7 @@ pub(crate) struct Timing {
     /// The lowest offset read in this half second and in the one before, and the frame this one began at.
     recent: (f64, f64, u64),
     /// Seconds from rendering a frame to the device playing it, as the device gives it.
-    pub latency: Option<f64>,
+    latency: Option<f64>,
 }
 
 impl Timing {
@@ -64,6 +64,16 @@ impl Timing {
     /// The system seconds at which the engine renders its `seconds`, once a callback has been seen.
     pub fn system(&self, seconds: f64) -> Option<f64> {
         self.offset.map(|offset| seconds + offset)
+    }
+
+    /// The system seconds at which the engine's `seconds` are heard: when they are rendered, and the device's latency after that.
+    pub fn heard(&self, seconds: f64) -> Option<f64> {
+        Some(self.system(seconds)? + self.latency.unwrap_or(0.0))
+    }
+
+    /// Seconds from rendering a frame to the device playing it, when the device gives it.
+    pub fn latency(&self) -> Option<f64> {
+        self.latency
     }
 
     /// The engine's seconds at which it renders `system` seconds since the Unix epoch, once a callback has been seen.
