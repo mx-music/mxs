@@ -413,7 +413,7 @@ pub fn synth(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth
                 inputs: None,
                 sides: 0,
                 shared: Some(&shared),
-                memo: vec![None; shared.pure.len()],
+                memo: shared.memo(),
             })
             .eval(&clause.graph)
             {
@@ -630,6 +630,11 @@ impl Shared {
             self.ids.insert(graph as *const Graph as usize, id);
             id
         })
+    }
+
+    /// A note's memo, with no subtree worked out yet.
+    fn memo(&self) -> Vec<Option<f64>> {
+        vec![None; self.pure.len()]
     }
 
     /// The number of `graph`'s node when its subtree is pure.
