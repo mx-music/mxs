@@ -28,12 +28,7 @@ pub fn synth_from_json_file(path: impl AsRef<Path>) -> Result<Synth, String> {
 /// An effect read from the text of an `mxs-effect` file, or why it cannot be read, naming the path in the file to what is wrong.
 pub fn effect_from_json(text: &str) -> Result<Effect, String> {
     let file = File::parse(text, "mxs-effect")?;
-    let graph = file
-        .top
-        .get("graph")
-        .ok_or("an mxs-effect file needs graph")?;
-    let graph = file.value(graph, "graph", &mut Vec::new())?;
-    crate::graph::effect(&file.name, file.specs()?, graph)
+    crate::graph::effect(&file.name, file.specs()?, file.graph()?)
 }
 
 /// An effect read from the `mxs-effect` file at `path`.
@@ -109,6 +104,15 @@ impl File {
                 .map(|(i, option)| spec(option, &format!("options[{i}]")))
                 .collect(),
         }
+    }
+
+    /// An effect file's one graph.
+    fn graph(&self) -> Result<Graph, String> {
+        let graph = self
+            .top
+            .get("graph")
+            .ok_or("an mxs-effect file needs graph")?;
+        self.value(graph, "graph", &mut Vec::new())
     }
 
     fn clause(&self, clause: &Json, at: &str) -> Result<Clause, String> {

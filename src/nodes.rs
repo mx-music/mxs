@@ -79,10 +79,7 @@ pub fn mode(hz: f64, phase: f64, level: f64, fade: f64) -> Net {
 
 /// A resonator that answers as those of scsynth, SuperCollider's server, do, measured from their renders: an impulse rings it at 2 cos(w / 2) times `level`, half a sample late, w being its frequency in radians per sample, and it fades 60 dB over `fade` seconds.
 pub fn struck(hz: f64, level: f64, fade: f64) -> Net {
-    let mut resonator = Mode::new(hz, 0.0, level, fade);
-    resonator.like_scsynth = true;
-    resonator.set_sample_rate(DEFAULT_SR);
-    Net::wrap(Box::new(An(resonator)))
+    Net::wrap(Box::new(An(Mode::scsynth(hz, level, fade))))
 }
 
 /// [`struck`], at the frequency its second input gives at each sample, so it glides as the note does.
@@ -299,12 +296,21 @@ struct Mode {
 
 impl Mode {
     fn new(hz: f64, phase: f64, level: f64, fade: f64) -> Self {
+        Mode::with(hz, phase, level, fade, false)
+    }
+
+    /// A resonator that answers as those of scsynth do, as [`struck`] describes.
+    fn scsynth(hz: f64, level: f64, fade: f64) -> Self {
+        Mode::with(hz, 0.0, level, fade, true)
+    }
+
+    fn with(hz: f64, phase: f64, level: f64, fade: f64, like_scsynth: bool) -> Self {
         let mut mode = Mode {
             hz,
             phase,
             level,
             fade,
-            like_scsynth: false,
+            like_scsynth,
             coefficients: (0.0, 0.0, 0.0, 0.0),
             x1: 0.0,
             y1: 0.0,

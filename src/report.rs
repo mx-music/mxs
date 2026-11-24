@@ -579,10 +579,10 @@ impl Tapped {
     pub fn report(&mut self, analyser: &mut Analyser, hub: &Hub) {
         self.collect();
         while let Ok(span) = self.parts.pop() {
-            analyser.pending.push(span);
+            analyser.played(span);
         }
         if !hub.wants(Topic::Levels) {
-            analyser.pending.clear();
+            analyser.forget_parts();
             return;
         }
         self.each(|first, left, right| {
@@ -612,6 +612,16 @@ pub(crate) struct Analyser {
 }
 
 impl Analyser {
+    /// Keeps what a part played until the report it belongs to is made.
+    pub fn played(&mut self, span: PartSpan) {
+        self.pending.push(span);
+    }
+
+    /// Forgets what the parts played, while nobody wants levels.
+    pub fn forget_parts(&mut self) {
+        self.pending.clear();
+    }
+
     pub fn new(rate: f64) -> Analyser {
         Analyser {
             rate,

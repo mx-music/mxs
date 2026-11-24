@@ -391,31 +391,32 @@ pub(crate) struct Reed {
 }
 
 impl Reed {
-    pub(crate) fn new(conical: bool, cutoff: f32, corner: f32, keep: f32) -> Reed {
+    /// A reed set as `set` says.
+    pub(crate) fn new(set: &Reeded) -> Reed {
         Reed {
             bore: Line::new(8192),
             loss: Loss::default(),
             apex: Line::new(4096),
             apex_loss: Loss::default(),
-            apex_part: 0.3,
-            conical,
-            zeta: 0.4,
-            cutoff,
-            corner,
-            keep,
+            apex_part: set.apex,
+            conical: set.conical,
+            zeta: set.zeta,
+            cutoff: set.cutoff,
+            corner: set.corner,
+            keep: set.keep,
             turbulence: 0.005,
-            relative: false,
+            relative: set.relative,
             delay: 0.0,
             from: 0.0,
             short: 1.0,
             short_from: 1.0,
             fade: 1.0,
-            tongue_part: 0.0,
+            tongue_part: set.tongue,
             tongue: -1,
             pulse: 1.0,
-            catch: 0.0,
+            catch: set.gasp,
             fall: 0.0,
-            mend: 0.02,
+            mend: set.mend,
             rate: DEFAULT_SR as f32,
         }
     }
@@ -563,18 +564,19 @@ struct Bell {
 }
 
 impl Bell {
-    fn new(cutoff: f32, corner: f32) -> Bell {
+    /// The bell after a reed set as `set` says.
+    fn new(set: &Reeded) -> Bell {
         Bell {
             line: Line::new(128),
             before: 0.0,
             slope: 0.0,
             low: Loss::default(),
-            cutoff,
-            corner,
-            smooth: 0.0,
+            cutoff: set.bell,
+            corner: set.bell_corner,
+            smooth: set.smooth,
             smoothed: [0.0; 2],
-            lift: 0.0,
-            catch: 0.0,
+            lift: set.lift,
+            catch: set.catch,
             rate: DEFAULT_SR as f32,
         }
     }
@@ -1171,15 +1173,9 @@ pub(crate) fn reed_through_bell(
     eased: Net,
     set: Reeded,
 ) -> Net {
-    let mut reed = Reed::new(set.conical, set.cutoff, set.corner, set.keep);
-    reed.zeta = set.zeta;
-    reed.apex_part = set.apex;
-    reed.relative = set.relative;
-    reed.tongue_part = set.tongue;
-    (reed.catch, reed.mend) = (set.gasp, set.mend);
+    let reed = Reed::new(&set);
     let model = (pitch | breath | white_noise(seed)) >> Net::wrap(Box::new(An(reed)));
-    let mut bell = Bell::new(set.bell, set.bell_corner);
-    (bell.smooth, bell.lift, bell.catch) = (set.smooth, set.lift, set.catch);
+    let bell = Bell::new(&set);
     (model | steep | through | eased) >> Net::wrap(Box::new(An(bell)))
 }
 
