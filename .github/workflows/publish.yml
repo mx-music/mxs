@@ -57,6 +57,7 @@ jobs:
   wheels:
     needs: version
     strategy:
+      fail-fast: false
       matrix:
         include:
           - { os: ubuntu-latest, target: x86_64 }
@@ -135,3 +136,25 @@ jobs:
           path: dist
           merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+
+  crates-io:
+    needs: version
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: auth
+      # CI built and tested this commit; verifying here would run dependencies' build scripts while the token is live.
+      - run: cargo publish --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
