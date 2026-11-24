@@ -1,5 +1,15 @@
 # Changelog for mxs v0.6
 
+## Unreleased
+
+### 1. Breaking changes
+
+  * [graph] `envelope` refuses a named argument other than `every` when the synth is registered, where it ignored one
+
+### 2. Enhancements
+
+  * [graph] `envelope` takes `every`, the seconds after which it starts over from its first point, as `time`'s `every` starts over; an `every` of 0 or less, or an infinite one, plays it once
+
 ## v0.6.8 (2026-11-24)
 
 ### 1. Breaking changes

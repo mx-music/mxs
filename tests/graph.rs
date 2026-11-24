@@ -1532,3 +1532,125 @@ fn a_sweep_is_on_its_beat_after_a_minute() {
         assert!(start.abs_diff(due) <= 1, "pulse {pulse} at {start}");
     }
 }
+
+/// envelope([[0.01, 1], [0.1, 0]]), rising to 1 in 0.01 s and falling to 0 over 0.1 s, given `named`.
+fn rise_and_fall(sound: Option<Graph>, named: Vec<(&str, Graph)>) -> Graph {
+    let points = Graph::List(vec![list(&[0.01, 1.0]), list(&[0.1, 0.0])]);
+    let args = sound.into_iter().chain([points]).collect();
+    Graph::call("envelope", args, named)
+}
+
+fn rendered(name: &str, sound: Graph) -> Vec<f32> {
+    render(traced(name, rings(sound, 1.0)).unwrap(), &[])
+}
+
+#[test]
+fn an_envelope_without_every_rises_and_falls_once() {
+    let left = rendered("once", rise_and_fall(None, vec![]));
+    let at = |seconds: f64| left[(seconds * RATE) as usize];
+    let peak = at(0.01);
+    assert!(peak > 0.0);
+    assert!(
+        (at(0.005) / peak - 0.5).abs() < 1e-3,
+        "{}",
+        at(0.005) / peak
+    );
+    assert!((at(0.06) / peak - 0.5).abs() < 1e-3, "{}", at(0.06) / peak);
+    assert_eq!(at(0.2), 0.0);
+    assert_eq!(at(0.3), 0.0);
+}
+
+#[test]
+fn an_envelope_given_every_starts_over_every_that_many_seconds() {
+    let left = rendered("over", rise_and_fall(None, vec![("every", n(0.25))]));
+    let at = |seconds: f64| left[(seconds * RATE) as usize];
+    assert!(at(0.05) > 0.0);
+    assert!(
+        (at(0.30) - at(0.05)).abs() < 1e-4,
+        "{} and {}",
+        at(0.30),
+        at(0.05)
+    );
+    assert!(
+        (at(0.55) - at(0.05)).abs() < 1e-4,
+        "{} and {}",
+        at(0.55),
+        at(0.05)
+    );
+    assert_eq!(at(0.2), 0.0);
+}
+
+#[test]
+fn an_envelope_scaling_a_sound_given_every_sounds_the_same_each_time_it_starts_over() {
+    let sine = Graph::call("sine", vec![], vec![("hz", n(400.0))]);
+    let left = rendered(
+        "scaled",
+        rise_and_fall(Some(sine), vec![("every", n(0.25))]),
+    );
+    let quarter = (0.25 * RATE) as usize;
+    let first = &left[..quarter];
+    let second = &left[quarter..2 * quarter];
+    assert!(first.iter().any(|x| x.abs() > 0.1));
+    let apart = first
+        .iter()
+        .zip(second)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f32::max);
+    assert!(apart < 1e-3, "{apart}");
+}
+
+#[test]
+fn an_envelope_given_an_every_of_0_or_an_infinite_every_plays_once() {
+    let once = rendered("plain", rise_and_fall(None, vec![]));
+    assert_eq!(
+        rendered("zero", rise_and_fall(None, vec![("every", n(0.0))])),
+        once
+    );
+    assert_eq!(
+        rendered("negative", rise_and_fall(None, vec![("every", n(-1.0))])),
+        once
+    );
+    assert_eq!(
+        rendered(
+            "endless",
+            rise_and_fall(None, vec![("every", n(f64::INFINITY))])
+        ),
+        once
+    );
+}
+
+#[test]
+fn an_envelope_whose_every_is_not_known_when_the_note_starts_is_refused() {
+    let wobble = Graph::call("sine", vec![], vec![("hz", n(2.0))]);
+    let synth = traced(
+        "wobbly",
+        rings(rise_and_fall(None, vec![("every", wobble)]), 1.0),
+    )
+    .unwrap();
+    let mut engine = Engine::offline(RATE);
+    engine.register(synth);
+    let note = Event::Note {
+        id: None,
+        synth: "wobbly".to_string(),
+        options: Default::default(),
+        chain: None,
+        held: false,
+    };
+    // A note's graph refuses by unwinding, as the clock's every does when it is not known.
+    let unwound =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| engine.play(&[(0.0, note)])))
+            .unwrap_err();
+    let refused = unwound
+        .downcast_ref::<String>()
+        .cloned()
+        .unwrap_or_default();
+    assert!(refused.contains("an envelope's every"), "{refused}");
+}
+
+#[test]
+fn an_envelope_given_an_argument_it_does_not_take_is_refused_when_registered() {
+    let refused = traced("at", rings(rise_and_fall(None, vec![("at", n(0.5))]), 1.0))
+        .err()
+        .unwrap();
+    assert!(refused.contains("envelope does not take at:"), "{refused}");
+}

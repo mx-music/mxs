@@ -282,6 +282,7 @@ const NEEDS: &[(&str, &[&str])] = &[
 /// The arguments by name each of these calls takes, any other being refused when the graph is checked.
 const TAKES: &[(&str, &[&str])] = &[
     ("time", &["every"]),
+    ("envelope", &["every"]),
     ("impulse", &["at", "period", "until"]),
     ("noise", &["seed", "drawn", "mix"]),
     ("draw", &["mix"]),
@@ -1339,7 +1340,10 @@ impl Build<'_> {
                 } else {
                     (None, arg(0)?)
                 };
-                let shape = envelope(points)?;
+                let every = take("every")
+                    .map(|every| number(every, "an envelope's every"))
+                    .transpose()?;
+                let shape = envelope(points, every)?;
                 match sound {
                     Some(sound) => mul(sound, V::Sig(shape)),
                     None => Ok(V::Sig(shape)),
@@ -1598,7 +1602,7 @@ fn reed(take: &mut impl FnMut(&str) -> Option<V>, ctx: &mut Context) -> Result<V
 }
 
 /// Segments from silence through each of `points`, each `[seconds, level]` straight, `[seconds, level, curve]` bent as `segments` bends them, or `[seconds, level, exp]` exponential.
-fn envelope(points: V) -> Result<Net, String> {
+fn envelope(points: V, every: Option<f64>) -> Result<Net, String> {
     let V::List(points) = points else {
         return Err("an envelope takes a list of points".to_string());
     };
@@ -1625,7 +1629,10 @@ fn envelope(points: V) -> Result<Net, String> {
             Some(_) => return Err("an envelope's curve is a number or :exp".to_string()),
         });
     }
+    // An every of 0 or less, or an infinite one, plays the envelope once.
+    let every = every.filter(|every| *every > 0.0 && every.is_finite());
     Ok(nodes::shape(move |t| {
+        let t = every.map_or(t, |every| t % every);
         let mut start = 0.0;
         for (k, &time) in times.iter().enumerate() {
             if t < start + time {
