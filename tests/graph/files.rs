@@ -443,19 +443,15 @@ fn marimba() -> Synth {
 
     let lower = select(soft, n(0.0), n(1.0));
     let mut ring = n(0.0);
-    for j in 0..3 {
-        for i in 0..11 {
+    for (j, row) in MODES[0].1.iter().enumerate() {
+        for (i, knot) in row.iter().enumerate() {
             let (jf, i_f) = (j as f64, i as f64);
             let corner = two(
                 "mul",
                 two("max", eq(&lower, jf), eq(&lower, jf - 1.0)),
                 two("max", eq(&low, i_f), eq(&low, i_f - 1.0)),
             );
-            ring = two(
-                "max",
-                ring,
-                select(corner, fall(MODES[0].1[j][i][1]), n(0.0)),
-            );
+            ring = two("max", ring, select(corner, fall(knot[1]), n(0.0)));
         }
     }
 

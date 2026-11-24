@@ -1693,7 +1693,10 @@ fn a_silent_mode_over_a_noise_still_takes_its_seed_so_the_noise_after_it_plays_a
 #[test]
 fn a_graph_a_hundred_thousand_calls_deep_is_registered_played_and_dropped() {
     let deep = (0..100_000).fold(n(0.0), |sum, _| call("add", vec![sum, opt("vel")]));
-    let sound = call("mul", vec![struck_mode(1.0, n(0.5)), call("min", vec![deep, n(1.0)])]);
+    let sound = call(
+        "mul",
+        vec![struck_mode(1.0, n(0.5)), call("min", vec![deep, n(1.0)])],
+    );
     let synth = traced("deep", sound).unwrap();
     assert!(render(synth, &[]).iter().any(|x| x.abs() > 0.01));
 }
