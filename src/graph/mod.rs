@@ -361,7 +361,8 @@ fn needs(name: &str) -> &'static [&'static str] {
 
 /// A synth whose note is built from the first of `clauses` whose matches its options meet, or is silent when none does.
 pub fn synth(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth, String> {
-    for clause in &clauses {
+    let clauses = Kept(clauses);
+    for clause in clauses.iter() {
         known(&clause.graph).map_err(|reason| format!("{name}: {reason}"))?;
         named_options(&clause.graph, &specs).map_err(|reason| format!("{name}: {reason}"))?;
         for table in tables_in(&clause.graph) {
@@ -392,6 +393,8 @@ pub fn synth(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth
     files.sort_unstable();
     files.dedup();
     let notes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let clauses = std::sync::Arc::new(clauses);
+    let shared = Shared::of(clauses.iter().map(|clause| &clause.graph));
     let mut synth = SynthDecl::new(name)
         .options(specs)
         .build(move |options, ctx| {
@@ -409,6 +412,8 @@ pub fn synth(name: &str, specs: Vec<Spec>, clauses: Vec<Clause>) -> Result<Synth
                 drawn: None,
                 inputs: None,
                 sides: 0,
+                shared: Some(&shared),
+                memo: vec![None; shared.pure.len()],
             })
             .eval(&clause.graph)
             {
@@ -502,6 +507,8 @@ pub fn effect(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, Stri
                 drawn: None,
                 inputs: Some(Vec::new()),
                 sides: width,
+                shared: None,
+                memo: Vec::new(),
             };
             let sound = build
                 .eval(graph)
@@ -522,6 +529,122 @@ pub fn effect(name: &str, specs: Vec<Spec>, graph: Graph) -> Result<Effect, Stri
 
 // A graph nests as deep as the music written for it, and the BEAM runs these on a scheduler's small stack, so each level grows the stack when it runs low.
 // A level of eval and call takes over 128 KiB in a debug build.
+/// A synth's clauses, taken apart without recursion when dropped, so a deep graph cannot overflow the stack.
+struct Kept(Vec<Clause>);
+
+impl std::ops::Deref for Kept {
+    type Target = [Clause];
+
+    fn deref(&self) -> &[Clause] {
+        &self.0
+    }
+}
+
+impl Drop for Kept {
+    fn drop(&mut self) {
+        let mut stack: Vec<Graph> = self
+            .0
+            .iter_mut()
+            .map(|clause| std::mem::replace(&mut clause.graph, Graph::Number(0.0)))
+            .collect();
+        while let Some(graph) = stack.pop() {
+            match graph {
+                Graph::List(items) => stack.extend(items),
+                Graph::Call { args, named, .. } => {
+                    stack.extend(args);
+                    stack.extend(named.into_iter().map(|(_, graph)| graph));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// A graph's subtrees numbered so that equal ones share a number, by the address of each node, and which numbers are pure: worked out from numbers and the options a note starts with alone, by arithmetic other than `draw`, so a note works each of them out once however often it appears.
+/// The graph it numbers must stay where it is, unchanged, for as long as it is used.
+struct Shared {
+    ids: std::collections::HashMap<usize, usize>,
+    pure: Vec<bool>,
+    /// Whether each subtree, by its number, builds nothing that takes a seed from the note, so a note may leave it out without changing what later notes draw.
+    seedless: Vec<bool>,
+}
+
+/// The calls besides arithmetic that take no seed from the note.
+const SEEDLESS: &[&str] = &["follow", "impulse", "time"];
+
+#[derive(PartialEq, Eq, Hash)]
+enum Key {
+    Number(u64),
+    Name(String),
+    Option(String),
+    List(Vec<usize>),
+    Call(String, Vec<usize>, Vec<(String, usize)>),
+}
+
+impl Shared {
+    fn of<'g>(graphs: impl Iterator<Item = &'g Graph>) -> Shared {
+        let mut shared = Shared {
+            ids: std::collections::HashMap::new(),
+            pure: Vec::new(),
+            seedless: Vec::new(),
+        };
+        let mut keys = std::collections::HashMap::new();
+        for graph in graphs {
+            shared.number(graph, &mut keys);
+        }
+        shared
+    }
+
+    fn number(&mut self, graph: &Graph, keys: &mut std::collections::HashMap<Key, usize>) -> usize {
+        stacker::maybe_grow(RED_ZONE, GROWTH, || {
+            let (key, pure, seedless) = match graph {
+                Graph::Number(x) => (Key::Number(x.to_bits()), true, true),
+                Graph::Name(name) => (Key::Name(name.clone()), true, true),
+                Graph::Option(name) => (Key::Option(name.clone()), true, true),
+                Graph::List(items) => {
+                    let ids: Vec<usize> =
+                        items.iter().map(|item| self.number(item, keys)).collect();
+                    let seedless = ids.iter().all(|&id| self.seedless[id]);
+                    (Key::List(ids), false, seedless)
+                }
+                Graph::Call { name, args, named } => {
+                    let args: Vec<usize> = args.iter().map(|arg| self.number(arg, keys)).collect();
+                    let named: Vec<(String, usize)> = named
+                        .iter()
+                        .map(|(key, value)| (key.clone(), self.number(value, keys)))
+                        .collect();
+                    let mut kids = args.iter().chain(named.iter().map(|(_, id)| id));
+                    let arithmetic = name != "draw" && ARITHMETIC.contains(&name.as_str());
+                    let pure = arithmetic && kids.clone().all(|&id| self.pure[id]);
+                    let seedless = (arithmetic || SEEDLESS.contains(&name.as_str()))
+                        && kids.all(|&id| self.seedless[id]);
+                    (Key::Call(name.clone(), args, named), pure, seedless)
+                }
+            };
+            let next = keys.len();
+            let id = *keys.entry(key).or_insert(next);
+            if id == self.pure.len() {
+                self.pure.push(pure);
+                self.seedless.push(seedless);
+            }
+            self.ids.insert(graph as *const Graph as usize, id);
+            id
+        })
+    }
+
+    /// The number of `graph`'s node when its subtree is pure.
+    fn pure_id(&self, graph: &Graph) -> Option<usize> {
+        let id = *self.ids.get(&(graph as *const Graph as usize))?;
+        self.pure[id].then_some(id)
+    }
+
+    fn seedless(&self, graph: &Graph) -> bool {
+        self.ids
+            .get(&(graph as *const Graph as usize))
+            .is_some_and(|&id| self.seedless[id])
+    }
+}
+
 const RED_ZONE: usize = 256 * 1024;
 const GROWTH: usize = 4 * 1024 * 1024;
 
@@ -794,6 +917,10 @@ struct Build<'a> {
     inputs: Option<Vec<usize>>,
     /// How many channels an effect's graph is built over: 1 for each channel on its own, 2 for both sides, and 0 in a synth.
     sides: usize,
+    /// The synth's graph numbered so that equal subtrees share a number; None in an effect.
+    shared: Option<&'a Shared>,
+    /// The number each pure subtree of this note came to, by its number in `shared`, once worked out.
+    memo: Vec<Option<f64>>,
 }
 
 impl Build<'_> {
@@ -809,11 +936,18 @@ impl Build<'_> {
                     .collect::<Result<_, _>>()?,
             )),
             Graph::Call { name, args, named } => {
+                let pure = self.shared.and_then(|shared| shared.pure_id(graph));
+                if let Some(x) = pure.and_then(|id| self.memo[id]) {
+                    return Ok(V::Num(x));
+                }
                 let before = self.inputs.as_ref().map_or(0, Vec::len);
                 let value = self.call(name, args, named)?;
                 // A sound worked out to a number, as one multiplied by 0, takes no input any more.
                 if let (false, Some(uses)) = (matches!(value, V::Sig(_)), self.inputs.as_mut()) {
                     uses.truncate(before);
+                }
+                if let (Some(id), V::Num(x)) = (pure, &value) {
+                    self.memo[id] = Some(*x);
                 }
                 Ok(value)
             }
@@ -821,6 +955,18 @@ impl Build<'_> {
     }
 
     fn call(&mut self, name: &str, args: &[Graph], named: &[(String, Graph)]) -> Result<V, String> {
+        // A resonator whose level comes to 0 is silent, so its sound and pitch need not be built, as long as leaving them out takes no seed from the note.
+        if let ("mode", Some(shared)) = (name, self.shared)
+            && let Some((_, level)) = named.iter().find(|(key, _)| key == "level")
+            && shared.pure_id(level).is_some()
+            && args
+                .iter()
+                .chain(named.iter().map(|(_, g)| g))
+                .all(|g| shared.seedless(g))
+            && matches!(self.eval(level)?, V::Num(x) if x == 0.0)
+        {
+            return Ok(V::Num(0.0));
+        }
         // An option the note may leave out, such as a drum's pitch: its value when given, and the fallback otherwise.
         if let ("or_else", [Graph::Option(option), fallback]) = (name, args) {
             return match self.options.given(option) {

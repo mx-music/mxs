@@ -1665,3 +1665,35 @@ fn an_envelope_given_an_argument_it_does_not_take_is_refused_when_registered() {
         .unwrap();
     assert!(refused.contains("envelope does not take at:"), "{refused}");
 }
+
+#[test]
+fn a_silent_mode_over_a_noise_still_takes_its_seed_so_the_noise_after_it_plays_as_before() {
+    let silent = Graph::call(
+        "mode",
+        vec![noise(None)],
+        vec![
+            ("hz", n(440.0)),
+            ("level", call("sub", vec![opt("vel"), opt("vel")])),
+            ("fade", n(0.5)),
+        ],
+    );
+    let heard = call("mul", vec![noise(None), n(0.1)]);
+    let traced = traced("silent", call("add", vec![silent, heard])).unwrap();
+    let written = SynthDecl::new("silent")
+        .options(note_specs())
+        .build(|_, ctx| {
+            let _silent = ctx.seed();
+            Note::rings(white_noise(ctx.seed()) * 0.1, 0.8)
+        });
+    let (a, b) = (render(traced, &[]), render(written, &[]));
+    assert!(a.iter().any(|x| x.abs() > 0.01));
+    assert_eq!(a, b);
+}
+
+#[test]
+fn a_graph_a_hundred_thousand_calls_deep_is_registered_played_and_dropped() {
+    let deep = (0..100_000).fold(n(0.0), |sum, _| call("add", vec![sum, opt("vel")]));
+    let sound = call("mul", vec![struck_mode(1.0, n(0.5)), call("min", vec![deep, n(1.0)])]);
+    let synth = traced("deep", sound).unwrap();
+    assert!(render(synth, &[]).iter().any(|x| x.abs() > 0.01));
+}
