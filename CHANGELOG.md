@@ -1,5 +1,11 @@
 # Changelog for mxs v0.7
 
+## v0.7.2 (2026-11-24)
+
+### 1. Bug fixes
+
+  * [synths] `marimba` notes from about G#5 to A#6 at medium velocity no longer peak up to 25 dB above their neighbours, and its notes from C2 to C4 are 4 to 12 dB louder, as Iowa's are: each shape's levels are measured against its fundamental's peak over the first 20 ms, where they were measured against a fitted resonator's level
+
 ## v0.7.1 (2026-11-24)
 
 ### 1. Enhancements
