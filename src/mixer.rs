@@ -204,11 +204,11 @@ pub(crate) const SENDS: usize = 32;
 
 /// How loud a part is heard: its gain, unless it is muted or another part is soloed, reached over `glide` frames so that nothing clicks.
 pub(crate) struct Heard {
-    pub gain: f32,
-    pub muted: bool,
-    pub soloed: bool,
+    gain: f32,
+    muted: bool,
+    soloed: bool,
     /// Whether other chains play into it, which leaves it heard while another part is soloed: what is soloed is still heard through it.
-    pub shared: bool,
+    shared: bool,
     glide: u64,
     level: f32,
     toward: f32,
@@ -231,6 +231,25 @@ impl Heard {
             left: 0,
             sounded: false,
         }
+    }
+
+    /// Takes a change to the part's gain, mute or solo; the level glides to it from the next block.
+    fn change(&mut self, change: PartChange) {
+        match change {
+            PartChange::Gain(gain) => self.gain = gain,
+            PartChange::Mute(muted) => self.muted = muted,
+            PartChange::Solo(soloed) => self.soloed = soloed,
+        }
+    }
+
+    /// Notes that another chain plays into the part, so it stays heard while another part is soloed.
+    fn fed(&mut self) {
+        self.shared = true;
+    }
+
+    /// Whether the part is soloed.
+    fn soloed(&self) -> bool {
+        self.soloed
     }
 
     fn wanted(&self, solo: bool) -> f32 {
@@ -465,7 +484,7 @@ impl Mixer {
                 }
                 Command::StartChain(mut chain) => {
                     // A part created while another is soloed starts unheard, with no glide.
-                    let solo = self.chains.iter().any(|c| c.heard.soloed);
+                    let solo = self.chains.iter().any(|c| c.heard.soloed());
                     chain.heard.aim(solo);
                     self.chains.push(chain);
                     self.sort_chains();
@@ -475,12 +494,12 @@ impl Mixer {
                         chain.out = out;
                     }
                     if let Some(chain) = self.chains.iter_mut().find(|c| Some(c.key) == out) {
-                        chain.heard.shared = true;
+                        chain.heard.fed();
                     }
                 }
                 Command::Send(send) => {
                     if let Some(chain) = self.chains.iter_mut().find(|c| c.key == send.to) {
-                        chain.heard.shared = true;
+                        chain.heard.fed();
                     }
                     let chain = self.chains.iter_mut().find(|c| c.key == send.from);
                     match chain {
@@ -615,17 +634,13 @@ impl Mixer {
             if at <= self.now {
                 self.part_changes.swap_remove(i);
                 if let Some(chain) = self.chains.iter_mut().find(|c| c.key == key) {
-                    match change {
-                        PartChange::Gain(gain) => chain.heard.gain = gain,
-                        PartChange::Mute(muted) => chain.heard.muted = muted,
-                        PartChange::Solo(soloed) => chain.heard.soloed = soloed,
-                    }
+                    chain.heard.change(change);
                 }
             } else {
                 i += 1;
             }
         }
-        let solo = self.chains.iter().any(|c| c.heard.soloed);
+        let solo = self.chains.iter().any(|c| c.heard.soloed());
         let levels = self.reports.every();
 
         self.keep_to_the_limit(end);

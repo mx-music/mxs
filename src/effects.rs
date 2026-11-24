@@ -1253,6 +1253,27 @@ impl Comb {
             back(0) + (back(1) - back(0)) * fraction
         }
     }
+
+    /// Moves on a frame: takes `sound` in, delayed by `delay` seconds and fed back by as much as dies away 60 dB over `decay` seconds, and gives what comes back round after `shape` works on it, at the comb's rate.
+    fn step(
+        &mut self,
+        sound: f32,
+        delay: f32,
+        decay: f32,
+        shape: impl FnOnce(f32, f32) -> f32,
+    ) -> f32 {
+        let limit = (self.buffer.len() - 3) as f32;
+        let frames = (delay * self.rate).clamp(1.0, limit);
+        self.at = (self.at + 1) % self.buffer.len();
+        let delayed = shape(self.read(frames), self.rate);
+        let feedback = if decay == 0.0 {
+            0.0
+        } else {
+            0.001f32.powf(delay.max(0.0) / decay.abs()).copysign(decay)
+        };
+        self.buffer[self.at] = sound + feedback * delayed;
+        delayed
+    }
 }
 
 impl AudioNode for Comb {
@@ -1271,20 +1292,7 @@ impl AudioNode for Comb {
     }
 
     fn tick(&mut self, input: &Frame<f32, U3>) -> Frame<f32, U1> {
-        let limit = (self.buffer.len() - 3) as f32;
-        let frames = (input[1] * self.rate).clamp(1.0, limit);
-        self.at = (self.at + 1) % self.buffer.len();
-        let delayed = self.read(frames);
-        let decay = input[2];
-        let feedback = if decay == 0.0 {
-            0.0
-        } else {
-            0.001f32
-                .powf(input[1].max(0.0) / decay.abs())
-                .copysign(decay)
-        };
-        self.buffer[self.at] = input[0] + feedback * delayed;
-        [delayed].into()
+        [self.step(input[0], input[1], input[2], |delayed, _| delayed)].into()
     }
 }
 
@@ -1488,23 +1496,12 @@ impl AudioNode for Echo {
     }
 
     fn tick(&mut self, input: &Frame<f32, U6>) -> Frame<f32, U1> {
-        let comb = &mut self.comb;
-        let limit = (comb.buffer.len() - 3) as f32;
-        let frames = (input[1] * comb.rate).clamp(1.0, limit);
-        comb.at = (comb.at + 1) % comb.buffer.len();
-        let delayed = comb.read(frames);
+        let wear = &mut self.wear;
         let delayed = self
-            .wear
-            .pass(delayed, input[3], input[4], input[5], comb.rate);
-        let decay = input[2];
-        let feedback = if decay == 0.0 {
-            0.0
-        } else {
-            0.001f32
-                .powf(input[1].max(0.0) / decay.abs())
-                .copysign(decay)
-        };
-        comb.buffer[comb.at] = input[0] + feedback * delayed;
+            .comb
+            .step(input[0], input[1], input[2], |delayed, rate| {
+                wear.pass(delayed, input[3], input[4], input[5], rate)
+            });
         [delayed].into()
     }
 }
@@ -1715,6 +1712,15 @@ impl Lfo {
             rate: DEFAULT_SR,
         }
     }
+
+    /// Starts its cycle `offset` in from now on, moving its place in the cycle by as much as the offset moved.
+    fn shift_to(&mut self, offset: f32) {
+        if offset != self.offset {
+            let moved = f64::from(offset) - f64::from(self.offset);
+            self.phase = (self.phase + moved).rem_euclid(1.0);
+            self.offset = offset;
+        }
+    }
 }
 
 impl AudioNode for Lfo {
@@ -1799,11 +1805,7 @@ impl AudioNode for Shifted {
     }
 
     fn tick(&mut self, input: &Frame<f32, U5>) -> Frame<f32, U1> {
-        if input[4] != self.lfo.offset {
-            let moved = f64::from(input[4]) - f64::from(self.lfo.offset);
-            self.lfo.phase = (self.lfo.phase + moved).rem_euclid(1.0);
-            self.lfo.offset = input[4];
-        }
+        self.lfo.shift_to(input[4]);
         self.lfo
             .tick(&[input[0], input[1], input[2], input[3]].into())
     }
