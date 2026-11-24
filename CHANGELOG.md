@@ -5,6 +5,9 @@
 ### 1. Breaking changes
 
   * [graph] `envelope` refuses a named argument other than `every` when the synth is registered, where it ignored one
+  * [engine] A synth or an effect is declared with `SynthDecl::new` and `EffectDecl::new`, in place of `Synth::new` and `Effect::new`
+  * [graph] A synth or an effect is built from a graph with `graph::synth` and `graph::effect`, and read from a file with `graph::synth_from_json`, `graph::synth_from_json_file`, `graph::effect_from_json` and `graph::effect_from_json_file`, in place of `Synth::graph`, `Effect::graph`, `Synth::from_json`, `Synth::from_json_file`, `Effect::from_json` and `Effect::from_json_file`
+  * [engine] `Error::TooManySends` names the chain and the most sends a chain holds, as `TooManySends { chain, most }`
 
 ### 2. Enhancements
 
