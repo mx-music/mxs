@@ -1,6 +1,6 @@
 //! A note's options as its synth's build function reads them, and the context it builds in.
 
-use crate::spec::{Kind, Spec, Value};
+use crate::spec::{Spec, Value};
 use fundsp::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -120,10 +120,8 @@ impl Options {
     /// Each option declared in beats, with the beats it was given or its default.
     pub(crate) fn beats(&self) -> Vec<(String, f64)> {
         let mut beats = Vec::new();
-        for spec in self.specs.iter().filter(|spec| spec.kind == Kind::Beats) {
-            if let Some(Value::Number(given)) =
-                self.values.get(&spec.name).or(spec.default.as_ref())
-            {
+        for spec in self.specs.iter().filter(|spec| spec.counts_beats()) {
+            if let Some(Value::Number(given)) = spec.value_in(&self.values) {
                 beats.push((spec.name.clone(), *given));
             }
         }
@@ -132,19 +130,15 @@ impl Options {
 
     /// Turns the options given in beats into seconds, each beat lasting `per_beat` seconds: those declared in beats, their defaults too, and every `_slide`.
     pub(crate) fn in_beats(&mut self, per_beat: f64) {
-        for spec in self.specs.iter().filter(|spec| spec.kind == Kind::Beats) {
-            let value = self.values.get(&spec.name).or(spec.default.as_ref());
+        for spec in self.specs.iter().filter(|spec| spec.counts_beats()) {
+            let value = spec.value_in(&self.values);
             if let Some(Value::Number(beats)) = value {
                 let seconds = Value::Number(beats * per_beat);
                 self.values.insert(spec.name.clone(), seconds);
             }
         }
         let specs = &self.specs;
-        let declared = |name: &str| {
-            specs
-                .iter()
-                .any(|s| s.name == name && s.kind == Kind::Beats)
-        };
+        let declared = |name: &str| specs.iter().any(|s| s.name == name && s.counts_beats());
         for (name, value) in &mut self.values {
             if let (true, false, Value::Number(beats)) =
                 (name.ends_with("_slide"), declared(name), value)
@@ -162,15 +156,12 @@ impl Options {
                 self.owner
             )
         });
-        self.values
-            .get(name)
-            .or(spec.default.as_ref())
-            .unwrap_or_else(|| {
-                panic!(
-                    "{} reads the option {name}, which has no default and was not given",
-                    self.owner
-                )
-            })
+        spec.value_in(&self.values).unwrap_or_else(|| {
+            panic!(
+                "{} reads the option {name}, which has no default and was not given",
+                self.owner
+            )
+        })
     }
 
     /// An option's value when the note starts.

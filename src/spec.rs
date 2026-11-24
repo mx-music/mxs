@@ -212,6 +212,24 @@ impl Spec {
     }
 
     /// The value to play, held to the range, and whether it had to be held; or why the value does not fit.
+    /// Whether the option is declared in beats, which a tempo turns into seconds.
+    pub(crate) fn counts_beats(&self) -> bool {
+        self.kind == Kind::Beats
+    }
+
+    /// The names the option takes, for an option of kind name.
+    pub(crate) fn names(&self) -> Option<&[String]> {
+        match &self.kind {
+            Kind::Name(names) => Some(names),
+            _ => None,
+        }
+    }
+
+    /// The option's value among those a note gave, or its default when the note gave none.
+    pub(crate) fn value_in<'a>(&'a self, given: &'a HashMap<String, Value>) -> Option<&'a Value> {
+        given.get(&self.name).or(self.default.as_ref())
+    }
+
     pub(crate) fn check(&self, value: &Value) -> Result<(Value, bool), String> {
         match (&self.kind, value) {
             (Kind::Name(values), Value::Name(name)) if values.contains(name) => {

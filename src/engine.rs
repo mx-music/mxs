@@ -13,7 +13,7 @@ use crate::options::{Context, Control, Controls, Options};
 use crate::ready::{Given, Ready};
 use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
 use crate::sample::{Grains, Player, SampleData, Samples, Stretcher};
-use crate::spec::{Kind, Spec, Value, checked, held_warning};
+use crate::spec::{Spec, Value, checked, held_warning};
 use crate::synth::{BuildNote, Effect, Note, Synth};
 use crate::time::{Tempo, TempoMap};
 use crate::workers::{Pool, performance_cores};
@@ -961,7 +961,7 @@ impl Engine {
             in_beats.push(
                 specs
                     .iter()
-                    .filter(|spec| spec.kind == Kind::Beats)
+                    .filter(|spec| spec.counts_beats())
                     .map(|spec| spec.name.clone())
                     .filter(follows)
                     .collect(),

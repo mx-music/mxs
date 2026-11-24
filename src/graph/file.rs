@@ -294,15 +294,16 @@ fn spec(json: &Json, at: &str) -> Result<Spec, String> {
             ));
         }
     };
+    let boolean = kind == Kind::Boolean;
     let mut spec = Spec::new(name, kind);
-    if spec.kind == Kind::Boolean {
+    if boolean {
         spec = spec.range(0.0, 1.0);
     }
-    spec.default = match fields.get("default") {
-        None | Some(Json::Null) => None,
-        Some(Json::String(name)) => Some(Value::Name(name.clone())),
-        Some(other) => Some(Value::Number(number(other, &format!("{at}.default"))?)),
-    };
+    match fields.get("default") {
+        None | Some(Json::Null) => {}
+        Some(Json::String(name)) => spec = spec.default(Value::Name(name.clone())),
+        Some(other) => spec = spec.default(number(other, &format!("{at}.default"))?),
+    }
     if let Some(range) = fields.get("range") {
         let bound = |i: usize, unbounded: f64| match range.get(i) {
             Some(Json::Null) => Ok(unbounded),

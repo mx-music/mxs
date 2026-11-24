@@ -140,7 +140,7 @@ mod file;
 pub use file::{effect_from_json, effect_from_json_file, synth_from_json, synth_from_json_file};
 
 use crate::nodes::{self, db, hz};
-use crate::{Context, Effect, EffectDecl, Kind, Note, Options, Spec, Synth, SynthDecl, Value};
+use crate::{Context, Effect, EffectDecl, Note, Options, Spec, Synth, SynthDecl, Value};
 use fundsp::prelude::*;
 
 /// A value of a graph: a number, a name such as a noise's colour, one of the note's options, a list, or a call of the vocabulary.
@@ -585,10 +585,7 @@ fn named_options(graph: &Graph, specs: &[Spec]) -> Result<(), String> {
         specs
             .iter()
             .find(|s| s.name == option)
-            .and_then(|s| match &s.kind {
-                Kind::Name(values) => Some(values.clone()),
-                _ => None,
-            })
+            .and_then(Spec::names)
     };
     stacker::maybe_grow(RED_ZONE, GROWTH, || match graph {
         Graph::Call { name, args, .. }
