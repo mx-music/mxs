@@ -1,9 +1,9 @@
 //! MIDI inputs played on parts inside the engine: each message becomes notes in the block being filled, with no caller in between.
 
 use super::{Book, Draft, Engine, Error, Event, Hand, Item, Make, Out, SoundDraft};
+use crate::engine::report::{Hub, Report};
 use crate::keys::Keyboard;
 use crate::options::Options;
-use crate::report::{Hub, Report};
 use crate::spec::{Spec, Value, checked, held_warning};
 use crate::synth::Synth;
 use midir::{MidiInput, MidiInputConnection};

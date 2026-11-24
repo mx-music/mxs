@@ -1,22 +1,22 @@
 //! The engine: synths and effects registered by name, samples loaded from files, and events stamped with seconds, played live or rendered offline.
 
-use crate::clock::Timing;
-use crate::device::{self, Format, Range, Settings};
-use crate::error::Error;
-use crate::listen::Listening;
-use crate::load::{Load, Meter};
-use crate::mixer::{
+use crate::engine::clock::Timing;
+use crate::engine::device::{Format, Range, Settings};
+use crate::engine::listen::Listening;
+use crate::engine::load::{Load, Meter};
+use crate::engine::mixer::{
     CAPACITY, Chain, Change, Command, Garbage, Heard, INPUTS, Input, Kept, Listened, Listener,
     Mixer, Out, PartChange, Recorder, Voice, Voices,
 };
+use crate::engine::report::{Analyser, Hub, Report, Reports, Tapped, Topic};
+use crate::engine::sample::{Grains, Player, SampleData, Samples, Stretcher};
+use crate::engine::time::{Tempo, TempoMap};
+use crate::engine::workers::{Pool, performance_cores};
+use crate::error::Error;
 use crate::options::{Context, Control, Controls, Options};
 use crate::ready::{Given, Ready};
-use crate::report::{self, Analyser, Hub, Report, Reports, Tapped, Topic};
-use crate::sample::{Grains, Player, SampleData, Samples, Stretcher};
 use crate::spec::{Spec, Value, checked, held_warning};
 use crate::synth::{BuildNote, Effect, Note, Synth};
-use crate::time::{Tempo, TempoMap};
-use crate::workers::{Pool, performance_cores};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use fundsp::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -26,8 +26,17 @@ use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
+pub(crate) mod clock;
+pub(crate) mod device;
+pub(crate) mod listen;
+pub(crate) mod load;
 #[cfg(feature = "keys")]
 mod midi;
+pub(crate) mod mixer;
+pub(crate) mod report;
+pub(crate) mod sample;
+pub(crate) mod time;
+pub(crate) mod workers;
 
 /// How long before its time an event in beats is built and placed at its frame; a tempo change moves every event further off than this.
 const LEAD: f64 = 0.15;
@@ -984,7 +993,7 @@ impl Engine {
             tail: self.frames(tail),
             heard: Heard::new(self.frames(END_FADE)),
             out: None,
-            sends: Vec::with_capacity(crate::mixer::SENDS),
+            sends: Vec::with_capacity(crate::engine::mixer::SENDS),
             key_from: None,
             tap,
             rank: 0,
@@ -1057,11 +1066,11 @@ impl Engine {
             .keys()
             .filter(|(sender, _)| *sender == from)
             .count()
-            >= crate::mixer::SENDS
+            >= crate::engine::mixer::SENDS
         {
             return Err(Error::TooManySends {
                 chain: from,
-                most: crate::mixer::SENDS,
+                most: crate::engine::mixer::SENDS,
             });
         }
         book.feed(from, to)?;
@@ -1075,7 +1084,7 @@ impl Engine {
             .get("level")
             .expect("followed")
             .clone();
-        let send = crate::mixer::Send {
+        let send = crate::engine::mixer::Send {
             from,
             to,
             level: Box::new(unit),

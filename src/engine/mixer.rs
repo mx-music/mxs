@@ -1,10 +1,10 @@
 //! The audio side of the engine: it starts each note at its sample, sends it through its effect chain, applies changes when they are due, and fades each note out over its last 10 ms.
 //! It allocates and frees nothing while filling audio: notes and chains come built over one ring buffer, and go back over another to be freed by the engine.
 
+use crate::engine::report::{PartSpan, Tap};
+use crate::engine::sample::SampleData;
+use crate::engine::workers::{FEWEST, Pool};
 use crate::options::Control;
-use crate::report::{PartSpan, Tap};
-use crate::sample::SampleData;
-use crate::workers::{FEWEST, Pool};
 use fundsp::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};

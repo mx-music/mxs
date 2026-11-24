@@ -1,7 +1,7 @@
 //! Analyses of a sound while the engine plays: its loudness and its pitch at an interval, and each onset as it happens.
 //! The audio thread only copies the sound into a ring buffer; the reporting side works the analysis out, so nothing here makes the audio wait.
 
-use crate::report::{FLOOR, Hub, Report, Topic};
+use crate::engine::report::{FLOOR, Hub, Report, Topic};
 use std::collections::VecDeque;
 
 /// The lowest pitch found, in Hz.
