@@ -1,6 +1,6 @@
-# Changelog for mxs v0.6
+# Changelog for mxs v0.7
 
-## Unreleased
+## v0.7.0 (2026-11-24)
 
 ### 1. Breaking changes
 
