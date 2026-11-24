@@ -9,5 +9,5 @@
   },
   "files": ["mxs.js", "core.js", "mxs.wasm", "tables/", "example/", "README.md"],
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/mx-music/mxs", "directory": "js/package" }
+  "repository": { "type": "git", "url": "git+https://github.com/mx-music/mxs.git", "directory": "js/package" }
 }
