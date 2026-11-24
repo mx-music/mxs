@@ -24,6 +24,18 @@ jobs:
       - run: cargo clippy --lib --no-default-features -- -D warnings
       - run: cargo test --release --no-default-features --test tables
 
+  deslop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-analyzer
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install deslop-please --version 0.1.4 --locked
+      - run: deslop-please
+
   webassembly:
     runs-on: ubuntu-latest
     steps:
