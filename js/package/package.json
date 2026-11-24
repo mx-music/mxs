@@ -1,6 +1,6 @@
 {
   "name": "@mx-music/mxs",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "A sound engine whose synths are fitted to recordings of real instruments, played on a web page in an audio worklet or rendered offline",
   "type": "module",
   "exports": {

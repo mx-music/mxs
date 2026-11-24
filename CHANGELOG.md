@@ -1,5 +1,11 @@
 # Changelog for mxs v0.7
 
+## v0.7.1 (2026-11-24)
+
+### 1. Enhancements
+
+  * [synths] `marimba` takes its partials from the University of Iowa's 183 yarn recordings as fitted by gradient descent: eight partials, each shaped at vel 40, 80 and 127 and at every sixth note from C2 to C7, a note sounding the four shapes around it in their shares; its median gap to the recordings in ERB bands falls from 8.85 dB to 7.54 dB, and a note takes about twice the processor time it took
+
 ## v0.7.0 (2026-11-24)
 
 ### 1. Breaking changes
