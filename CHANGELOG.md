@@ -1,5 +1,16 @@
 # Changelog for mxs v0.7
 
+## v0.7.3 (2026-11-24)
+
+### 1. Enhancements
+
+  * [graph] A note of a synth built from a graph works out each repeated arithmetic expression once, where it worked out every copy: the marimba's twin starts a note in 0.56 ms, where it took 5.1 ms, and registering a synth takes a few milliseconds more
+  * [graph] A `mode` whose level comes to 0 builds neither its sound nor its pitch, unless building them takes a seed from the note, so later draws and noises play as before
+
+### 2. Bug fixes
+
+  * [graph] A graph tens of thousands of calls deep is dropped without overflowing the stack, where it aborted the process
+
 ## v0.7.2 (2026-11-24)
 
 ### 1. Bug fixes
