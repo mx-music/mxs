@@ -536,7 +536,6 @@ impl Engine {
                 labels: HashMap::new(),
                 in_beats: HashMap::new(),
                 followers: Vec::new(),
-                pointed: f64::NEG_INFINITY,
                 cuts: (0, Vec::new()),
                 notices: Vec::new(),
                 timing: None,
@@ -901,8 +900,7 @@ impl Engine {
         let mut tail = 0.0;
         let bpm = {
             let book = self.book();
-            book.map
-                .bpm_at(book.pointed.max(book.map.beat_at(book.now())))
+            book.map.bpm_read(book.now())
         };
         let mut in_beats = Vec::new();
         let mut followers = Vec::new();
@@ -1657,7 +1655,6 @@ impl Engine {
         self.check_running()?;
         self.place(self.now() + LEAD, |book| {
             book.map.place(seconds);
-            book.pointed = f64::NEG_INFINITY;
         })
     }
 
@@ -1667,7 +1664,6 @@ impl Engine {
         self.check_running()?;
         self.place(self.now() + LEAD, |book| {
             book.map.set(beat, tempo);
-            book.repoint(beat);
         })
     }
 
@@ -2154,8 +2150,6 @@ struct Book {
     in_beats: HashMap<u64, Vec<Vec<String>>>,
     /// The effect options given in beats, which follow the tempo: the chain, the effect's index, the option and its beats.
     followers: Vec<(u64, usize, String, f64)>,
-    /// The last beat at which the tempo was read for the followers and the beat reports.
-    pointed: f64,
     /// The cuts made, the last ones kept: how many came before each, its part and its beat.
     cuts: (u64, Vec<(u64, u64, f64)>),
     /// The reports of passes, each held until the clock reaches its seconds.
@@ -2387,7 +2381,7 @@ impl Book {
         !self.score.is_empty()
             || !self.notices.is_empty()
             || self.endings.values().any(|(_, _, told)| !told)
-            || self.map.next_point(self.pointed).is_some()
+            || self.map.unread()
     }
 
     /// Takes what falls before `horizon` seconds out of what waits: the events in beats, placed at their seconds with their options in beats turned into seconds, and for each beat at which the tempo is another, a change to the effect options that follow it.
@@ -2455,12 +2449,7 @@ impl Book {
         }
         // Of the beats already past, only the last still says what the tempo is.
         let mut points = Vec::new();
-        while let Some(point) = self.map.next_point(self.pointed) {
-            let at = self.map.seconds_at(point);
-            if at >= horizon {
-                break;
-            }
-            self.pointed = point;
+        while let Some((point, at)) = self.map.read_point(horizon) {
             if at <= now {
                 points.clear();
             }
@@ -2530,11 +2519,6 @@ impl Book {
         });
         reached.sort_by(|a, b| a.seconds().total_cmp(&b.seconds()));
         reached.into_iter().for_each(|report| self.hub.send(report));
-    }
-
-    /// Reads the tempo again from `beat` on, after the map changed there.
-    fn repoint(&mut self, beat: f64) {
-        self.pointed = self.pointed.min(beat.next_down());
     }
 
     /// Drops what a part was handed for `beat` and after: the events not yet placed, and the sounds placed that have not started.

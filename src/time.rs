@@ -76,94 +76,136 @@ impl Tempo {
     }
 }
 
-/// The tempo at every beat, and the engine's seconds at which beat 0 falls.
+/// The tempo at every beat, and the engine's seconds at which each beat falls.
 #[derive(Clone, Debug)]
 pub(crate) struct TempoMap {
-    origin: f64,
-    /// Each change of tempo and the beat it starts at, in order; never empty.
-    changes: Vec<(f64, Tempo)>,
+    /// Each change of tempo, in order of its beat; never empty.
+    changes: Vec<Change>,
+    /// The last beat at which the tempo was read, for the beat reports and the options that follow it.
+    pointed: f64,
+}
+
+/// A change of tempo: the beat it starts at, the engine's seconds at which that beat falls, and the tempo from there.
+#[derive(Clone, Copy, Debug)]
+struct Change {
+    beat: f64,
+    seconds: f64,
+    tempo: Tempo,
 }
 
 impl TempoMap {
     pub fn new() -> TempoMap {
         TempoMap {
-            origin: 0.0,
-            changes: vec![(0.0, Tempo::Hold(120.0))],
+            changes: vec![Change {
+                beat: 0.0,
+                seconds: 0.0,
+                tempo: Tempo::Hold(120.0),
+            }],
+            pointed: f64::NEG_INFINITY,
         }
     }
 
-    /// Places beat 0 at `seconds` of the engine's clock.
+    /// Places beat 0 at `seconds` of the engine's clock, moving the whole map with it, and reads the tempo again from the start.
     pub fn place(&mut self, seconds: f64) {
-        self.origin = seconds;
+        self.anchor(self.seconds_at(0.0), seconds);
+        self.pointed = f64::NEG_INFINITY;
     }
 
-    /// Changes the tempo from `beat` on, in place of whatever the map held from there.
+    /// Changes the tempo from `beat` on, in place of whatever the map held from there; beat 0 stays where it falls.
     pub fn set(&mut self, beat: f64, tempo: Tempo) {
-        self.changes.retain(|change| change.0 < beat);
-        self.changes.push((beat, tempo.held()));
+        let zero = self.seconds_at(0.0);
+        let seconds = self.seconds_at(beat);
+        self.changes.retain(|change| change.beat < beat);
+        self.changes.push(Change {
+            beat,
+            seconds,
+            tempo: tempo.held(),
+        });
+        self.anchor(self.seconds_at(0.0), zero);
+        self.pointed = self.pointed.min(beat.next_down());
+    }
+
+    /// Moves the map so beat 0, which falls at `from`, falls at `to`.
+    fn anchor(&mut self, from: f64, to: f64) {
+        if from != to {
+            for change in &mut self.changes {
+                change.seconds = to + (change.seconds - from);
+            }
+        }
+    }
+
+    /// Whether a point where the tempo changes is still to be read.
+    pub fn unread(&self) -> bool {
+        self.next_point(self.pointed).is_some()
+    }
+
+    /// Reads the next point where the tempo changes, with the engine's seconds it falls at, when that is before `before`.
+    pub fn read_point(&mut self, before: f64) -> Option<(f64, f64)> {
+        let point = self.next_point(self.pointed)?;
+        let at = self.seconds_at(point);
+        if at >= before {
+            return None;
+        }
+        self.pointed = point;
+        Some((point, at))
+    }
+
+    /// The tempo at the engine's `seconds`, or at the last point read when that is later.
+    pub fn bpm_read(&self, seconds: f64) -> f64 {
+        self.bpm_at(self.pointed.max(self.beat_at(seconds)))
     }
 
     /// The change that holds at `beat`: the last that starts at or before it, or the first.
-    fn at(&self, beat: f64) -> usize {
-        self.changes
+    fn at(&self, beat: f64) -> Change {
+        let index = self
+            .changes
             .iter()
-            .rposition(|change| change.0 <= beat)
-            .unwrap_or(0)
+            .rposition(|change| change.beat <= beat)
+            .unwrap_or(0);
+        self.changes[index]
     }
 
-    /// Seconds from the first change to `beat`, negative for a beat before it.
-    fn elapsed(&self, beat: f64) -> f64 {
-        let (first, tempo) = self.changes[0];
-        if beat < first {
-            return (beat - first) * 60.0 / tempo.bpm(0.0);
-        }
-        let mut seconds = 0.0;
-        for (index, (start, tempo)) in self.changes.iter().enumerate() {
-            let end = self.changes.get(index + 1).map_or(f64::INFINITY, |c| c.0);
-            seconds += tempo.seconds(beat.min(end) - start);
-            if beat <= end {
-                break;
-            }
-        }
-        seconds
-    }
-
-    /// The engine's seconds at which `beat` falls.
+    /// The engine's seconds at which `beat` falls; a beat before the first change keeps that change's starting tempo.
     pub fn seconds_at(&self, beat: f64) -> f64 {
-        self.origin + self.elapsed(beat) - self.elapsed(0.0)
+        let change = self.at(beat);
+        if beat < change.beat {
+            return change.seconds + (beat - change.beat) * 60.0 / change.tempo.bpm(0.0);
+        }
+        change.seconds + change.tempo.seconds(beat - change.beat)
     }
 
     /// The beat that falls at the engine's `seconds`.
     pub fn beat_at(&self, seconds: f64) -> f64 {
-        let (first, tempo) = self.changes[0];
-        let mut left = seconds - self.origin + self.elapsed(0.0);
+        let index = self
+            .changes
+            .iter()
+            .rposition(|change| change.seconds <= seconds)
+            .unwrap_or(0);
+        let change = self.changes[index];
+        let left = seconds - change.seconds;
         if left < 0.0 {
-            return first + left * tempo.bpm(0.0) / 60.0;
+            return change.beat + left * change.tempo.bpm(0.0) / 60.0;
         }
-        for (index, (start, tempo)) in self.changes.iter().enumerate() {
-            let Some((end, _)) = self.changes.get(index + 1) else {
-                return start + tempo.beats(left);
-            };
-            let lasts = tempo.seconds(end - start);
-            if left < lasts {
-                return start + tempo.beats(left);
-            }
-            left -= lasts;
-        }
-        first
+        change.beat + change.tempo.beats(left)
     }
 
     /// The beats a minute at `beat`.
     pub fn bpm_at(&self, beat: f64) -> f64 {
-        let (start, tempo) = self.changes[self.at(beat)];
-        tempo.bpm((beat - start).max(0.0))
+        let change = self.at(beat);
+        change.tempo.bpm((beat - change.beat).max(0.0))
     }
 
     /// The first beat after `after` at which the tempo is another: where a change starts, and every quarter beat while the tempo moves.
     pub fn next_point(&self, after: f64) -> Option<f64> {
-        let index = self.at(after);
-        let next = self.changes.get(index + 1).map(|change| change.0);
-        let (start, tempo) = self.changes[index];
+        let index = self
+            .changes
+            .iter()
+            .rposition(|change| change.beat <= after)
+            .unwrap_or(0);
+        let next = self.changes.get(index + 1).map(|change| change.beat);
+        let Change {
+            beat: start, tempo, ..
+        } = self.changes[index];
         let moving = match tempo {
             Tempo::Move { over, .. } if after >= start && after < start + over => {
                 let step = start + (((after - start) / STEP).floor() + 1.0) * STEP;
@@ -171,7 +213,7 @@ impl TempoMap {
             }
             _ => None,
         };
-        let first = Some(self.changes[0].0).filter(|first| after < *first);
+        let first = Some(self.changes[0].beat).filter(|first| after < *first);
         [first, moving, next]
             .into_iter()
             .flatten()
@@ -258,6 +300,16 @@ mod tests {
         assert_eq!(map.seconds_at(2.0), two);
         assert_eq!(map.seconds_at(4.0), two + 1.0);
         assert!((map.beat_at(two + 0.5) - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_change_before_beat_0_leaves_beat_0_where_it_was_placed() {
+        let mut map = TempoMap::new();
+        map.place(10.0);
+        map.set(-4.0, Tempo::Hold(60.0));
+        assert_eq!(map.seconds_at(0.0), 10.0);
+        assert_eq!(map.seconds_at(-4.0), 6.0);
+        assert_eq!(map.beat_at(8.0), -2.0);
     }
 
     #[test]
