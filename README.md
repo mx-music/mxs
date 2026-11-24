@@ -169,14 +169,14 @@ cargo test --release --all-features
 The checks of a live engine play through BlackHole 2ch, a virtual sound card, so that nothing is heard, and run only when asked for:
 
 ```sh
-cargo test --release --test live -- --ignored --test-threads 1
+cargo test --release --test live live:: -- --ignored --test-threads 1
 ```
 
 The catalogs of synths and effects in `docs/` are written from the code.
 After a synth or an effect changes, write them again:
 
 ```sh
-MXS_CATALOG=write cargo test --release --test catalog
+MXS_CATALOG=write cargo test --release --test sounds catalog::
 ```
 
 The check that an offline engine renders in WebAssembly as it does natively needs the `wasm32-unknown-unknown` target and Node, and runs only when asked for:

@@ -1,4 +1,4 @@
-//! Checks of MIDI inputs played on parts inside a live engine, from virtual MIDI sources, which need BlackHole 2ch, so that nothing is heard, and a release build; run them with `cargo test --release --features keys --test midi -- --ignored --test-threads 1`.
+//! Checks of MIDI inputs played on parts inside a live engine, from virtual MIDI sources, which need BlackHole 2ch, so that nothing is heard, and a release build; run them with `cargo test --release --features keys --test live midi:: -- --ignored --test-threads 1`.
 #![cfg(feature = "keys")]
 
 use fundsp::prelude::*;

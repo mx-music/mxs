@@ -1,4 +1,4 @@
-//! Checks that change the system's default output, which need BlackHole 2ch, SwitchAudioSource (`brew install switchaudio-osx`) and a release build; run them by hand with `cargo test --release --test output -- --ignored --test-threads 1`.
+//! Checks that change the system's default output, which need BlackHole 2ch, SwitchAudioSource (`brew install switchaudio-osx`) and a release build; run them by hand with `cargo test --release --test live output:: -- --ignored --test-threads 1`.
 //! Each plays a quiet note on the default output for about a second before moving it to BlackHole 2ch, and sets the default output back when it ends.
 
 use fundsp::prelude::*;

@@ -1,4 +1,4 @@
-//! Checks of a live engine, which need BlackHole 2ch, a virtual sound card, so that nothing is heard, and a release build, as a debug one fills too slowly; run them with `cargo test --release --test live -- --ignored --test-threads 1`.
+//! Checks of a live engine, which need BlackHole 2ch, a virtual sound card, so that nothing is heard, and a release build, as a debug one fills too slowly; run them with `cargo test --release --test live live:: -- --ignored --test-threads 1`.
 
 use fundsp::prelude::*;
 use mxs::{

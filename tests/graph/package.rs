@@ -2,7 +2,7 @@
 
 #[test]
 fn the_npm_package_has_the_crate_s_version() {
-    let manifest = include_str!("../js/package/package.json");
+    let manifest = include_str!("../../js/package/package.json");
     let version = env!("CARGO_PKG_VERSION");
     let expected = format!("\"version\": \"{version}\"");
     assert!(
@@ -13,7 +13,7 @@ fn the_npm_package_has_the_crate_s_version() {
 
 #[test]
 fn the_python_package_has_the_crate_s_version() {
-    let manifest = include_str!("../python/pyproject.toml");
+    let manifest = include_str!("../../python/pyproject.toml");
     let version = env!("CARGO_PKG_VERSION");
     let expected = format!("version = \"{version}\"");
     assert!(

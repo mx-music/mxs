@@ -1,5 +1,5 @@
 //! The catalogs in `docs`, which the crate's documentation includes, are written from the synths and effects themselves.
-//! `MXS_CATALOG=write cargo test --test catalog` writes them again after a synth or an effect changes.
+//! `MXS_CATALOG=write cargo test --test sounds catalog::` writes them again after a synth or an effect changes.
 
 use mxs::{Engine, Kind, RATE, Spec, Value, effects, synths};
 use std::collections::BTreeSet;
@@ -180,7 +180,7 @@ fn check(path: &str, catalog: String) {
     let written = std::fs::read_to_string(path).unwrap_or_default();
     assert!(
         written == catalog,
-        "{path} is out of date; run MXS_CATALOG=write cargo test --test catalog"
+        "{path} is out of date; run MXS_CATALOG=write cargo test --test sounds catalog::"
     );
 }
 

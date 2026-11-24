@@ -1501,7 +1501,7 @@ fn figures_plays_a_table_loaded_from_outside_mxs_by_its_name() {
     );
     mxs::synths::load_table(
         "my_harp.mxf",
-        include_bytes!("../src/synths/figures/harp.mxf"),
+        include_bytes!("../../src/synths/figures/harp.mxf"),
     )
     .unwrap();
     let rust = mxs::synths::all()

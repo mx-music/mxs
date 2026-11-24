@@ -1,4 +1,4 @@
-//! Voices filled on several threads; the timing checks need a release build: `cargo test --release --test workers -- --ignored --nocapture --test-threads 1`.
+//! Voices filled on several threads; the timing checks need a release build: `cargo test --release --test playing workers:: -- --ignored --nocapture --test-threads 1`.
 
 use mxs::{Engine, Event, RATE, Value, effects, synths};
 use std::time::Instant;

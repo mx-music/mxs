@@ -1,7 +1,7 @@
 use mxs::graph::{Clause, Graph};
 use mxs::{Effect, Engine, Event, RATE, Spec, Synth, Value};
 
-const MARIMBA: &str = include_str!("marimba.json");
+const MARIMBA: &str = include_str!("../marimba.json");
 
 fn n(x: f64) -> Graph {
     Graph::Number(x)
